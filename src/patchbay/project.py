@@ -127,7 +127,6 @@ psu:set_output(false)
 print("Sweep finished")
 """
 
-_GRAPH = '{"version": 1, "nodes": [], "wires": []}\n'
 
 
 def create_project(path: str | Path, mode: str = "lua") -> Project:
@@ -141,5 +140,11 @@ def create_project(path: str | Path, mode: str = "lua") -> Project:
     (path / PROJECT_FILE).write_text(
         _TOML.format(name=path.name, mode=mode, script=script), encoding="utf-8"
     )
-    (path / script).write_text(_LUA if mode == "lua" else _GRAPH, encoding="utf-8")
+    if mode == "lua":
+        content = _LUA
+    else:
+        from .graph import example_graph
+
+        content = json.dumps(example_graph(), indent=1)
+    (path / script).write_text(content, encoding="utf-8")
     return Project.load(path)

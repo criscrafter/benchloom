@@ -11,6 +11,7 @@ What a script sees:
 
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 import time
@@ -25,11 +26,13 @@ except ImportError:  # pragma: no cover - platforms without the 5.4 build
 
 from . import __version__
 from .datalog import RunLog
+from .graph import Catalog, GraphError, compile_graph
 from .plugin import Device, PluginRegistry
 from .project import DeviceConfig, Project, ProjectError
 from .transports import open_transport
 
 _STOP = "__patchbay_stop__"
+GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
 
 _BOOTSTRAP = """
 function(emit, should_stop)
@@ -177,8 +180,6 @@ def run_project(
     stop_event: threading.Event | None = None,
 ) -> RunResult:
     project = Project.load(project_dir)
-    if project.mode != "lua":
-        raise ProjectError("visual projects cannot be run yet (the node editor is not built)")
     script = project.path / project.script
     if not script.is_file():
         raise ProjectError(f"script not found: {script}")
@@ -209,7 +210,16 @@ def run_project(
         )
         for name, device in devices.items():
             engine.add_device(name, device)
-        engine.run(script.read_text(encoding="utf-8"), script.name)
+        code, chunk_name = script.read_text(encoding="utf-8"), script.name
+        if project.mode == "visual":
+            # visual tests are compiled to Lua; keep the generated code with the run
+            try:
+                code, _ = compile_graph(json.loads(code), Catalog(project, registry))
+            except (GraphError, ValueError, KeyError, TypeError) as exc:
+                raise ScriptError(f"graph: {exc}") from exc
+            chunk_name = GRAPH_CHUNK
+            (run.path / GRAPH_CHUNK).write_text(code, encoding="utf-8")
+        engine.run(code, chunk_name)
     except (ScriptStopped, KeyboardInterrupt):
         status = "stopped"
         emit("Stopped.")

@@ -7,10 +7,10 @@ The goal is a short path from "I need to automate this" to a running setup:
 one download, no licence, no vendor runtime.
 
 **Status: early prototype.** The engine, command line and a first desktop app
-(Lua editor, device manager, live plot) work. The node editor and front panels
-are not built yet. See [docs/PLAN.md](docs/PLAN.md).
+(node editor, Lua editor, device manager, live plot) work. Front panels are not
+built yet. See [docs/PLAN.md](docs/PLAN.md).
 
-![The Patchbay app after running the example sweep](docs/images/app.png)
+![A visual test in Patchbay after running the example sweep](docs/images/visual.png)
 
 ## Try it
 
@@ -20,10 +20,10 @@ python -m venv .venv
 .venv\Scripts\patchbay gui
 ```
 
-Choose **New project**, then press **Run** (F5). The project starts with a
-simulated power supply and a voltage sweep, so it runs without hardware. Add
-real instruments in the Devices panel; double-click a command there to insert
-it into the script.
+Choose **New project**, pick **Visual** or **Lua script**, then press **Run**
+(F5). The project starts with a simulated power supply and a voltage sweep, so
+it runs without hardware. Add real instruments in the Devices panel;
+double-click a command there to add it to the test.
 
 Each run gets a folder under the project's `runs/` holding `data.csv`,
 `console.log`, `run.json` and a copy of the script.
@@ -59,6 +59,25 @@ resource = "sim://"
 | `tcp://192.168.1.20:5025` | raw socket |
 | `prologix://COM4/5` | GPIB address 5 through a Prologix or AR488 adapter |
 | `visa://GPIB0::5::INSTR` | any VISA resource, including vendor GPIB adapters (`pip install "patchbay[visa]"`) |
+
+## A visual test
+
+Nodes are connected by two kinds of wire:
+
+- **Thick wires** say what runs next. Follow them from the Start node.
+- **Dashed blue wires** carry values from an output to an input.
+
+Inputs without a wire are typed into the node. Right-click the canvas to add
+nodes (loops, conditions, math, logging, and every command of the project's
+devices); drag from pin to pin to wire; select and press Delete to remove.
+
+Nodes without thick-wire pins, such as a measurement, run each time a node
+that uses their value runs. To measure at a fixed point instead and keep the
+value, right-click the node and choose **Run in sequence**.
+
+A visual test is compiled to Lua and run by the same engine as a script.
+**View as Lua** shows the generated code; each run folder keeps it as
+`graph.lua`.
 
 ## A script
 

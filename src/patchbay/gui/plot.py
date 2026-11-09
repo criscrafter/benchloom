@@ -36,7 +36,7 @@ class PlotPanel(QWidget):
             axis = self.plot.getAxis(name)
             axis.setPen(text)
             axis.setTextPen(text)
-        self.legend = self.plot.addLegend(offset=(-10, 10), labelTextColor=text)
+        self.legend = self.plot.addLegend(offset=(10, 10), labelTextColor=text)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)

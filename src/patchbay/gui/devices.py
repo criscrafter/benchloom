@@ -294,7 +294,7 @@ class DeviceDialog(QDialog):
 class DevicesPanel(QWidget):
     """Tree of the project's devices and their commands."""
 
-    insert_requested = Signal(str)  # Lua snippet to put into the editor
+    command_activated = Signal(str, str, str)  # device name, command name, Lua snippet
     changed = Signal()
 
     def __init__(self, parent=None):
@@ -315,7 +315,7 @@ class DevicesPanel(QWidget):
         buttons = QHBoxLayout()
         for button in (self.add_button, self.edit_button, self.remove_button):
             buttons.addWidget(button)
-        hint = QLabel("Double-click a command to insert it into the script.")
+        hint = QLabel("Double-click a command to add it to the test.")
         hint.setWordWrap(True)
         hint.setEnabled(False)
 
@@ -348,7 +348,8 @@ class DevicesPanel(QWidget):
                         child = QTreeWidgetItem([signature(info)])
                         child.setToolTip(0, describe(info))
                         child.setData(0, Qt.ItemDataRole.UserRole + 1,
-                                      f"{config.name}:{signature(info)}")
+                                      (config.name, info.name,
+                                       f"{config.name}:{signature(info)}"))
                         item.addChild(child)
                 except PluginError as exc:
                     item.setForeground(0, QBrush(QColor("#d9453c")))
@@ -370,9 +371,9 @@ class DevicesPanel(QWidget):
         self.remove_button.setEnabled(selected)
 
     def _double_clicked(self, item: QTreeWidgetItem) -> None:
-        snippet = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        if snippet:
-            self.insert_requested.emit(snippet)
+        command = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if command:
+            self.command_activated.emit(*command)
         else:
             self.edit_device()
 

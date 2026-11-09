@@ -14,8 +14,7 @@ from .project import ProjectError, create_project
 def _new(args) -> int:
     project = create_project(args.path, args.mode)
     print(f"Created {project.mode} project in {project.path}")
-    if project.mode == "lua":
-        print(f"Run it with: patchbay run {args.path}")
+    print(f"Run it with: patchbay run {args.path}")
     return 0
 
 

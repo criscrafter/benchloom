@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 
@@ -14,9 +15,12 @@ from PySide6.QtWidgets import (
     QPushButton, QRadioButton, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
+from ..engine import GRAPH_CHUNK
+from ..graph import Catalog, GraphError, compile_graph
 from ..project import PROJECT_FILE, Project, ProjectError, create_project
 from .devices import DevicesPanel
 from .editor import CodeEditor, mono_font
+from .graph_editor import GraphEditor
 from .plot import PlotPanel
 from .runner import RunController
 
@@ -41,8 +45,7 @@ class NewProjectDialog(QDialog):
         location.addWidget(browse)
 
         self.lua_radio = QRadioButton("Lua script")
-        self.visual_radio = QRadioButton("Visual (wires between nodes), not available yet")
-        self.visual_radio.setEnabled(False)
+        self.visual_radio = QRadioButton("Visual (wires between nodes)")
         self.lua_radio.setChecked(True)
         group = QButtonGroup(self)
         group.addButton(self.lua_radio)
@@ -97,18 +100,17 @@ class MainWindow(QMainWindow):
 
         # central area: welcome page, Lua editor, or the visual placeholder
         self.editor = CodeEditor()
-        self.visual_placeholder = QLabel(
-            "This is a visual project.\nThe node editor is not built yet."
-        )
-        self.visual_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.graph = GraphEditor()
+        self._line_map: list[str | None] = []
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_welcome())
         self.stack.addWidget(self.editor)
-        self.stack.addWidget(self.visual_placeholder)
+        self.stack.addWidget(self.graph)
         self.setCentralWidget(self.stack)
 
         self.devices = DevicesPanel()
-        self.devices.insert_requested.connect(self._insert_snippet)
+        self.devices.command_activated.connect(self._command_activated)
+        self.devices.changed.connect(self._devices_changed)
         self.console = QPlainTextEdit(readOnly=True)
         self.console.setMaximumBlockCount(10000)
         self.console.setFont(mono_font(10))
@@ -200,6 +202,7 @@ class MainWindow(QMainWindow):
         self.run_action = action("▶ Run", self.run, "F5")
         self.stop_action = action("■ Stop", self.stop, "Shift+F5")
         self.runs_action = action("Show run folder", self.show_run_folder)
+        self.lua_action = action("View as Lua", self.view_lua)
 
         toolbar = QToolBar("Main")
         toolbar.setObjectName("Main")
@@ -209,7 +212,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addActions([self.run_action, self.stop_action])
         toolbar.addSeparator()
-        toolbar.addAction(self.runs_action)
+        toolbar.addActions([self.runs_action, self.lua_action])
         self.addToolBar(toolbar)
 
     # --- project handling -------------------------------------------------
@@ -249,15 +252,17 @@ class MainWindow(QMainWindow):
                 self.editor.document().setModified(False)
                 self.stack.setCurrentIndex(1)
             else:
+                self._load_graph()
                 self.stack.setCurrentIndex(2)
             self._remember(project.path)
         self._update_actions()
 
     def _update_actions(self) -> None:
-        lua = self.project is not None and self.project.mode == "lua"
+        is_open = self.project is not None
         running = self.runner.running
-        self.save_action.setEnabled(lua)
-        self.run_action.setEnabled(lua and not running)
+        self.save_action.setEnabled(is_open)
+        self.run_action.setEnabled(is_open and not running)
+        self.lua_action.setEnabled(is_open and self.project.mode == "visual")
         self.stop_action.setEnabled(running)
         self.runs_action.setEnabled(self._last_run is not None)
         self.new_action.setEnabled(not running)
@@ -266,11 +271,10 @@ class MainWindow(QMainWindow):
 
     def _keep_changes(self) -> bool:
         """Offer to save unsaved edits. False means the user cancelled."""
-        if not (self.project and self.project.mode == "lua"
-                and self.editor.document().isModified()):
+        if not self._modified():
             return True
         answer = QMessageBox.question(
-            self, "Unsaved changes", "Save the changes to the script?",
+            self, "Unsaved changes", "Save the changes to the test?",
             QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
             | QMessageBox.StandardButton.Cancel,
         )
@@ -302,20 +306,76 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open project", str(exc))
             return False
 
+    def _modified(self) -> bool:
+        if self.project is None:
+            return False
+        if self.project.mode == "lua":
+            return self.editor.document().isModified()
+        return self.graph.modified
+
     def save(self) -> None:
-        if self.project and self.project.mode == "lua":
-            script = self.project.path / self.project.script
+        if self.project is None:
+            return
+        script = self.project.path / self.project.script
+        if self.project.mode == "lua":
             script.write_text(self.editor.toPlainText(), encoding="utf-8")
             self.editor.document().setModified(False)
+        else:
+            script.write_text(json.dumps(self.graph.to_graph(), indent=1), encoding="utf-8")
+            self.graph.modified = False
+
+    # --- visual projects ----------------------------------------------------
+    def _load_graph(self) -> None:
+        script = self.project.path / self.project.script
+        try:
+            graph = json.loads(script.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Open project", f"Could not read {script.name}: {exc}")
+            graph = {}
+        self.graph.load(graph, Catalog(self.project, self.devices.registry))
+
+    def _devices_changed(self) -> None:
+        """Devices were added, renamed or removed: rebuild nodes against the new list."""
+        if self.project and self.project.mode == "visual":
+            modified = self.graph.modified
+            self.graph.load(self.graph.to_graph(), Catalog(self.project, self.devices.registry))
+            self.graph.modified = modified
+
+    def _compile(self) -> str | None:
+        """Compile the graph; on a problem, mark the node and return None."""
+        self.graph.mark_error(None)
+        try:
+            code, self._line_map = compile_graph(self.graph.to_graph(), self.graph.catalog)
+            return code
+        except GraphError as exc:
+            self.graph.mark_error(exc.node_id)
+            self._print(f"Error: {exc}", error=True)
+            self.statusBar().showMessage("The test has a problem; see the marked node")
+            return None
+
+    def view_lua(self) -> None:
+        code = self._compile()
+        if code is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("This test as Lua")
+        dialog.resize(640, 480)
+        view = CodeEditor()
+        view.setPlainText(code)
+        view.setReadOnly(True)
+        QVBoxLayout(dialog).addWidget(view)
+        dialog.exec()
 
     # --- running ----------------------------------------------------------
     def run(self) -> None:
-        if not self.project or self.project.mode != "lua" or self.runner.running:
+        if not self.project or self.runner.running:
             return
-        self.save()
         self.console.clear()
         self.plot.clear()
         self.editor.mark_error(None)
+        if self.project.mode == "visual" and self._compile() is None:
+            return
+        self.save()
         self.runner.start(self.project.path)
         self.statusBar().showMessage("Running…")
         self._update_actions()
@@ -337,9 +397,13 @@ class MainWindow(QMainWindow):
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)
         if status == "error" and self.project:
-            match = re.search(rf"{re.escape(self.project.script)}:(\d+):", error)
-            if match:
-                self.editor.mark_error(int(match.group(1)))
+            name = self.project.script if self.project.mode == "lua" else GRAPH_CHUNK
+            match = re.search(rf"{re.escape(name)}:(\d+):", error)
+            line = int(match.group(1)) if match else 0
+            if line and self.project.mode == "lua":
+                self.editor.mark_error(line)
+            elif 0 < line <= len(self._line_map):
+                self.graph.mark_error(self._line_map[line - 1])
         rows = len(self.plot.rows)
         message = {"ok": "Finished", "stopped": "Stopped", "error": "Failed"}[status]
         self.statusBar().showMessage(f"{message} · {rows} row(s) logged")
@@ -349,10 +413,12 @@ class MainWindow(QMainWindow):
         if self._last_run:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_run)))
 
-    def _insert_snippet(self, snippet: str) -> None:
+    def _command_activated(self, device: str, command: str, snippet: str) -> None:
         if self.stack.currentWidget() is self.editor:
             self.editor.insertPlainText(snippet)
             self.editor.setFocus()
+        elif self.stack.currentWidget() is self.graph:
+            self.graph.add_node({"type": "device", "device": device, "command": command})
 
     def closeEvent(self, event) -> None:
         if not self._keep_changes():
