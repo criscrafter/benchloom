@@ -19,6 +19,7 @@ FORCE_STOP_AFTER_MS = 3000
 class RunController(QObject):
     printed = Signal(str)
     row = Signal(object)
+    panel = Signal(str, object)  # the test set a front panel widget
     finished = Signal(str, str, str)  # status, error, run folder
 
     def __init__(self, parent=None):
@@ -26,6 +27,7 @@ class RunController(QObject):
         self._context = multiprocessing.get_context("spawn")
         self._process = None
         self._queue = None
+        self._controls = None
         self._stop = None
         self._dead_polls = 0
         self._poll_timer = QTimer(self, interval=30)
@@ -37,17 +39,25 @@ class RunController(QObject):
     def running(self) -> bool:
         return self._process is not None
 
-    def start(self, project_path) -> None:
+    def start(self, project_path, panel_values: dict | None = None) -> None:
         if self.running:
             return
         self._queue = self._context.Queue()
+        self._controls = self._context.Queue()
         self._stop = self._context.Event()
         self._dead_polls = 0
         self._process = self._context.Process(
-            target=run_worker, args=(str(project_path), self._queue, self._stop), daemon=True
+            target=run_worker,
+            args=(str(project_path), self._queue, self._stop, self._controls, panel_values),
+            daemon=True,
         )
         self._process.start()
         self._poll_timer.start()
+
+    def send_control(self, name: str, value) -> None:
+        """Tell the running test that a front panel control changed."""
+        if self.running:
+            self._controls.put((name, value))
 
     def stop(self) -> None:
         """Ask the script to stop; force it if it has not stopped after a few seconds."""
@@ -65,6 +75,8 @@ class RunController(QObject):
                 self.printed.emit(message[1])
             elif message[0] == "row":
                 self.row.emit(message[1])
+            elif message[0] == "panel":
+                self.panel.emit(message[1], message[2])
             elif message[0] == "done":
                 self._end(*message[1:])
                 return
@@ -86,4 +98,6 @@ class RunController(QObject):
         self._kill_timer.stop()
         self._process.join(1)
         self._process = None
+        self._controls.cancel_join_thread()  # unsent control changes no longer matter
+        self._controls.close()
         self.finished.emit(status, error, path)

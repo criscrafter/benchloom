@@ -26,6 +26,7 @@
 | Instrument I/O | Core provides transports (serial, TCP, Prologix/AR488 GPIB, VISA). Vendor VISA and GPIB adapters are optional, never required. |
 | Simulation | Plugins ship wire-level simulators so driver code is exercised without hardware |
 | Data | Every run gets a folder: `data.csv`, console log, script copy, metadata. HDF5 to be added when waveform capture arrives. |
+| Front panel | Layout in `panel.json`; widgets addressed by name. Control changes are sent to the running test's process, indicator updates come back on the event queue. A button reads true once per click. |
 | Timing | No hard timing needs now. The engine stays separate from the UI so a tighter runner can replace it later. |
 
 ## Open design questions
@@ -46,7 +47,11 @@
    (for, while, if), values (math, compare, logic, variables), logging, graph
    to Lua compiler, errors marked on the node. Still to do here: undo/redo,
    copy/paste, highlighting the running node, comments, sub-graphs.
-4. **Front panel designer**: widgets bound to script values and graph pins.
+4. **Front panel** (done): controls (number, switch, button, text) and
+   indicators (value, light, bar, chart) laid out by drag and drop, live in both
+   directions while a test runs, available as `panel.<name>` in Lua and as nodes.
+   Still to do here: knobs, gauges and tables, multi-series charts, renaming a
+   widget without breaking the nodes that use it, a full-window panel mode.
 5. **Device plugins**, each with a simulator:
    Arduino line protocol (generic, done) · Kunkin KP184 (Modbus/serial) ·
    HP 6655A · HP 53131A · HP 3478A (pre-SCPI) · Chroma 6404 · Hantek DSO 5102P

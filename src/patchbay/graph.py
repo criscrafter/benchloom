@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .panel import CONTROLS, VALUE_TYPES, Panel, PanelError
 from .plugin import PluginError, PluginRegistry
 from .project import Project
 
@@ -138,9 +139,16 @@ _PALETTE = [
 class Catalog:
     """Knows every node type available in a project, including its devices' commands."""
 
-    def __init__(self, project: Project, registry: PluginRegistry | None = None):
+    def __init__(self, project: Project, registry: PluginRegistry | None = None,
+                 panel: Panel | None = None):
         self.project = project
         self.registry = registry or PluginRegistry.default(project.path)
+        if panel is None:
+            try:
+                panel = Panel.load(project.path)
+            except PanelError:
+                panel = Panel()
+        self.panel = panel  # shared with the front panel editor, so always current
         self._commands: dict[str, dict] = {}
 
     def commands(self, device: str, node_id: str | None = None) -> dict:
@@ -162,6 +170,15 @@ class Catalog:
         if kind == "core.log":
             return NodeSpec("Log row", "action", True, NEXT,
                             [Pin(column, "any") for column in node.get("columns", [])])
+        if kind in ("panel.get", "panel.set"):
+            widget = self.panel.get(node.get("widget", ""))
+            if widget is None or not widget.has_value:
+                raise GraphError(
+                    f"There is no front panel widget named '{node.get('widget')}'.", node_id)
+            pin = Pin("value", VALUE_TYPES.get(widget.type, "any"), widget.unit)
+            if kind == "panel.get":
+                return NodeSpec(f"Panel: {widget.name}", "value", outputs=[pin])
+            return NodeSpec(f"Set panel: {widget.name}", "action", True, NEXT, [pin])
         if kind == "device":
             info = self.commands(node.get("device", ""), node_id).get(node.get("command"))
             if info is None:
@@ -190,6 +207,14 @@ class Catalog:
                     template["columns"] = ["value"]
                 entries.append((self.spec(template).title, template))
             groups.append((group, entries))
+        entries = []
+        for widget in self.panel.widgets:
+            if widget.is_control:
+                entries.append((f"Read {widget.name}", {"type": "panel.get", "widget": widget.name}))
+            if widget.has_value and widget.type != "button":
+                entries.append((f"Set {widget.name}", {"type": "panel.set", "widget": widget.name}))
+        if entries:
+            groups.append(("Front panel", entries))
         for device in self.project.devices:
             try:
                 commands = self.commands(device)
@@ -263,6 +288,8 @@ class _Compiler:
             return f"{node['device']}:{node['command']}({self.arguments(node_id, seen)})"
         if kind == "core.time":
             return "time()"
+        if kind == "panel.get":
+            return f"panel[{lua_literal(node['widget'])}]"
         if kind == "core.get_var":
             return f"vars[{lua_literal(self.option(node_id, 'name'))}]"
         operands = [self.input(node_id, pin, seen) for pin in spec.inputs]
@@ -312,6 +339,8 @@ class _Compiler:
         elif kind == "core.set_var":
             name = lua_literal(self.option(node_id, "name"))
             self.emit(f"vars[{name}] = {value('value')}", depth, node_id)
+        elif kind == "panel.set":
+            self.emit(f"panel[{lua_literal(node['widget'])}] = {value('value')}", depth, node_id)
         elif kind == "core.log":
             if not spec.inputs:
                 raise GraphError("Add at least one column to log.", node_id)

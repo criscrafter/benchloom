@@ -7,6 +7,7 @@ What a script sees:
     log { key = value }     append a row to the run's data.csv
     time()                  seconds since the run started
     print(...)              write to the console (and the run's console.log)
+    panel.<name>            read a front panel control, or set an indicator
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ except ImportError:  # pragma: no cover - platforms without the 5.4 build
 from . import __version__
 from .datalog import RunLog
 from .graph import Catalog, GraphError, compile_graph
+from .panel import Panel, PanelError, PanelState
 from .plugin import Device, PluginRegistry
 from .project import DeviceConfig, Project, ProjectError
 from .transports import open_transport
@@ -35,8 +37,20 @@ _STOP = "__patchbay_stop__"
 GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
 
 _BOOTSTRAP = """
-function(emit, should_stop)
+function(emit, should_stop, panel_get, panel_set)
     python = nil  -- scripts talk to Python only through the functions below
+
+    panel = setmetatable({}, {
+        __index = function(_, name)
+            local ok, result = panel_get(name)
+            if not ok then error(result, 2) end
+            return result
+        end,
+        __newindex = function(_, name, value)
+            local ok, result = panel_set(name, value)
+            if not ok then error(result, 2) end
+        end,
+    })
 
     print = function(...)
         local parts = {}
@@ -91,13 +105,16 @@ class LuaEngine:
         log_row: Callable[[dict[str, Any]], None],
         elapsed: Callable[[], float],
         stop_event: threading.Event | None = None,
+        panel: PanelState | None = None,
     ):
         self.stop_event = stop_event or threading.Event()
+        self.panel = panel or PanelState(Panel())
         self.lua = lupa.LuaRuntime(
             unpack_returned_tuples=True, register_eval=False, register_builtins=False,
             attribute_filter=_no_attributes,
         )
-        self._make_device = self.lua.eval(_BOOTSTRAP)(on_print, self.stop_event.is_set)
+        self._make_device = self.lua.eval(_BOOTSTRAP)(
+            on_print, self.stop_event.is_set, self._panel_get, self._panel_set)
         g = self.lua.globals()
         g.sleep = self._sleep
         g.time = elapsed
@@ -124,6 +141,19 @@ class LuaEngine:
             if remaining <= 0:
                 break
             time.sleep(min(remaining, 0.05))
+
+    def _panel_get(self, name):
+        try:
+            return True, self.panel.get(name)
+        except PanelError as exc:
+            return False, str(exc)
+
+    def _panel_set(self, name, value):
+        try:
+            self.panel.set(name, self._to_python(value))
+            return True, None
+        except PanelError as exc:
+            return False, str(exc)
 
     def add_device(self, name: str, device: Device) -> None:
         def call(command, *args):
@@ -178,7 +208,15 @@ def run_project(
     on_print: Callable[[str], None] = print,
     on_row: Callable[[dict[str, Any]], None] | None = None,
     stop_event: threading.Event | None = None,
+    panel_values: dict[str, Any] | None = None,
+    on_panel: Callable[[str, Any], None] | None = None,
 ) -> RunResult:
+    """Run a project's test.
+
+    ``panel_values`` holds the current values of the front panel controls; whoever
+    shows the panel may keep updating that dict while the test runs. Without it the
+    controls have their saved values. ``on_panel`` receives what the test sets.
+    """
     project = Project.load(project_dir)
     script = project.path / project.script
     if not script.is_file():
@@ -205,8 +243,17 @@ def run_project(
                 devices[name] = open_device(registry, config)
             except Exception as exc:
                 raise ScriptError(f"device '{name}' ({config.resource}): {exc}") from exc
+        try:
+            panel = PanelState(Panel.load(project.path), on_change=on_panel)
+        except PanelError as exc:
+            raise ScriptError(str(exc)) from exc
+        if panel_values is not None:  # share the caller's dict so live changes arrive
+            for name, value in panel.values.items():
+                panel_values.setdefault(name, value)
+            panel.values = panel_values
         engine = LuaEngine(
-            on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event
+            on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event,
+            panel=panel,
         )
         for name, device in devices.items():
             engine.add_device(name, device)

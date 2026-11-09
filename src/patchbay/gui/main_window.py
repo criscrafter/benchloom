@@ -17,10 +17,12 @@ from PySide6.QtWidgets import (
 
 from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
+from ..panel import Panel, PanelError
 from ..project import PROJECT_FILE, Project, ProjectError, create_project
 from .devices import DevicesPanel
 from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
+from .panel_view import PanelView
 from .plot import PlotPanel
 from .runner import RunController
 
@@ -115,17 +117,23 @@ class MainWindow(QMainWindow):
         self.console.setMaximumBlockCount(10000)
         self.console.setFont(mono_font(10))
         self.plot = PlotPanel()
+        self.panel_view = PanelView()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Console", self.console, Qt.DockWidgetArea.BottomDockWidgetArea),
+            self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
         ]
+        self.tabifyDockWidget(self._docks[1], self._docks[3])
+        self._docks[1].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
-        self.resizeDocks(self._docks[2:], [200], Qt.Orientation.Vertical)
+        self.resizeDocks(self._docks[2:3], [200], Qt.Orientation.Vertical)
 
         self.runner = RunController(self)
         self.runner.printed.connect(self._print)
         self.runner.row.connect(self.plot.add_row)
+        self.runner.panel.connect(self.panel_view.show_value)
+        self.panel_view.control_changed.connect(self.runner.send_control)
         self.runner.finished.connect(self._run_finished)
         self._last_run: Path | None = None
 
@@ -228,6 +236,14 @@ class MainWindow(QMainWindow):
     def _set_project(self, project: Project | None) -> None:
         self.project = project
         self.devices.set_project(project)
+        panel = None
+        if project is not None:
+            try:
+                panel = Panel.load(project.path)
+            except PanelError as exc:
+                QMessageBox.warning(self, "Open project", f"Could not read the front panel: {exc}")
+                panel = Panel(project.path / "panel.json")
+        self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
         self.editor.mark_error(None)
@@ -255,6 +271,7 @@ class MainWindow(QMainWindow):
                 self._load_graph()
                 self.stack.setCurrentIndex(2)
             self._remember(project.path)
+            (self._docks[3] if panel.widgets else self._docks[1]).raise_()
         self._update_actions()
 
     def _update_actions(self) -> None:
@@ -332,13 +349,16 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Open project", f"Could not read {script.name}: {exc}")
             graph = {}
-        self.graph.load(graph, Catalog(self.project, self.devices.registry))
+        self.graph.load(graph, self._catalog())
+
+    def _catalog(self) -> Catalog:
+        return Catalog(self.project, self.devices.registry, self.panel_view.panel)
 
     def _devices_changed(self) -> None:
         """Devices were added, renamed or removed: rebuild nodes against the new list."""
         if self.project and self.project.mode == "visual":
             modified = self.graph.modified
-            self.graph.load(self.graph.to_graph(), Catalog(self.project, self.devices.registry))
+            self.graph.load(self.graph.to_graph(), self._catalog())
             self.graph.modified = modified
 
     def _compile(self) -> str | None:
@@ -376,7 +396,9 @@ class MainWindow(QMainWindow):
         if self.project.mode == "visual" and self._compile() is None:
             return
         self.save()
-        self.runner.start(self.project.path)
+        self.panel_view.panel.save()  # the controls' current values become their saved values
+        self.panel_view.start_run()
+        self.runner.start(self.project.path, self.panel_view.control_values())
         self.statusBar().showMessage("Running…")
         self._update_actions()
 

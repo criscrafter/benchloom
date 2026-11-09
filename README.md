@@ -7,8 +7,8 @@ The goal is a short path from "I need to automate this" to a running setup:
 one download, no licence, no vendor runtime.
 
 **Status: early prototype.** The engine, command line and a first desktop app
-(node editor, Lua editor, device manager, live plot) work. Front panels are not
-built yet. See [docs/PLAN.md](docs/PLAN.md).
+(node editor, Lua editor, device manager, front panel, live plot) work. See
+[docs/PLAN.md](docs/PLAN.md) for what is missing.
 
 ![A visual test in Patchbay after running the example sweep](docs/images/visual.png)
 
@@ -89,7 +89,35 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 ```
 
 Besides the devices, a script has `sleep(seconds)`, `log{...}` (one row in
-`data.csv`), `time()` (seconds since start) and `print(...)`.
+`data.csv`), `time()` (seconds since start), `print(...)` and `panel` (the
+front panel, below).
+
+## A front panel
+
+![A front panel while its test runs](docs/images/panel.png)
+
+The Front panel tab holds controls you operate while a test runs and
+indicators the test updates. Tick **Edit layout**, use **Add**, then drag
+widgets into place; double-click one for its name, caption, unit and range.
+
+| Widget | Kind | In a script |
+|---|---|---|
+| Number input, switch, text input | control | `panel.target` reads the current value |
+| Button | control | `panel.stop` is `true` once after each click |
+| Value display, indicator light, bar | indicator | `panel.voltage = v` shows a value |
+| Chart | indicator | `panel.trend = v` adds a point against time |
+
+```lua
+while not panel.stop do
+    psu:set_voltage(panel.target)
+    panel.voltage = psu:measure_voltage()
+    sleep(0.1)
+end
+```
+
+In a visual test the same widgets appear as nodes under **Front panel** in the
+right-click menu. The layout is saved in the project's `panel.json`. Run from
+the command line, controls have the values they had when last run in the app.
 
 ## A plugin
 
