@@ -173,6 +173,7 @@ def run_project(
     project_dir: str | Path,
     *,
     on_print: Callable[[str], None] = print,
+    on_row: Callable[[dict[str, Any]], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> RunResult:
     project = Project.load(project_dir)
@@ -190,6 +191,11 @@ def run_project(
         run.console(text)
         on_print(text)
 
+    def log_row(values: dict[str, Any]) -> None:
+        row = run.log(values)
+        if on_row is not None:
+            on_row(row)
+
     devices: dict[str, Device] = {}
     status, error = "ok", None
     try:
@@ -199,7 +205,7 @@ def run_project(
             except Exception as exc:
                 raise ScriptError(f"device '{name}' ({config.resource}): {exc}") from exc
         engine = LuaEngine(
-            on_print=emit, log_row=run.log, elapsed=run.elapsed, stop_event=stop_event
+            on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event
         )
         for name, device in devices.items():
             engine.add_device(name, device)

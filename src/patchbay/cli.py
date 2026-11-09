@@ -1,4 +1,4 @@
-"""Command line: ``patchbay new | run | devices | describe``."""
+"""Command line: ``patchbay gui | new | run | devices | describe``."""
 
 from __future__ import annotations
 
@@ -63,6 +63,12 @@ def _describe(args) -> int:
     return 0
 
 
+def _gui(args) -> int:
+    from .gui import main as gui_main
+
+    return gui_main(args.path)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="patchbay", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -84,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     describe.add_argument("device", help="device type, e.g. demo.psu")
     describe.add_argument("--project", help="also include this project's plugins folder")
     describe.set_defaults(func=_describe)
+
+    gui = sub.add_parser("gui", help="open the desktop app")
+    gui.add_argument("path", nargs="?", help="project folder to open")
+    gui.set_defaults(func=_gui)
 
     args = parser.parse_args(argv)
     try:

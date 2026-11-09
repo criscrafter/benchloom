@@ -18,10 +18,15 @@ dependencies = [
 # backend; vendor backends (NI-VISA, Keysight IO Libraries) are picked up
 # automatically when installed but are never required.
 visa = ["pyvisa>=1.13", "pyvisa-py>=0.7"]
+# The desktop app. Optional so the engine can run headless on small machines.
+gui = ["PySide6>=6.6", "pyqtgraph>=0.13"]
 dev = ["pytest>=7"]
 
 [project.scripts]
 patchbay = "patchbay.cli:main"
+
+[project.gui-scripts]
+patchbay-gui = "patchbay.gui:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/patchbay"]

@@ -1,0 +1,25 @@
+"""The Patchbay desktop app (Qt)."""
+
+from __future__ import annotations
+
+import multiprocessing
+import sys
+
+
+def main(path: str | None = None) -> int:
+    multiprocessing.freeze_support()  # needed once the app is packaged as an .exe
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        print('The desktop app needs Qt. Install it with: pip install "patchbay[gui]"',
+              file=sys.stderr)
+        return 2
+    from .main_window import MainWindow
+
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    app.setApplicationName("Patchbay")
+    window = MainWindow()
+    window.show()
+    if path:
+        window.open_project(path)
+    return app.exec()

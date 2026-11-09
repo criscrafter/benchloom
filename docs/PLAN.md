@@ -40,8 +40,10 @@
 
 1. **Engine** (done): plugin loader, transports, Lua runner, simulated
    device, run folders, command line.
-2. **Desktop shell**: project wizard, device manager with discovery, Lua
-   editor, run/stop, console, live plot. Engine moves to a worker process.
+2. **Desktop shell** (done): project wizard, device manager with serial port
+   list and connection test, Lua editor, run/stop in a separate process,
+   console, live plot. Still to do here: automatic device discovery, a data
+   table, project templates.
 3. **Node editor**: nodes generated from plugin commands, graph runner.
 4. **Front panel designer**: widgets bound to script values and graph pins.
 5. **Device plugins**, each with a simulator:
@@ -54,3 +56,5 @@
 
 - The serial, TCP, Prologix and VISA transports have not been run against
   real hardware. Only the simulator path is covered by tests.
+- The desktop app is tested on Windows only, and its dialogs (new project,
+  add device) are covered only partly by automated tests.

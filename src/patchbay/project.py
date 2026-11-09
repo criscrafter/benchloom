@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -62,6 +63,36 @@ class Project:
         default_script = "main.lua" if mode == "lua" else "main.graph.json"
         return cls(path, meta.get("name", path.name), mode,
                    meta.get("script", default_script), devices)
+
+    def save(self) -> None:
+        """Rewrite patchbay.toml from this object (comments in the file are lost)."""
+        lines = [
+            "[project]",
+            f"name = {_toml(self.name)}",
+            f"mode = {_toml(self.mode)}",
+            f"script = {_toml(self.script)}",
+            "",
+        ]
+        for device in self.devices.values():
+            lines += [
+                f"[devices.{device.name}]",
+                f"device = {_toml(device.device)}",
+                f"resource = {_toml(device.resource)}",
+            ]
+            lines += [f"{key} = {_toml(value)}" for key, value in device.settings.items()
+                      if not isinstance(value, dict)]
+            lines.append("")
+        (self.path / PROJECT_FILE).write_text("\n".join(lines), encoding="utf-8")
+
+
+def _toml(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml(v) for v in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 _TOML = """\

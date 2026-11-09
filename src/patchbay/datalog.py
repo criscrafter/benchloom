@@ -32,8 +32,8 @@ class RunLog:
         self._console.write(text + "\n")
         self._console.flush()
 
-    def log(self, values: dict[str, Any]) -> None:
-        """Append one row to data.csv; new keys become new columns."""
+    def log(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Append one row to data.csv; new keys become new columns. Returns the row."""
         row = {"time_s": round(self.elapsed(), 3), **values}
         self.rows.append(row)
         new = [key for key in row if key not in self._columns]
@@ -47,6 +47,7 @@ class RunLog:
         else:
             with open(file, "a", newline="", encoding="utf-8") as f:
                 csv.DictWriter(f, self._columns, restval="").writerow(row)
+        return row
 
     def finish(self, status: str, error: str | None, info: dict[str, Any]) -> None:
         self._console.close()

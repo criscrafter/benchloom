@@ -6,23 +6,33 @@ either by wiring nodes together or by writing a Lua script.
 The goal is a short path from "I need to automate this" to a running setup:
 one download, no licence, no vendor runtime.
 
-**Status: early prototype.** The engine and command line work. The desktop
-app, node editor and front panels are not built yet. See [docs/PLAN.md](docs/PLAN.md).
+**Status: early prototype.** The engine, command line and a first desktop app
+(Lua editor, device manager, live plot) work. The node editor and front panels
+are not built yet. See [docs/PLAN.md](docs/PLAN.md).
+
+![The Patchbay app after running the example sweep](docs/images/app.png)
 
 ## Try it
 
 ```
 python -m venv .venv
-.venv\Scripts\pip install -e ".[dev]"        # Linux/Mac: .venv/bin/pip
-.venv\Scripts\patchbay new my-test
-.venv\Scripts\patchbay run my-test
+.venv\Scripts\pip install -e ".[gui,dev]"    # Linux/Mac: .venv/bin/pip
+.venv\Scripts\patchbay gui
 ```
 
-This creates a project with a simulated power supply and runs a voltage sweep.
-Each run gets a folder under `my-test/runs/` holding `data.csv`, `console.log`,
-`run.json` and a copy of the script.
+Choose **New project**, then press **Run** (F5). The project starts with a
+simulated power supply and a voltage sweep, so it runs without hardware. Add
+real instruments in the Devices panel; double-click a command there to insert
+it into the script.
+
+Each run gets a folder under the project's `runs/` holding `data.csv`,
+`console.log`, `run.json` and a copy of the script.
+
+The same works without the app:
 
 ```
+patchbay new my-test
+patchbay run my-test
 patchbay devices             # device types the installed plugins provide
 patchbay describe demo.psu   # commands of one device type
 ```
