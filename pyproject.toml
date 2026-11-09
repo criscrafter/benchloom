@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "patchbay"
+version = "0.0.1"
+description = "Open lab automation: wire up instruments visually or script them in Lua."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lupa>=2.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+# GPIB / USB-TMC / LAN instruments through VISA. pyvisa-py is the pure-Python
+# backend; vendor backends (NI-VISA, Keysight IO Libraries) are picked up
+# automatically when installed but are never required.
+visa = ["pyvisa>=1.13", "pyvisa-py>=0.7"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+patchbay = "patchbay.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patchbay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
