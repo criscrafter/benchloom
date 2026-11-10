@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import math
 
 import pytest
 
-from patchbay.engine import open_device
-from patchbay.plugin import CommandError, PluginRegistry
-from patchbay.plugins.hantek.dso5000p import (
+from benchloom.engine import open_device
+from benchloom.plugin import CommandError, PluginRegistry
+from benchloom.plugins.hantek.dso5000p import (
     LAYOUT_FILE, TIMEBASES, frame, parse_layout, split_frames,
 )
-from patchbay.project import DeviceConfig
-from patchbay.transports import (
+from benchloom.project import DeviceConfig
+from benchloom.transports import (
     PrologixTransport, TransportError, UsbBulkTransport, UsbTmcTransport, open_transport,
 )
 

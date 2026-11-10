@@ -1,0 +1,35 @@
+name: Instrument request
+description: Ask for support of an instrument Benchloom does not have a driver for.
+labels: [instrument]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Instrument
+      placeholder: Maker and model, for example Rigol DP832
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How it connects
+      multiple: true
+      options: [USB (serial / virtual COM port), USB (other), RS-232 / RS-485, GPIB, LAN, Other]
+    validations:
+      required: true
+  - type: input
+    id: manual
+    attributes:
+      label: Programming manual
+      description: A link to the command reference, if you have one.
+  - type: textarea
+    id: use
+    attributes:
+      label: What do you want to do with it?
+      description: The commands that matter most to you, for example set voltage, measure current.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help test?
+      options:
+        - label: I own this instrument and can try a driver on it.

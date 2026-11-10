@@ -1,13 +1,38 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "patchbay"
-version = "0.0.1"
+name = "benchloom"
+dynamic = ["version"]  # from src/benchloom/__init__.py
 description = "Open lab automation: wire up instruments visually or script them in Lua."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/benchloom/templates/LICENSE.txt"]
+authors = [{ name = "Friedrich-Christer Rosenthal" }]
+keywords = [
+    "lab automation", "test and measurement", "instrument control", "labview alternative",
+    "scpi", "gpib", "oscilloscope", "power supply", "lua", "node editor",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Education",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Lua",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: System :: Hardware",
+]
 dependencies = [
     "lupa>=2.0",
     "pyserial>=3.5",
@@ -25,14 +50,23 @@ usb = ["python-usbtmc>=0.8", "pyusb>=1.2", "libusb-package>=1.0.26"]
 gui = ["PySide6>=6.6", "pyqtgraph>=0.13"]
 dev = ["pytest>=7"]
 
+[project.urls]
+Homepage = "https://github.com/criscrafter/benchloom"
+Documentation = "https://github.com/criscrafter/benchloom#readme"
+Issues = "https://github.com/criscrafter/benchloom/issues"
+Changelog = "https://github.com/criscrafter/benchloom/blob/main/CHANGELOG.md"
+
 [project.scripts]
-patchbay = "patchbay.cli:main"
+benchloom = "benchloom.cli:main"
 
 [project.gui-scripts]
-patchbay-gui = "patchbay.gui:main"
+benchloom-gui = "benchloom.gui:main"
+
+[tool.hatch.version]
+path = "src/benchloom/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/patchbay"]
+packages = ["src/benchloom"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

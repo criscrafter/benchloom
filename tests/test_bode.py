@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 """The Bode plot: the scope's gain/phase measurement, the simulated bench and the template."""
 import math
 
 import pytest
 
-from patchbay.engine import open_device, run_project
-from patchbay.plugin import CommandError, PluginRegistry
-from patchbay.plugins.hantek.dso5000p import VOLTS_PER_DIV, fit_sine
-from patchbay.project import DeviceConfig, Project, ProjectError, create_project, templates
-from patchbay.transports import TransportError
+from benchloom.engine import open_device, run_project
+from benchloom.plugin import CommandError, PluginRegistry
+from benchloom.plugins.hantek.dso5000p import VOLTS_PER_DIV, fit_sine
+from benchloom.project import DeviceConfig, Project, ProjectError, create_project, templates
+from benchloom.transports import TransportError
 
 REGISTRY = PluginRegistry.default()
 
@@ -133,7 +135,7 @@ def test_project_keeps_its_plot_settings(tmp_path):
     project.save()
     again = Project.load(project.path)
     assert again.plot == project.plot and again.devices["gen"].resource == "serial://COM12"
-    (project.path / "patchbay.toml").write_text('plot = 1\n[project]\nname = "x"\n',
+    (project.path / "benchloom.toml").write_text('plot = 1\n[project]\nname = "x"\n',
                                                 encoding="utf-8")
     with pytest.raises(ProjectError, match=r"\[plot\] must be a table"):
         Project.load(project.path)

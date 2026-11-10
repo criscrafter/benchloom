@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import json
 import os
 import time
 
 import pytest
 
-from patchbay.engine import run_project
-from patchbay.graph import Catalog, compile_graph
-from patchbay.panel import Panel, PanelError, PanelState, Widget
-from patchbay.project import create_project
+from benchloom.engine import run_project
+from benchloom.graph import Catalog, compile_graph
+from benchloom.panel import Panel, PanelError, PanelState, Widget
+from benchloom.project import create_project
 
 
 def make_project(tmp_path, lua=None, mode="lua"):
@@ -131,7 +133,7 @@ def app():
 def open_window(tmp_path, project):
     from PySide6.QtCore import QSettings
 
-    from patchbay.gui.main_window import MainWindow
+    from benchloom.gui.main_window import MainWindow
 
     window = MainWindow(QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat))
     assert window.open_project(project.path)

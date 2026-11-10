@@ -1,15 +1,18 @@
-# Patchbay plan
+# Benchloom plan
 
 ## Goals
 
 - **Fast start.** From download to a running setup in minutes: one portable
-  download per OS, no licence, no account, no vendor runtime required.
+  download per OS, no licence fee, no account, no vendor runtime required.
 - **Two ways to write a test**, chosen when a project is created: wires
   between nodes (visual) or a Lua script.
 - **Plugins** for instruments, written in Python by anyone.
 - **Front panels** with live plots, indicators and controls.
 - Windows first; Linux and Mac supported.
-- Open source. Licence to be chosen before the first public release.
+- Open source under the AGPL-3.0; commercial licences for companies that want
+  to build it into closed products. Contributions come with a CLA (`CLA.md`)
+  so both stay possible. Project templates are MIT-0, so users' projects are
+  their own.
 
 ## Decisions
 
@@ -29,9 +32,9 @@
 | Pass/fail | `check(name, value, low, high, unit)` in Lua and a Check node; a run passes only if every check passed. The verdict is in `run.json`, the status bar and the report. |
 | Front panel | Layout in `panel.json`; widgets addressed by name. Control changes are sent to the running test's process, indicator updates come back on the event queue. A button reads true once per click. |
 | Output safety | Drivers of sources and loads switch their output off when a test ends (`Device.close`), unless the device entry says `leave_output_on = true`. |
-| Project templates | Folders under `src/patchbay/templates`: a finished project plus `template.toml` (title, description, mode). Templates start on simulators; a simulated bench (`simbench`) lets a simulated scope see a simulated generator, so a wired-up test runs without hardware. A project's `[plot]` section sets how the plot starts out. |
-| Plugin management | Plugin manager window and `patchbay plugins`: switch off, install from a folder or .zip into `~/.patchbay/plugins`, remove. Switched-off plugins and extra plugin folders live in `~/.patchbay/config.json` so runs and the command line see them too; desktop-only settings stay in QSettings. Nothing in a plugin runs at install time. |
-| Device names | Must not shadow Lua keywords, Lua's standard globals or Patchbay's own (`print`, `load`, `panel`, …). |
+| Project templates | Folders under `src/benchloom/templates`: a finished project plus `template.toml` (title, description, mode). Templates start on simulators; a simulated bench (`simbench`) lets a simulated scope see a simulated generator, so a wired-up test runs without hardware. A project's `[plot]` section sets how the plot starts out. |
+| Plugin management | Plugin manager window and `benchloom plugins`: switch off, install from a folder or .zip into `~/.benchloom/plugins`, remove. Switched-off plugins and extra plugin folders live in `~/.benchloom/config.json` so runs and the command line see them too; desktop-only settings stay in QSettings. Nothing in a plugin runs at install time. |
+| Device names | Must not shadow Lua keywords, Lua's standard globals or Benchloom's own (`print`, `load`, `panel`, …). |
 | Timing | No hard timing needs now. The engine stays separate from the UI so a tighter runner can replace it later. |
 
 ## Open design questions

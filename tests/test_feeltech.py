@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import pytest
 
-from patchbay.engine import open_device
-from patchbay.plugin import CommandError, PluginRegistry
-from patchbay.plugins.feeltech.fy6900 import WAVEFORMS, settable_hz
-from patchbay.project import DeviceConfig
+from benchloom.engine import open_device
+from benchloom.plugin import CommandError, PluginRegistry
+from benchloom.plugins.feeltech.fy6900 import WAVEFORMS, settable_hz
+from benchloom.project import DeviceConfig
 
 REGISTRY = PluginRegistry.default()
 
@@ -96,7 +98,7 @@ def test_unknown_model_is_refused():
 
 
 def test_serial_transport_configure():
-    from patchbay.transports import SerialTransport
+    from benchloom.transports import SerialTransport
 
     port = SerialTransport("COM99", baud=9600)
     port.configure(baud=115200, stopbits=2, parity="n")

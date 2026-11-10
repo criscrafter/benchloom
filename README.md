@@ -1,24 +1,44 @@
-# Patchbay
+# Benchloom
 
-Open lab automation. Connect instruments through plugins, then build a test
-either by wiring nodes together or by writing a Lua script.
+[![Tests](https://github.com/criscrafter/benchloom/actions/workflows/tests.yml/badge.svg)](https://github.com/criscrafter/benchloom/actions/workflows/tests.yml)
+[![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue)](LICENSE)
 
-The goal is a short path from "I need to automate this" to a running setup:
-one download, no licence, no vendor runtime.
+Open-source lab automation: an alternative to LabVIEW for small labs, makers
+and test benches. Connect your instruments (power supplies, loads, scopes,
+generators, meters) and build a test either by wiring nodes together or by
+writing a Lua script. Each run leaves its data, waveform images and a
+PASS/FAIL report behind.
 
-**Status: early prototype.** The engine, command line and a first desktop app
-(node editor, Lua editor, device manager, front panel, live plot) work. See
-[docs/PLAN.md](docs/PLAN.md) for what is missing.
+The goal is a short path from "I need to automate this" to a running setup,
+without licence fees, accounts or a vendor runtime.
 
-![A visual test in Patchbay after running the example sweep](docs/images/visual.png)
+![Benchloom running a Bode plot of an RC filter](docs/images/app.png)
+
+> **Status: early (0.1).** Benchloom works and is used on a real bench, but it
+> is young: it has been tested on Windows 10 only so far, and interfaces may
+> still change. See [docs/PLAN.md](docs/PLAN.md) for what is missing.
+
+> **Safety:** Benchloom switches real power supplies, loads and generators.
+> A wrong script can apply a wrong voltage or current to your circuit. Set
+> current limits on the instruments themselves, try new tests on the
+> simulators first, and stay near the bench the first time a test runs.
+> Drivers switch outputs off when a test ends or is stopped (not when a hung
+> driver has to be killed), but that cannot replace a hardware limit.
 
 ## Try it
 
+You need Python 3.11 or newer.
+
 ```
+git clone https://github.com/criscrafter/benchloom
+cd benchloom
 python -m venv .venv
-.venv\Scripts\pip install -e ".[gui,dev]"    # Linux/Mac: .venv/bin/pip
-.venv\Scripts\patchbay gui
+.venv\Scripts\pip install -e ".[gui]"    # Linux/Mac: .venv/bin/pip
+.venv\Scripts\benchloom gui
 ```
+
+Add `usb` (`".[gui,usb]"`) for USB instruments such as the Hantek scope, and
+`visa` for VISA instruments.
 
 Choose **New project**, pick **Visual** or **Lua script**, then press **Run**
 (F5). The project starts with a simulated power supply and a voltage sweep, so
@@ -47,17 +67,17 @@ devices, the data table and the console. **Report** in the toolbar opens it.
 The same works without the app:
 
 ```
-patchbay new my-test
-patchbay new my-filter --template bode
-patchbay run my-test
-patchbay devices             # device types the installed plugins provide
-patchbay describe demo.psu   # commands of one device type
-patchbay plugins             # plugins found, and whether they are on
+benchloom new my-test
+benchloom new my-filter --template bode
+benchloom run my-test
+benchloom devices             # device types the installed plugins provide
+benchloom describe demo.psu   # commands of one device type
+benchloom plugins             # plugins found, and whether they are on
 ```
 
 ## A project
 
-`patchbay.toml` lists the instruments; the entry name is the name in the test.
+`benchloom.toml` lists the instruments; the entry name is the name in the test.
 
 ```toml
 [project]
@@ -82,9 +102,11 @@ hide = ["time_s"]     # columns not drawn
 | `serial://COM3?baud=9600` | serial port (`serial:///dev/ttyUSB0` on Linux) |
 | `tcp://192.168.1.20:5025` | raw socket |
 | `prologix://COM4/5` | GPIB address 5 through a Prologix or AR488 adapter |
-| `visa://GPIB0::5::INSTR` | any VISA resource, including vendor GPIB adapters (`pip install "patchbay[visa]"`) |
+| `visa://GPIB0::5::INSTR` | any VISA resource, including vendor GPIB adapters (`pip install "benchloom[visa]"`) |
 
 ## A visual test
+
+![The visual example: a voltage sweep built from nodes](docs/images/visual.png)
 
 Nodes are connected by two kinds of wire:
 
@@ -131,6 +153,8 @@ front panel, below), and:
   is on. PNG images need the desktop app installed; the SVG images are always
   made. Visual tests have a **Save waveform** node.
 
+![Saved waveforms of a Bode sweep, input and output of an RC filter](docs/images/waveforms.png)
+
 ```lua
 local v = psu:measure_voltage()
 check("Output voltage", v, 4.9, 5.1, "V")
@@ -140,8 +164,11 @@ save_waveform("output", { output = scope:read_waveform(2) })
 The plot draws every logged column live, against the column chosen as X axis
 (time by default). Columns of very different size, such as 230 V and 10 W, can
 go on a second scale under **Right axis**, **Columns** hides curves, and
-**Log X** puts the X axis on a log scale. A project's `[plot]` section sets how the plot starts out; changes
-made in the plot are kept per project.
+**Log X** puts the X axis on a log scale. A project's `[plot]` section sets
+how the plot starts out; changes made in the plot are kept per project.
+
+Lua scripts have Lua's whole standard library, including file access, so treat
+a project from someone else like a program: read it before running it.
 
 **Theme** in the toolbar switches between light, dark and the system setting.
 **Settings** (Ctrl+,) also holds the projects folder, editor and console font
@@ -179,52 +206,53 @@ the command line, controls have the values they had when last run in the app.
 
 ## Instruments
 
-| Instrument | Device type | Connection |
-|---|---|---|
-| Kunkin KP184 electronic load | `kunkin.kp184` | serial (RS-232/RS-485) |
-| HP 6655A power supply | `hp.6655a` | GPIB |
-| HP 3478A multimeter | `hp.3478a` | GPIB |
-| HP 53131A universal counter | `hp.53131a` | GPIB |
-| Chroma 6404 AC source | `chroma.6404` | GPIB or serial |
-| Hantek DSO5102P oscilloscope | `hantek.dso5000p` | USB |
-| Feeltech FY6900 function generator | `feeltech.fy6900` | USB serial |
-| Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA |
-| Arduino and other line-based serial devices | `generic.serial` | serial, network |
+| Instrument | Device type | Connection | Tried on hardware |
+|---|---|---|---|
+| Kunkin KP184 electronic load | `kunkin.kp184` | serial (RS-232/RS-485) | yes |
+| Chroma 6404 AC source | `chroma.6404` | GPIB or serial | yes (serial) |
+| Hantek DSO5102P oscilloscope | `hantek.dso5000p` | USB | yes |
+| Feeltech FY6900 function generator | `feeltech.fy6900` | USB serial | yes |
+| HP 6655A power supply | `hp.6655a` | GPIB | not yet (from the manual) |
+| HP 3478A multimeter | `hp.3478a` | GPIB | not yet (from the manual) |
+| HP 53131A universal counter | `hp.53131a` | GPIB | not yet (from the manual) |
+| Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA | – |
+| Arduino and other line-based serial devices | `generic.serial` | serial, network | – |
 
 GPIB works through the xyphro UsbGpib adapter without a vendor VISA, or
 through a Prologix/AR488 adapter or a VISA.
 
-Each comes with a simulator. The KP184, Chroma 6404, Hantek and Feeltech drivers
-have been tried on real hardware; the HP drivers not yet; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
-and the documentation each driver is based on. Sources and loads switch their
+Each comes with a simulator. [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has
+connection settings, options, what exactly was tried on hardware, and the
+documentation each driver is based on. Missing your instrument? Open an
+issue, or write a plugin (below). Sources and loads switch their
 output off when a test ends, unless the device entry says
 `leave_output_on = true`.
 
 ## A plugin
 
 A plugin is a folder with a `plugin.toml` and Python files.
-[src/patchbay/plugins/demo](src/patchbay/plugins/demo) is the reference example.
+[src/benchloom/plugins/demo](src/benchloom/plugins/demo) is the reference example.
 
 **Plugins** in the toolbar lists every plugin found, with its devices. There a
 plugin can be switched off (its devices leave the Add device list and runs
 refuse them), installed from a folder or a `.zip`, or removed (to the recycle
-bin). Installed plugins go to `~/.patchbay/plugins/`. The same from the command
+bin). Installed plugins go to `~/.benchloom/plugins/`. The same from the command
 line:
 
 ```
-patchbay plugins install my-plugin.zip   # or a folder; --replace to update
-patchbay plugins disable hp              # enable, remove
+benchloom plugins install my-plugin.zip   # or a folder; --replace to update
+benchloom plugins disable hp              # enable, remove
 ```
 
-Plugins are loaded from, in order: the built-in ones, `~/.patchbay/plugins/`,
+Plugins are loaded from, in order: the built-in ones, `~/.benchloom/plugins/`,
 the extra folders set in Settings, and the project's own `plugins/` folder. A
 later plugin with the same id replaces an earlier one, so a project can carry
 its own copy of a driver. Which plugins are off and the extra folders are kept
-in `~/.patchbay/config.json`; set `PATCHBAY_HOME` to use another folder than
-`~/.patchbay`.
+in `~/.benchloom/config.json`; set `BENCHLOOM_HOME` to use another folder than
+`~/.benchloom`.
 
 ```python
-from patchbay import Param, ScpiDevice, command
+from benchloom import Param, ScpiDevice, command
 
 class MyPsu(ScpiDevice):
     @command("Set the output voltage", params={"volts": Param(unit="V", min=0, max=20)})
@@ -262,5 +290,34 @@ install ones you trust.
 ## Tests
 
 ```
+.venv\Scripts\pip install -e ".[gui,dev]"
 .venv\Scripts\pytest
 ```
+
+The tests use the instruments' simulators, so they need no hardware.
+
+## Contributing
+
+Bug reports, instrument drivers and fixes are welcome; see
+[CONTRIBUTING.md](CONTRIBUTING.md). Pull requests need agreement to the
+[Contributor License Agreement](CLA.md). Security problems: see
+[SECURITY.md](SECURITY.md).
+
+## Licence
+
+Benchloom is free software under the **GNU Affero General Public License 3.0**
+or later ([LICENSE](LICENSE)). You may use it, also commercially, change it and
+pass it on; if you pass on a changed version, or let others use one over a
+network, you must make its source available under the same licence.
+
+- **Your tests and projects are yours.** The project templates and the example
+  a new project starts with are under MIT-0
+  ([src/benchloom/templates/LICENSE.txt](src/benchloom/templates/LICENSE.txt)).
+- **Commercial licences** are available for companies that want to build
+  Benchloom into a closed product, or keep changes to it private. Contact the
+  maintainer through [GitHub](https://github.com/criscrafter).
+- Code by others that Benchloom contains or uses is listed in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Benchloom was called "Patchbay" during its development. Projects with a
+`patchbay.toml` and the `~/.patchbay` folder from that time keep working.

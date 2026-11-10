@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import os
 
 import pytest
@@ -9,12 +11,12 @@ pytest.importorskip("pyqtgraph")
 from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from patchbay.gui.editor import is_dark  # noqa: E402
-from patchbay.gui.main_window import MainWindow  # noqa: E402
-from patchbay.gui.plot import PlotPanel  # noqa: E402
-from patchbay.gui import theme  # noqa: E402
-from patchbay.gui.theme import apply_theme  # noqa: E402
-from patchbay.project import create_project  # noqa: E402
+from benchloom.gui.editor import is_dark  # noqa: E402
+from benchloom.gui.main_window import MainWindow  # noqa: E402
+from benchloom.gui.plot import PlotPanel  # noqa: E402
+from benchloom.gui import theme  # noqa: E402
+from benchloom.gui.theme import apply_theme  # noqa: E402
+from benchloom.project import create_project  # noqa: E402
 
 
 @pytest.fixture(scope="module")

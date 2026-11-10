@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import json
 
 import pytest
 
-from patchbay.engine import run_project
-from patchbay.graph import Catalog, GraphError, compile_graph, example_graph, lua_literal
-from patchbay.project import create_project
+from benchloom.engine import run_project
+from benchloom.graph import Catalog, GraphError, compile_graph, example_graph, lua_literal
+from benchloom.project import create_project
 
 
 def node(node_id, kind, **extra):

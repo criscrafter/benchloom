@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import json
 import os
 import time
@@ -11,10 +13,10 @@ pytest.importorskip("pyqtgraph")
 from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from patchbay.graph import Catalog, example_graph  # noqa: E402
-from patchbay.gui.graph_editor import GraphEditor, WireItem, parse_value  # noqa: E402
-from patchbay.gui.main_window import MainWindow  # noqa: E402
-from patchbay.project import Project, create_project  # noqa: E402
+from benchloom.graph import Catalog, example_graph  # noqa: E402
+from benchloom.gui.graph_editor import GraphEditor, WireItem, parse_value  # noqa: E402
+from benchloom.gui.main_window import MainWindow  # noqa: E402
+from benchloom.project import Project, create_project  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -101,7 +103,7 @@ def test_build_a_test_by_hand(app, window):
     window.run()
     status, error, _ = wait_for_run(app, window)
     assert status == "ok", error
-    assert "Patchbay,Demo PSU" in window.console.toPlainText()
+    assert "Benchloom,Demo PSU" in window.console.toPlainText()
     saved = json.loads((window.project.path / "main.graph.json").read_text())
     assert len(saved["nodes"]) == 3 and len(saved["wires"]) == 2
 
@@ -233,7 +235,7 @@ def test_paste_ignores_other_clipboard_text(app, tmp_path):
 
 
 def test_check_and_save_waveform_nodes_compile(app, tmp_path):
-    from patchbay.graph import compile_graph
+    from benchloom.graph import compile_graph
 
     project = create_project(tmp_path / "proj", "visual")
     graph = {"nodes": [

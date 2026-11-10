@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import math
 
 import pytest
 
-from patchbay.engine import open_device, run_project
-from patchbay.modbus import crc16, crc_ok, with_crc
-from patchbay.plugin import CommandError, PluginRegistry
-from patchbay.plugins.kunkin.simulator import KP184Sim
-from patchbay.transports import RawSimTransport
-from patchbay.project import DeviceConfig, Project, create_project
+from benchloom.engine import open_device, run_project
+from benchloom.modbus import crc16, crc_ok, with_crc
+from benchloom.plugin import CommandError, PluginRegistry
+from benchloom.plugins.kunkin.simulator import KP184Sim
+from benchloom.transports import RawSimTransport
+from benchloom.project import DeviceConfig, Project, create_project
 
 REGISTRY = PluginRegistry.default()
 
@@ -118,7 +120,7 @@ class Rs485Bus(RawSimTransport):
 
 
 def test_two_kp184s_share_one_rs485_port(tmp_path, monkeypatch):
-    import patchbay.engine as engine
+    import benchloom.engine as engine
 
     monkeypatch.setattr(engine, "open_transport", lambda resource, simulator=None: Rs485Bus())
     Rs485Bus.opened.clear()
@@ -144,7 +146,7 @@ def test_two_kp184s_share_one_rs485_port(tmp_path, monkeypatch):
 
 
 def test_devices_on_one_port_need_the_same_settings(tmp_path, monkeypatch):
-    import patchbay.engine as engine
+    import benchloom.engine as engine
 
     monkeypatch.setattr(engine, "open_transport", lambda resource, simulator=None: Rs485Bus())
     project = create_project(tmp_path / "bus")
@@ -251,7 +253,7 @@ def test_6655a_close_switches_output_off():
 
 # --- HP 3478A --------------------------------------------------------------------------
 def test_3478a_reading_format():
-    from patchbay_plugin_hp.hp3478a import format_reading  # loaded by the registry
+    from benchloom_plugin_hp.hp3478a import format_reading  # loaded by the registry
 
     assert format_reading(5.00123) == "+5.00123E+0"
     assert format_reading(12.3456) == "+12.3456E+0"
@@ -405,13 +407,13 @@ def test_bench_project_with_every_instrument(tmp_path):
 
 
 def test_reserved_device_names_are_refused(tmp_path):
-    from patchbay.project import ProjectError, device_name_problem
+    from benchloom.project import ProjectError, device_name_problem
 
     for name in ("load", "print", "math", "panel", "sleep", "end", "_x", "2psu"):
         assert device_name_problem(name), name
     assert device_name_problem("eload") is None
     project = create_project(tmp_path / "proj")
-    (project.path / "patchbay.toml").write_text(
+    (project.path / "benchloom.toml").write_text(
         '[devices.print]\ndevice = "demo.psu"\n', encoding="utf-8")
     with pytest.raises(ProjectError, match="reserved"):
         Project.load(project.path)

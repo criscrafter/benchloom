@@ -27,8 +27,8 @@ not react to Stop within three seconds) cannot do this.
 - **RS-485:** use a USB-RS485 adapter on the load's A/B terminals. The protocol
   is the same as on RS-232.
   - **Several loads on one adapter:** give each load its own address on its
-    front panel. In Patchbay, add one device per load with the same port and
-    baud rate and that load's address. Patchbay opens the port once and the
+    front panel. In Benchloom, add one device per load with the same port and
+    baud rate and that load's address. Benchloom opens the port once and the
     loads share it.
   - **Echoing adapters:** some adapters hear their own transmission and pass it
     back before the reply. The driver recognises and skips that echo, so no
@@ -79,19 +79,19 @@ not react to Stop within three seconds) cannot do this.
     load in its battery test (display shows Ah). While that is active, CV is
     acknowledged but not taken. `set_mode` reads the mode back and reports this.
 - **CH340 adapters on Windows** refuse to reopen a port with the settings it was
-  last closed with. Patchbay works around it, so no setting is needed.
+  last closed with. Benchloom works around it, so no setting is needed.
 
 ## GPIB through the xyphro UsbGpib adapter
 
 [UsbGpib](https://github.com/xyphro/UsbGpib) turns one GPIB instrument into a
-USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
+USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 
 - **Connection:** "USB instrument or UsbGpib adapter" in the Add device dialog,
   or `resource = "usbtmc://03EB:2065"`. That is the first adapter found; add
   `/<serial>` to pick one. `usbgpib://` is the same, shorter. The adapter only
   appears on USB while a powered instrument is connected to it.
 - **Once per PC (Windows):**
-  1. Run `pip install "patchbay[usb]"` (pyusb, python-usbtmc and the libusb
+  1. Run `pip install "benchloom[usb]"` (pyusb, python-usbtmc and the libusb
      library).
   2. With the instrument switched on, use [Zadig](https://zadig.akeo.ie/) to
      install the WinUSB driver for the adapter (USB ID 03EB 2065). Zadig is a
@@ -100,10 +100,10 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   VISA), use `visa://USB0::0x03EB::0x2065::<serial>::INSTR` instead.
 - **Instruments without `*IDN?`** (the HP 3478A): the adapter asks every
   instrument `*IDN?` at power-up. Turn that off once with
-  `patchbay usbgpib "!autoid off"`. `patchbay usbgpib` with no command lists
+  `benchloom usbgpib "!autoid off"`. `benchloom usbgpib` with no command lists
   the adapters.
 - **One instrument per adapter.** The adapter can address several GPIB
-  instruments, but Patchbay does not switch between them yet.
+  instruments, but Benchloom does not switch between them yet.
 - **Not tried on hardware.** The transport is tested against a stand-in for the
   USBTMC library only.
 
@@ -225,7 +225,7 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
 - **Connection:** USB, `resource = "usb://049F:505A"`, which the Add device
   dialog fills in. The scope uses its own protocol, not SCPI.
 - **Once per PC (Windows):**
-  1. Run `pip install "patchbay[usb]"`.
+  1. Run `pip install "benchloom[usb]"`.
   2. Use [Zadig](https://zadig.akeo.ie/) to replace Hantek's driver with
      WinUSB for the scope. In Zadig, choose Options → List All Devices; the
      scope is listed as **"Gadget Serial v2.4"** (USB ID 049F 505A), while
@@ -434,5 +434,5 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   [mattwach/fygen](https://github.com/mattwach/fygen) (waveform numbers from its
   `wavedef.py`), [katzenjens/fy6900commander](https://github.com/katzenjens/fy6900commander),
   [tspspi/pyfy6900](https://github.com/tspspi/pyfy6900), an EEVblog post on the
-  FY6600/FY6800 serial interface, and FD-Cluster-Tester, all checked on the real
+  FY6600/FY6800 serial interface, and an earlier test program by the author, all checked on the real
   generator. No code was copied from them.

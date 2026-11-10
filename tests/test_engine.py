@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import csv
 import json
 import threading
 
 import pytest
 
-from patchbay.engine import run_project
-from patchbay.plugin import PluginRegistry
-from patchbay.project import create_project
-from patchbay.transports import TransportError, parse_resource, prologix_escape
+from benchloom.engine import run_project
+from benchloom.plugin import PluginRegistry
+from benchloom.project import create_project
+from benchloom.transports import TransportError, parse_resource, prologix_escape
 
 
 def make(tmp_path, lua=None):
@@ -35,7 +37,7 @@ def test_builtin_plugins_are_discovered():
 def test_example_project_runs_and_logs(tmp_path):
     result, lines = run(make(tmp_path))
     assert result.status == "ok", result.error
-    assert lines[0].startswith("Connected to Patchbay,Demo PSU")
+    assert lines[0].startswith("Connected to Benchloom,Demo PSU")
     with open(result.path / "data.csv", newline="") as f:
         rows = list(csv.DictReader(f))
     assert len(rows) == 10

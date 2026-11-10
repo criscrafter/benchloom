@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 """Pass/fail checks, saved waveforms, the run report and the SVG charts."""
 import importlib.util
 import json
@@ -5,11 +7,11 @@ import math
 
 import pytest
 
-from patchbay.datalog import evaluate
-from patchbay.engine import run_project
-from patchbay.panel import format_value
-from patchbay.project import create_project
-from patchbay.svgplot import Series, chart, describe, nice_ticks, si, waveform_svg
+from benchloom.datalog import evaluate
+from benchloom.engine import run_project
+from benchloom.panel import format_value
+from benchloom.project import create_project
+from benchloom.svgplot import Series, chart, describe, nice_ticks, si, waveform_svg
 
 
 def run_lua(tmp_path, code, **kwargs):

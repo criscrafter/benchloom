@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Steps, or a small project (zip the project folder without its runs/).
+  - type: textarea
+    id: log
+    attributes:
+      label: Console output
+      description: From the Console, or the run folder's console.log. Error messages are most helpful.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Benchloom version
+      description: "`pip show benchloom`, or the version at the top of a run's report.html"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and Python version
+      placeholder: Windows 11, Python 3.12
+    validations:
+      required: true
+  - type: input
+    id: instruments
+    attributes:
+      label: Instruments involved
+      description: Model, and how it is connected (serial, USB, GPIB adapter, LAN).

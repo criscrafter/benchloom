@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import os
 import zipfile
 
 import pytest
 
-from patchbay import plugin_install
-from patchbay.cli import main as cli
-from patchbay.config import AppConfig, user_plugin_dir
-from patchbay.plugin import PluginError, PluginRegistry
-from patchbay.project import DeviceConfig, create_project
+from benchloom import plugin_install
+from benchloom.cli import main as cli
+from benchloom.config import AppConfig, user_plugin_dir
+from benchloom.plugin import PluginError, PluginRegistry
+from benchloom.project import DeviceConfig, create_project
 
 MANIFEST = """[plugin]
 id = "{id}"
@@ -21,7 +23,7 @@ driver = "meter:Meter"
 transports = ["sim"]
 """
 
-DRIVER = """from patchbay.plugin import Device, command
+DRIVER = """from benchloom.plugin import Device, command
 
 
 class Meter(Device):
@@ -47,8 +49,8 @@ def zip_folder(folder, archive, prefix=""):
 
 
 # --- config and registry ----------------------------------------------------------
-def test_config_round_trip_keeps_unknown_keys(patchbay_home):
-    (patchbay_home / "config.json").write_text('{"future": 1, "disabled_plugins": ["x"]}')
+def test_config_round_trip_keeps_unknown_keys(benchloom_home):
+    (benchloom_home / "config.json").write_text('{"future": 1, "disabled_plugins": ["x"]}')
     config = AppConfig.load()
     assert config.disabled_plugins == ["x"]
     config.set_enabled("x", True)
@@ -58,8 +60,8 @@ def test_config_round_trip_keeps_unknown_keys(patchbay_home):
     assert again.disabled_plugins == ["hp"] and again._other == {"future": 1}
 
 
-def test_broken_config_is_ignored(patchbay_home):
-    (patchbay_home / "config.json").write_text("not json")
+def test_broken_config_is_ignored(benchloom_home):
+    (benchloom_home / "config.json").write_text("not json")
     assert AppConfig.load().disabled_plugins == []
 
 
@@ -166,10 +168,10 @@ def test_cli_plugins(tmp_path, capsys):
 
 def test_run_sees_disabled_plugins(tmp_path):
     """Runs read the same config, so a switched-off plugin cannot be used by a test."""
-    from patchbay.engine import run_project
+    from benchloom.engine import run_project
 
     project = create_project(tmp_path / "proj")
     AppConfig(disabled_plugins=["demo"]).save()
     result = run_project(project.path)
     assert result.status == "error" and "switched off" in result.error
-    assert os.environ["PATCHBAY_HOME"]
+    assert os.environ["BENCHLOOM_HOME"]

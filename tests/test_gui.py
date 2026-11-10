@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Friedrich-Christer Rosenthal
 import os
 import time
 
@@ -10,10 +12,10 @@ pytest.importorskip("pyqtgraph")
 from PySide6.QtCore import QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from patchbay.gui.devices import DeviceDialog  # noqa: E402
-from patchbay.gui.main_window import MainWindow  # noqa: E402
-from patchbay.plugin import PluginRegistry  # noqa: E402
-from patchbay.project import DeviceConfig, Project, create_project  # noqa: E402
+from benchloom.gui.devices import DeviceDialog  # noqa: E402
+from benchloom.gui.main_window import MainWindow  # noqa: E402
+from benchloom.plugin import PluginRegistry  # noqa: E402
+from benchloom.project import DeviceConfig, Project, create_project  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -137,9 +139,9 @@ def test_device_dialog_shows_the_settings_a_plugin_declares(app):
 
 # --- plugin manager and settings ------------------------------------------------------
 def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeypatch):
-    from patchbay.config import AppConfig, user_plugin_dir
-    from patchbay.gui import plugins as plugins_module
-    from patchbay.gui.plugins import PluginManagerDialog
+    from benchloom.config import AppConfig, user_plugin_dir
+    from benchloom.gui import plugins as plugins_module
+    from benchloom.gui.plugins import PluginManagerDialog
 
     project = create_project(tmp_path / "proj")
     window = make_window(tmp_path)
@@ -170,7 +172,7 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
         '[plugin]\nid = "acme"\nname = "Acme"\n\n[[device]]\nid = "meter"\n'
         'driver = "meter:Meter"\n', encoding="utf-8")
     (source / "meter.py").write_text(
-        "from patchbay.plugin import Device\nclass Meter(Device):\n    pass\n")
+        "from benchloom.plugin import Device\nclass Meter(Device):\n    pass\n")
     installed = dialog.install(source, confirm=False)
     assert installed.path.parent == user_plugin_dir()
     assert dialog.selected().id == "acme" and dialog.remove_button.isEnabled()
@@ -191,8 +193,8 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
 
 
 def test_settings_dialog_saves_and_applies(app, tmp_path):
-    from patchbay.config import AppConfig
-    from patchbay.gui.settings import SettingsDialog
+    from benchloom.config import AppConfig
+    from benchloom.gui.settings import SettingsDialog
 
     window = make_window(tmp_path)
     dialog = SettingsDialog(window.prefs, window)
@@ -236,7 +238,7 @@ def test_device_dialog_offers_the_fixed_baud_rate(app):
 
 
 def test_new_project_dialog_offers_templates(app, tmp_path):
-    from patchbay.gui.main_window import NewProjectDialog
+    from benchloom.gui.main_window import NewProjectDialog
 
     dialog = NewProjectDialog(location=tmp_path)
     assert [dialog.template_combo.itemData(i) for i in range(dialog.template_combo.count())] \
@@ -279,8 +281,8 @@ def test_bode_project_plots_on_a_log_scale(app, tmp_path):
 def test_numbers_on_the_front_panel_drop_trailing_zeros(app):
     from PySide6.QtCore import QLocale
 
-    from patchbay.gui.panel_view import NumberBox, PanelView, WidgetDialog, format_number
-    from patchbay.panel import Panel, Widget
+    from benchloom.gui.panel_view import NumberBox, PanelView, WidgetDialog, format_number
+    from benchloom.panel import Panel, Widget
 
     QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
     try:
@@ -312,7 +314,7 @@ def test_numbers_on_the_front_panel_drop_trailing_zeros(app):
 
 
 def test_plot_columns_menu_hides_curves(app):
-    from patchbay.gui.plot import PlotPanel
+    from benchloom.gui.plot import PlotPanel
 
     plot = PlotPanel()
     for n in range(3):
