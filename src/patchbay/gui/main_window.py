@@ -25,23 +25,21 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .plugins import PluginManagerDialog
 from .runner import RunController
+from .settings import GuiSettings, SettingsDialog, default_projects_dir  # noqa: F401
 from .theme import THEMES, apply_theme
 
 MAX_RECENT = 8
 
 
-def default_projects_dir() -> Path:
-    return Path.home() / "Documents" / "Patchbay"
-
-
 class NewProjectDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, location: Path | None = None):
         super().__init__(parent)
         self.setWindowTitle("New project")
         self.setMinimumWidth(480)
         self.name_edit = QLineEdit("my-test")
-        self.location_edit = QLineEdit(str(default_projects_dir()))
+        self.location_edit = QLineEdit(str(location or default_projects_dir()))
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
         location = QHBoxLayout()
@@ -100,6 +98,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.project: Project | None = None
         self.settings = settings or QSettings("Patchbay", "Patchbay")
+        self.prefs = GuiSettings(self.settings)
         self.resize(1280, 800)
         apply_theme(self.theme())
         QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_theme_changed)
@@ -118,8 +117,6 @@ class MainWindow(QMainWindow):
         self.devices.command_activated.connect(self._command_activated)
         self.devices.changed.connect(self._devices_changed)
         self.console = QPlainTextEdit(readOnly=True)
-        self.console.setMaximumBlockCount(10000)
-        self.console.setFont(mono_font(10))
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
         self.panel_view = PanelView()
@@ -143,6 +140,7 @@ class MainWindow(QMainWindow):
         self._last_run: Path | None = None
 
         self._build_actions()
+        self.apply_preferences()
         self._set_project(None)
 
     # --- construction -----------------------------------------------------
@@ -216,6 +214,9 @@ class MainWindow(QMainWindow):
         self.stop_action = action("■ Stop", self.stop, "Shift+F5")
         self.runs_action = action("Show run folder", self.show_run_folder)
         self.lua_action = action("View as Lua", self.view_lua)
+        self.plugins_action = action("Plugins", self.open_plugin_manager)
+        self.plugins_action.setToolTip("See, switch off, install and remove plugins")
+        self.settings_action = action("Settings", self.open_settings, "Ctrl+,")
 
         toolbar = QToolBar("Main")
         toolbar.setObjectName("Main")
@@ -229,13 +230,14 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
+        toolbar.addAction(self.plugins_action)
+        toolbar.addAction(self.settings_action)
         toolbar.addWidget(self._build_theme_button())
         self.addToolBar(toolbar)
 
     # --- theme ------------------------------------------------------------
     def theme(self) -> str:
-        theme = str(self.settings.value("theme", "system"))
-        return theme if theme in THEMES else "system"
+        return self.prefs.get("theme")
 
     def _build_theme_button(self) -> QToolButton:
         menu = QMenu(self)
@@ -255,9 +257,37 @@ class MainWindow(QMainWindow):
         return button
 
     def set_theme(self, theme: str) -> None:
-        self.settings.setValue("theme", theme)
+        self.prefs.set("theme", theme)
         self.theme_actions[theme].setChecked(True)
         apply_theme(theme)
+
+    # --- settings and plugins -----------------------------------------------
+    def apply_preferences(self) -> None:
+        self.editor.set_font_size(self.prefs.get("editor_font_size"))
+        self.console.setFont(mono_font(self.prefs.get("console_font_size")))
+        self.console.setMaximumBlockCount(self.prefs.get("console_lines"))
+
+    def open_settings(self) -> bool:
+        dialog = SettingsDialog(self.prefs, self)
+        if not dialog.exec():
+            return False
+        self.set_theme(self.theme())
+        self.apply_preferences()
+        if dialog.plugin_folders_changed:
+            self.reload_plugins()
+        return True
+
+    def open_plugin_manager(self) -> None:
+        dialog = PluginManagerDialog(self.project.path if self.project else None, self)
+        dialog.exec()
+        if dialog.changed:
+            self.reload_plugins()
+
+    def reload_plugins(self) -> None:
+        """Plugins changed: rebuild the device list and the node catalog."""
+        if self.project is not None:
+            self.devices.set_project(self.project)
+            self._devices_changed()
 
     def _system_theme_changed(self, *_) -> None:
         if self.theme() == "system":
@@ -335,6 +365,7 @@ class MainWindow(QMainWindow):
         self.new_action.setEnabled(not running)
         self.open_action.setEnabled(not running)
         self.devices.setEnabled(not running)
+        self.plugins_action.setEnabled(not running)
 
     def _keep_changes(self) -> bool:
         """Offer to save unsaved edits. False means the user cancelled."""
@@ -350,7 +381,7 @@ class MainWindow(QMainWindow):
         return answer != QMessageBox.StandardButton.Cancel
 
     def new_project(self) -> None:
-        dialog = NewProjectDialog(self)
+        dialog = NewProjectDialog(self, self.prefs.projects_dir())
         if dialog.exec() and self._keep_changes():
             try:
                 self._set_project(create_project(dialog.path(), dialog.mode()))
@@ -358,7 +389,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "New project", str(exc))
 
     def open_project_dialog(self) -> None:
-        start = str(self.project.path.parent if self.project else default_projects_dir())
+        start = str(self.project.path.parent if self.project else self.prefs.projects_dir())
         folder = QFileDialog.getExistingDirectory(self, "Open project folder", start)
         if folder:
             self.open_project(folder)

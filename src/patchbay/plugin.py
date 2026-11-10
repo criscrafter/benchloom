@@ -20,8 +20,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .config import AppConfig, user_plugin_dir
+
 BUILTIN_PLUGIN_DIR = Path(__file__).parent / "plugins"
-USER_PLUGIN_DIR = Path.home() / ".patchbay" / "plugins"
+
+# where a plugin was found, as shown in the plugin manager
+SOURCES = {"built-in": "Built-in", "user": "Installed", "folder": "Plugin folder",
+           "project": "This project"}
 
 _TYPE_NAMES = {
     float: "number",
@@ -227,6 +232,7 @@ class PluginInfo:
     path: Path
     description: str = ""
     devices: list["DeviceSpec"] = field(default_factory=list)
+    source: str = ""  # a key of SOURCES
 
     @property
     def package(self) -> str:
@@ -335,28 +341,55 @@ def read_manifest(folder: Path) -> PluginInfo:
 
 
 class PluginRegistry:
-    """All plugins found in a list of folders. Later folders override earlier ones."""
+    """All plugins found in a list of folders. Later folders override earlier ones.
 
-    def __init__(self, search_paths: list[Path]):
-        self.plugins: dict[str, PluginInfo] = {}
+    ``search_paths`` holds folders, or ``(folder, source)`` pairs where source is a
+    key of :data:`SOURCES`. Plugins whose id is in ``disabled`` are found but not
+    offered.
+    """
+
+    def __init__(self, search_paths: list, disabled=()):
+        self.plugins: dict[str, PluginInfo] = {}  # the plugins in use, by id
+        self.found: list[PluginInfo] = []  # every plugin found, in load order
+        self.disabled = set(disabled)
         self.errors: list[str] = []
-        for root in search_paths:
+        self.broken: list[tuple[Path, str]] = []  # plugin folders that failed to load
+        for entry in search_paths:
+            root, source = entry if isinstance(entry, tuple) else (entry, "")
+            root = Path(root)
             if not root.is_dir():
                 continue
             for folder in sorted(root.iterdir()):
                 if (folder / "plugin.toml").is_file():
                     try:
                         info = read_manifest(folder)
-                        self.plugins[info.id] = info
                     except PluginError as exc:
                         self.errors.append(str(exc))
+                        self.broken.append((folder, str(exc)))
+                        continue
+                    info.source = source
+                    self.found.append(info)
+                    if info.id not in self.disabled:
+                        self.plugins[info.id] = info
 
     @classmethod
-    def default(cls, project_dir: Path | None = None) -> "PluginRegistry":
-        paths = [BUILTIN_PLUGIN_DIR, USER_PLUGIN_DIR]
+    def default(cls, project_dir: Path | None = None,
+                config: AppConfig | None = None) -> "PluginRegistry":
+        """Built-in plugins, installed ones, extra folders from the app config and
+        the project's own ``plugins`` folder, minus the plugins switched off."""
+        config = config or AppConfig.load()
+        paths = [(BUILTIN_PLUGIN_DIR, "built-in"), (user_plugin_dir(), "user")]
+        paths += [(Path(p), "folder") for p in config.plugin_paths]
         if project_dir is not None:
-            paths.append(Path(project_dir) / "plugins")
-        return cls(paths)
+            paths.append((Path(project_dir) / "plugins", "project"))
+        return cls(paths, config.disabled_plugins)
+
+    def status(self, info: PluginInfo) -> str:
+        """'enabled', 'disabled', or 'replaced' (a later plugin has the same id)."""
+        if info.id in self.disabled:
+            return "disabled"
+        active = self.plugins.get(info.id)
+        return "enabled" if active is not None and active.path == info.path else "replaced"
 
     @property
     def devices(self) -> dict[str, DeviceSpec]:
@@ -365,6 +398,11 @@ class PluginRegistry:
     def device(self, device_id: str) -> DeviceSpec:
         devices = self.devices
         if device_id not in devices:
+            for info in self.found:
+                if info.id in self.disabled and any(d.id == device_id for d in info.devices):
+                    raise PluginError(f"device type '{device_id}' comes from the plugin "
+                                      f"'{info.name}', which is switched off in the plugin "
+                                      "manager")
             known = ", ".join(sorted(devices)) or "none"
             raise PluginError(f"unknown device type '{device_id}' (available: {known})")
         return devices[device_id]

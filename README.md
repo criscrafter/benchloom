@@ -35,6 +35,7 @@ patchbay new my-test
 patchbay run my-test
 patchbay devices             # device types the installed plugins provide
 patchbay describe demo.psu   # commands of one device type
+patchbay plugins             # plugins found, and whether they are on
 ```
 
 ## A project
@@ -97,6 +98,9 @@ The plot draws every logged column live, against the column chosen as X axis
 go on a second scale under **Right axis**; the choice is kept per project.
 
 **Theme** in the toolbar switches between light, dark and the system setting.
+**Settings** (Ctrl+,) also holds the projects folder, editor and console font
+sizes, how many console lines to keep, opening the last project at start, and
+extra folders to load plugins from.
 
 ## A front panel
 
@@ -149,9 +153,26 @@ output off when a test ends, unless the device entry says
 
 ## A plugin
 
-A plugin is a folder with a `plugin.toml` and Python files. Put it in
-`~/.patchbay/plugins/` or in a project's `plugins/` folder.
+A plugin is a folder with a `plugin.toml` and Python files.
 [src/patchbay/plugins/demo](src/patchbay/plugins/demo) is the reference example.
+
+**Plugins** in the toolbar lists every plugin found, with its devices. There a
+plugin can be switched off (its devices leave the Add device list and runs
+refuse them), installed from a folder or a `.zip`, or removed (to the recycle
+bin). Installed plugins go to `~/.patchbay/plugins/`. The same from the command
+line:
+
+```
+patchbay plugins install my-plugin.zip   # or a folder; --replace to update
+patchbay plugins disable hp              # enable, remove
+```
+
+Plugins are loaded from, in order: the built-in ones, `~/.patchbay/plugins/`,
+the extra folders set in Settings, and the project's own `plugins/` folder. A
+later plugin with the same id replaces an earlier one, so a project can carry
+its own copy of a driver. Which plugins are off and the extra folders are kept
+in `~/.patchbay/config.json`; set `PATCHBAY_HOME` to use another folder than
+`~/.patchbay`.
 
 ```python
 from patchbay import Param, ScpiDevice, command

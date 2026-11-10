@@ -119,6 +119,14 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self._on_update_request)
         self._update_margin()
 
+    def set_font_size(self, size: int) -> None:
+        self.setFont(mono_font(size))
+        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        self._update_margin()
+        self._gutter.update()
+        rect = self.contentsRect()
+        self._gutter.setGeometry(QRect(rect.left(), rect.top(), self.gutter_width(), rect.height()))
+
     def changeEvent(self, event) -> None:
         if event.type() in PALETTE_EVENTS:
             self.highlighter.set_dark(is_dark(self.palette()))

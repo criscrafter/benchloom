@@ -22,4 +22,6 @@ def main(path: str | None = None) -> int:
     window.show()
     if path:
         window.open_project(path)
+    elif window.prefs.get("reopen_last") and window._recent():
+        window.open_project(window._recent()[0])
     return app.exec()

@@ -28,6 +28,7 @@
 | Data | Every run gets a folder: `data.csv`, console log, script copy, metadata. HDF5 to be added when waveform capture arrives. |
 | Front panel | Layout in `panel.json`; widgets addressed by name. Control changes are sent to the running test's process, indicator updates come back on the event queue. A button reads true once per click. |
 | Output safety | Drivers of sources and loads switch their output off when a test ends (`Device.close`), unless the device entry says `leave_output_on = true`. |
+| Plugin management | Plugin manager window and `patchbay plugins`: switch off, install from a folder or .zip into `~/.patchbay/plugins`, remove. Switched-off plugins and extra plugin folders live in `~/.patchbay/config.json` so runs and the command line see them too; desktop-only settings stay in QSettings. Nothing in a plugin runs at install time. |
 | Device names | Must not shadow Lua keywords, Lua's standard globals or Patchbay's own (`print`, `load`, `panel`, …). |
 | Timing | No hard timing needs now. The engine stays separate from the UI so a tighter runner can replace it later. |
 
@@ -44,8 +45,8 @@
    device, run folders, command line.
 2. **Desktop shell** (done): project wizard, device manager with serial port
    list and connection test, Lua editor, run/stop in a separate process,
-   console, live plot. Still to do here: automatic device discovery, a data
-   table, project templates.
+   console, live plot, plugin manager, Settings window. Still to do here:
+   automatic device discovery, a data table, project templates.
 3. **Node editor** (done): nodes generated from plugin commands, flow nodes
    (for, while, if), values (math, compare, logic, variables), logging, graph
    to Lua compiler, errors marked on the node. Still to do here: undo/redo,
@@ -61,7 +62,7 @@
    the xyphro UsbGpib adapter (USBTMC) without a vendor VISA. Tried on hardware:
    KP184, 6404 and DSO5102P. See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build, then Linux, then Mac. Plugin install
-   from a folder or a registry.
+   from a registry (install from a folder or .zip is done).
 
 ## Not verified yet
 

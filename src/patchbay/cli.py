@@ -1,4 +1,4 @@
-"""Command line: ``patchbay gui | new | run | devices | describe | usbgpib``."""
+"""Command line: ``patchbay gui | new | run | devices | describe | plugins | usbgpib``."""
 
 from __future__ import annotations
 
@@ -32,6 +32,47 @@ def _devices(args) -> int:
             print(f"  {device.id:<18} {device.name}")
     for error in registry.errors:
         print(f"warning: {error}", file=sys.stderr)
+    return 0
+
+
+def _plugins(args) -> int:
+    from . import plugin_install
+    from .config import AppConfig
+    from .plugin import SOURCES
+
+    project = Path(args.project) if args.project else None
+    if args.action == "list":
+        registry = PluginRegistry.default(project)
+        for info in registry.found:
+            status = registry.status(info)
+            mark = {"enabled": "on ", "disabled": "off", "replaced": "---"}[status]
+            print(f"{mark} {info.id:<12} {info.version:<8} "
+                  f"{SOURCES.get(info.source, info.source):<14} {info.path}")
+        for folder, error in registry.broken:
+            print(f"err {folder}: {error}")
+        return 0
+    if not args.target:
+        raise PluginError(f"'plugins {args.action}' needs a {'path' if args.action == 'install' else 'plugin id'}")
+    if args.action == "install":
+        print(plugin_install.TRUST_WARNING)
+        info = plugin_install.install(Path(args.target), replace=args.replace)
+        print(f"Installed {info.name} {info.version} ({info.id}) in {info.path}")
+        return 0
+    registry = PluginRegistry.default(project)
+    matches = [info for info in registry.found if info.id == args.target]
+    if not matches:
+        raise PluginError(f"no plugin with id '{args.target}' (see: patchbay plugins)")
+    if args.action == "remove":
+        installed = [info for info in matches if plugin_install.is_removable(info)]
+        if not installed:
+            raise PluginError(f"'{args.target}' is not an installed plugin")
+        plugin_install.remove(installed[0])
+        print(f"Removed {installed[0].path}")
+        return 0
+    config = AppConfig.load()
+    config.set_enabled(args.target, args.action == "enable")
+    config.save()
+    print(f"Plugin '{args.target}' switched {'on' if args.action == 'enable' else 'off'}")
     return 0
 
 
@@ -114,6 +155,19 @@ def main(argv: list[str] | None = None) -> int:
     describe.add_argument("device", help="device type, e.g. demo.psu")
     describe.add_argument("--project", help="also include this project's plugins folder")
     describe.set_defaults(func=_describe)
+
+    plugins = sub.add_parser(
+        "plugins", help="list, install, remove, or switch plugins on and off",
+        description="list: every plugin found (on, off, or --- when replaced by a plugin "
+                    "with the same id). install PATH: copy a plugin folder or .zip into "
+                    "the user plugin folder. remove/enable/disable ID.")
+    plugins.add_argument("action", nargs="?", default="list",
+                         choices=("list", "install", "remove", "enable", "disable"))
+    plugins.add_argument("target", nargs="?", help="a path for install, else a plugin id")
+    plugins.add_argument("--replace", action="store_true",
+                         help="install over a plugin with the same id")
+    plugins.add_argument("--project", help="also include this project's plugins folder")
+    plugins.set_defaults(func=_plugins)
 
     usbgpib = sub.add_parser(
         "usbgpib", help="list xyphro UsbGpib adapters, or send them their own '!' commands",
