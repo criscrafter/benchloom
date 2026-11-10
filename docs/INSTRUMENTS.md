@@ -4,8 +4,8 @@ Every plugin below ships a simulator, so a test can be written with
 `resource = "sim://"` and switched to the real instrument later by changing only
 the resource.
 
-The KP184 driver has been tried on a real load (see below). **The other drivers
-have not been run against real hardware yet.** They are written from the manuals
+The KP184 and Chroma 6404 drivers have been tried on real instruments (see
+below). **The HP drivers have not been run against real hardware yet.** They are written from the manuals
 listed for each instrument and are tested against their simulators. Expect small
 fixes on first contact.
 
@@ -102,7 +102,9 @@ not react to Stop within three seconds) cannot do this.
   mode at the start and back to local at the end. Use the baud rate and parity set
   in the source's setup menu. The manual names RTS/CTS among the signals in use;
   add `&rtscts=1` if the cable carries them and plain RS-232 does not work.
-- **Ratings:** 0-150 V or 0-300 V, 45-500 Hz, peak current limit 0-10 A, 375 VA.
+- **Ratings:** 0-150 V or 0-300 V, 45-500 Hz, 375 VA. Peak current limit
+  2-10 A on the 150 V range and 1-10 A on the 300 V range, in 0.04 A steps
+  (found on the instrument; the manual says 0-10 A).
 - **Commands:** `set_voltage`, `set_frequency`, `set_range` (150, 300, auto),
   `set_current_limit` (peak), `set_voltage_limit`, `set_output`,
   `clear_protection`, `measure_voltage`, `measure_current`, `measure_power`,
@@ -111,3 +113,36 @@ not react to Stop within three seconds) cannot do this.
   the 6655A.
 - **Source:** Chroma 6404/6408 user's manual, version 1.6 (November 2015),
   chapter 6.
+- **Tried on hardware:** a 6404 with firmware B.02.20 over RS-232, through a CH340
+  USB adapter, with nothing connected to the output. The factory settings work
+  as they are: `serial://COM3?baud=9600`, no handshake. Covered:
+  - every setting and query;
+  - the output from 5 to 30 V at 50 and 400 Hz, which reads back within 0.1 V;
+  - Lua test runs, including switching off at the end and on Stop.
+
+  With a 9.5 W 230 V LED filament bulb as the load:
+
+  | Test | Result |
+  |---|---|
+  | 0 to 230 V at 50 Hz | draws nothing below about 125 V; 9.5-9.7 W at 230 V, power factor about 0.6, crest factor about 3 |
+  | 45 to 500 Hz at 230 V | 9.3-9.8 W throughout; frequency exact |
+
+  Not tried: the over-power and over-current trips, which a 9.5 W bulb cannot
+  reach.
+- **Current readings** have 10 mA resolution (a 70 mA load reads 0.07 A); the
+  power reading is finer.
+- **Switch-on:** the `peak current limit` status (`get_faults`) shows for a
+  moment at most switch-ons into a rectifier load, even with the 10 A limit,
+  while the output keeps running. Wait a second after switching on before
+  checking faults.
+- **Clamping:** the source silently clamps the voltage setting in three cases:
+  - a voltage above the voltage limit;
+  - lowering the limit below the set voltage;
+  - switching to the 150 V range with more than 150 V set.
+
+  In each case the clamped value stays even if the limit is raised again, so
+  `set_voltage`, `set_voltage_limit` and `set_range` read the setting back and
+  fail if it changed. A voltage above a fixed range is rejected outright.
+- **Timing:** settings and queries take 15-60 ms, but each measurement takes
+  about a second, because the source makes a new measurement for every query.
+  A row with voltage, current and frequency therefore takes about 3 s.

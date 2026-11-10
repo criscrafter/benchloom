@@ -1,7 +1,17 @@
 """Chroma 6404 programmable AC source, and a simulator for it.
 
 Commands, ranges and status bits are from the Chroma 6404/6408 user's manual
-(version 1.6, November 2015), chapter 6 "Remote Operation".
+(version 1.6, November 2015), chapter 6 "Remote Operation". Checked on a real 6404
+(firmware B.02.20) over RS-232:
+
+- A voltage above the voltage limit is clamped to the limit without an error;
+  lowering the limit or switching to the 150 V range clamps the voltage setting
+  too, for good. The driver reads the setting back and reports any clamping.
+- A voltage above a fixed range is rejected (-222).
+- The peak current limit goes from 2 A (150 V range) or 1 A (300 V range) to
+  10 A in 0.04 A steps; switching to the 150 V range raises a lower limit to 2 A.
+- Each MEAS query takes about a second. FETC answers at once but only repeats
+  the last MEAS result, so the driver uses MEAS.
 """
 
 from __future__ import annotations
@@ -9,12 +19,14 @@ from __future__ import annotations
 import math
 import random
 
-from patchbay import Param, ScpiDevice, command
+from patchbay import CommandError, Param, ScpiDevice, command
 from patchbay.scpi import ScpiSimulator, SimError, sim_bool, sim_number
 
 MAX_VOLTS = 300.0
 MIN_HZ, MAX_HZ = 45.0, 500.0
-MAX_PEAK_AMPS = 10.0  # 6404: 0 to 10 A in 0.04 A steps
+MAX_PEAK_AMPS = 10.0
+MIN_PEAK_AMPS = {150: 2.0, 300: 1.0}  # per voltage range, found on a real 6404
+PEAK_AMPS_STEP = 0.04
 MAX_VA = 375.0
 
 # Questionable status register bits
@@ -28,9 +40,17 @@ class Chroma6404(ScpiDevice):
         if self.transport.scheme in ("serial", "tcp"):
             self.transport.write("SYST:REM")  # only needed (and accepted) over RS-232
 
+    def _check_voltage(self, wanted: float, cause: str) -> None:
+        """The 6404 clamps the voltage setting silently; make that an error."""
+        actual = self.ask_number("VOLT?")
+        if abs(actual - wanted) > 0.05:
+            raise CommandError(f"{cause} set the voltage to {actual:.1f} V instead of "
+                               f"{wanted:.1f} V")
+
     @command("Set the output voltage (RMS)", params={"volts": Param(unit="V", min=0, max=MAX_VOLTS)})
     def set_voltage(self, volts: float) -> None:
         self.send(f"VOLT {volts:.1f}")
+        self._check_voltage(round(volts, 1), "the voltage limit (set_voltage_limit)")
 
     @command("Set the output frequency", params={"hertz": Param(unit="Hz", min=MIN_HZ, max=MAX_HZ)})
     def set_frequency(self, hertz: float) -> None:
@@ -39,17 +59,23 @@ class Chroma6404(ScpiDevice):
     @command("Select the voltage range: 150, 300 or auto",
              params={"range": Param(choices=("150", "300", "auto"))})
     def set_range(self, range: str) -> None:  # noqa: A002 - shown to users as "range"
+        before = self.ask_number("VOLT?")
         self.send("VOLT:RANG:AUTO ON" if range == "auto" else f"VOLT:RANG {range}")
+        name = "auto range" if range == "auto" else f"the {range} V range"
+        self._check_voltage(before, f"switching to {name}")
 
-    @command("Set the peak current limit",
-             params={"amps": Param(unit="A", min=0, max=MAX_PEAK_AMPS)})
+    @command("Set the peak current limit: 2 to 10 A on the 150 V range, 1 to 10 A on "
+             "the 300 V range, in 0.04 A steps",
+             params={"amps": Param(unit="A", min=1, max=MAX_PEAK_AMPS)})
     def set_current_limit(self, amps: float) -> None:
         self.send(f"CURR:PEAK {amps:.2f}")
 
     @command("Set the highest voltage the output may be set to (protects the load)",
              params={"volts": Param(unit="V", min=0, max=MAX_VOLTS)})
     def set_voltage_limit(self, volts: float) -> None:
+        before = self.ask_number("VOLT?")
         self.send(f"VOLT:LIM {volts:.1f}")
+        self._check_voltage(before, f"the voltage limit of {volts:.1f} V")
 
     @command("Switch the output on or off")
     def set_output(self, on: bool) -> None:
@@ -87,7 +113,9 @@ class Chroma6404(ScpiDevice):
     def measure_crest_factor(self) -> float:
         return self.ask_number("MEAS:CURR:CRES?")
 
-    @command("Active protections, e.g. 'over-power', or an empty text when there are none")
+    @command("Active protections and limits, e.g. 'over-power', or an empty text when "
+             "there are none. 'peak current limit' shows briefly at switch-on with "
+             "rectifier loads (inrush), so wait a second after switching on")
     def get_faults(self) -> str:
         bits = int(self.ask_number("STAT:QUES:COND?"))
         return ", ".join(name for bit, name in FAULTS.items() if bits & bit)
@@ -102,7 +130,7 @@ class Chroma6404(ScpiDevice):
 class Chroma6404Sim(ScpiSimulator):
     """A 6404 driving a 100 Ω resistive load."""
 
-    identity = "Chroma,6404,0,1.00"
+    identity = "CHROMA ATE,6404,0,1.00"
     LOAD_OHMS = 100.0
 
     def reset(self) -> None:
@@ -115,8 +143,7 @@ class Chroma6404Sim(ScpiSimulator):
         """RMS voltage, RMS current and questionable bits."""
         if not self.output or self.tripped:
             return 0.0, 0.0, self.tripped
-        full_scale = 300 if self.auto_range and self.volts > 150 else self.range
-        volts = min(self.volts, self.limit, full_scale)
+        volts = self.volts  # already clamped when it was set, as on the real source
         amps = volts / self.LOAD_OHMS
         bits = 0
         if amps * math.sqrt(2) > self.peak_amps:  # the source clamps the peak current
@@ -132,11 +159,32 @@ class Chroma6404Sim(ScpiSimulator):
             self.output = False
 
     def routes(self):
-        def setter(attribute, low, high):
-            def handler(arg):
-                setattr(self, attribute, sim_number(arg, low, high))
-                self._check_power()
-            return handler
+        def active_range():
+            return 300 if self.auto_range and self.volts > 150 else self.range
+
+        def voltage(arg):
+            top = MAX_VOLTS if self.auto_range else self.range
+            self.volts = min(sim_number(arg, 0, top), self.limit)  # clamped silently
+            self._check_power()
+
+        def limit(arg):
+            self.limit = sim_number(arg, 0, MAX_VOLTS)
+            self.volts = min(self.volts, self.limit)
+
+        def frequency(arg):
+            self.hertz = sim_number(arg, MIN_HZ, MAX_HZ)
+
+        def peak(arg):
+            low = MIN_PEAK_AMPS[active_range()]
+            amps = sim_number(arg, low, MAX_PEAK_AMPS)
+            # halves round up: 2.5 A becomes 2.52 A, 2.01 A becomes 2.00 A
+            self.peak_amps = round(math.floor(amps / PEAK_AMPS_STEP + 0.5 + 1e-9) * PEAK_AMPS_STEP, 2)
+            self._check_power()
+
+        def fit_range():
+            self.volts = min(self.volts, MAX_VOLTS if self.auto_range else self.range)
+            self.peak_amps = max(self.peak_amps, MIN_PEAK_AMPS[active_range()])
+            self._check_power()
 
         def output(arg):
             self.output = sim_bool(arg)
@@ -147,11 +195,11 @@ class Chroma6404Sim(ScpiSimulator):
             if value not in (150, 300):
                 raise SimError(-224, "Illegal parameter value")
             self.range, self.auto_range = int(value), False
-            self._check_power()
+            fit_range()
 
         def auto_range(arg):
             self.auto_range = sim_bool(arg)
-            self._check_power()
+            fit_range()
 
         def clear(arg):
             self.tripped = 0
@@ -167,15 +215,18 @@ class Chroma6404Sim(ScpiSimulator):
             return handler
 
         return [
-            (r"(SOUR:)?VOLT(:LEV)?", setter("volts", 0, MAX_VOLTS)),
+            (r"(SOUR:)?VOLT(:LEV)?", voltage),
             (r"(SOUR:)?VOLT(:LEV)?\?", lambda arg: f"{self.volts:.1f}"),
-            (r"(SOUR:)?FREQ", setter("hertz", MIN_HZ, MAX_HZ)),
+            (r"(SOUR:)?FREQ", frequency),
             (r"(SOUR:)?FREQ\?", lambda arg: f"{self.hertz:.1f}"),
             (r"(SOUR:)?VOLT:RANG", voltage_range),
-            (r"(SOUR:)?VOLT:RANG\?", lambda arg: str(self.range)),
+            (r"(SOUR:)?VOLT:RANG\?", lambda arg: str(active_range())),
+            (r"(SOUR:)?VOLT:RANG:AUTO\?", lambda arg: "1" if self.auto_range else "0"),
             (r"(SOUR:)?VOLT:RANG:AUTO", auto_range),
-            (r"(SOUR:)?VOLT:LIM", setter("limit", 0, MAX_VOLTS)),
-            (r"(SOUR:)?CURR:PEAK", setter("peak_amps", 0, MAX_PEAK_AMPS)),
+            (r"(SOUR:)?VOLT:LIM", limit),
+            (r"(SOUR:)?VOLT:LIM\?", lambda arg: f"{self.limit:.1f}"),
+            (r"(SOUR:)?CURR:PEAK", peak),
+            (r"(SOUR:)?CURR:PEAK\?", lambda arg: f"{self.peak_amps:.2f}"),
             (r"OUTP(:STAT)?", output),
             (r"OUTP(:STAT)?\?", lambda arg: "1" if self.output else "0"),
             (r"OUTP:PROT:CLE", clear),

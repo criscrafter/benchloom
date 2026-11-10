@@ -65,10 +65,10 @@
 
 - The serial transport has been used with a real KP184 (CH340 adapter, Windows).
   The TCP, Prologix and VISA transports have not been run against real hardware.
-- The KP184 driver has been tried on a real load, up to 6 A and 130 W. The
-  6655A, 3478A and 6404 drivers are written from manuals and tested against
-  simulators written from the same sources, so a misread manual would not show
-  up in the tests.
+- The KP184 driver has been tried on a real load, up to 6 A and 130 W, and the
+  6404 driver on a real source with a 10 W lamp. The 6655A and 3478A drivers are
+  written from manuals and tested against simulators written from the same
+  sources, so a misread manual would not show up in the tests.
 - The desktop app is tested on Windows only, and its dialogs (new project,
   add device) are covered only partly by automated tests.
 - The node editor is tested through its functions (add, wire, delete, run),

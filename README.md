@@ -130,8 +130,8 @@ the command line, controls have the values they had when last run in the app.
 | Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA |
 | Arduino and other line-based serial devices | `generic.serial` | serial, network |
 
-Each comes with a simulator. Only the KP184 driver has been tried on real
-hardware so far; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
+Each comes with a simulator. The KP184 and Chroma 6404 drivers have been tried
+on real hardware; the HP drivers not yet; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
 and the documentation each driver is based on. Sources and loads switch their
 output off when a test ends, unless the device entry says
 `leave_output_on = true`.

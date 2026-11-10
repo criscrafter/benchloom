@@ -220,7 +220,7 @@ def test_3478a_status_and_display():
 # --- Chroma 6404 -----------------------------------------------------------------------
 def test_6404_output_and_measurements():
     ac, sim = open_sim("chroma.6404")
-    assert ac.idn().startswith("Chroma,6404")
+    assert ac.idn().startswith("CHROMA ATE,6404")
     ac.set_frequency(50)
     ac.set_voltage(120)
     ac.set_output(True)
@@ -235,18 +235,42 @@ def test_6404_output_and_measurements():
 def test_6404_ranges_and_protection():
     ac, sim = open_sim("chroma.6404")
     ac.set_current_limit(10)
+    with pytest.raises(CommandError, match="-222"):
+        ac.set_voltage(230)  # above the 150 V range
+    ac.set_range("auto")
     ac.set_voltage(230)
     ac.set_output(True)
-    assert ac.measure_voltage() == pytest.approx(150, abs=0.2)  # 150 V range clamps
-    ac.set_range("auto")
     assert ac.get_faults() == "over-power"  # 230 V into 100 Ω is 529 VA > 375 VA
     assert not ac.is_output_on()
     ac.set_voltage(180)
     ac.clear_protection()
     ac.set_output(True)
     assert ac.measure_voltage() == pytest.approx(180, abs=0.3)
-    ac.set_current_limit(1)
-    assert ac.get_faults() == "peak current limit"
+    ac.set_voltage(100)
+    ac.set_range("150")
+    with pytest.raises(CommandError, match="-222"):
+        ac.set_current_limit(1)  # 2 A is the least on the 150 V range...
+    ac.set_range("300")
+    ac.set_current_limit(1)  # ...and 1 A on the 300 V range
+    assert ac.get_faults() == "peak current limit"  # 1 A rms is 1.41 A peak
+
+
+def test_6404_reports_a_clamped_voltage():
+    # Found on a real 6404: the source clamps the voltage setting without an error.
+    ac, sim = open_sim("chroma.6404")
+    ac.set_voltage_limit(50)
+    with pytest.raises(CommandError, match="set the voltage to 50.0 V instead of 60.0 V"):
+        ac.set_voltage(60)
+    ac.set_voltage_limit(300)
+    ac.set_range("300")
+    ac.set_voltage(200)
+    with pytest.raises(CommandError, match="switching to the 150 V range set the voltage "
+                                           "to 150.0 V instead of 200.0 V"):
+        ac.set_range("150")
+    with pytest.raises(CommandError, match="voltage limit of 100.0 V"):
+        ac.set_voltage_limit(100)
+    ac.set_current_limit(2.5)
+    assert ac.query("CURR:PEAK?") == "2.52"  # 0.04 A steps
     with pytest.raises(CommandError, match="must be one of"):
         ac.call("set_range", "200")
 
