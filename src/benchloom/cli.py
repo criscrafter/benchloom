@@ -8,6 +8,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import NOTICE
 from .engine import run_project
 from .plugin import PluginError, PluginRegistry
 from .project import ProjectError, create_project, templates
@@ -137,7 +138,11 @@ def _gui(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="benchloom", description=__doc__)
+    parser = argparse.ArgumentParser(prog="benchloom", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     epilog="Benchloom comes with ABSOLUTELY NO WARRANTY; "
+                                            "see 'benchloom --version' for details.")
+    parser.add_argument("--version", action="version", version=NOTICE)
     sub = parser.add_subparsers(dest="command", required=True)
 
     new = sub.add_parser("new", help="create a project with a working example")

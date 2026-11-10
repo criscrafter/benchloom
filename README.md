@@ -24,6 +24,7 @@ without licence fees, accounts or a vendor runtime.
 > simulators first, and stay near the bench the first time a test runs.
 > Drivers switch outputs off when a test ends or is stopped (not when a hung
 > driver has to be killed), but that cannot replace a hardware limit.
+> Benchloom is provided without warranty; see [Disclaimer](#disclaimer).
 
 ## Try it
 
@@ -302,6 +303,35 @@ Bug reports, instrument drivers and fixes are welcome; see
 [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests need agreement to the
 [Contributor License Agreement](CLA.md). Security problems: see
 [SECURITY.md](SECURITY.md).
+
+## How Benchloom is developed
+
+Benchloom is developed with substantial assistance from AI tools, which help
+write code, tests and documentation. Every change is reviewed by the
+maintainer before it is merged, and it is checked by the automated test
+suite, which runs each instrument driver against a simulator. Where the
+documentation says a driver was tried on real hardware, the maintainer ran it
+on that instrument; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) lists what was
+tried and how.
+
+## Disclaimer
+
+Benchloom is provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement. In no event shall the
+authors or copyright holders be liable for any claim, damages or other
+liability arising from the use of Benchloom, including damage to instruments,
+devices under test or other equipment, injury, loss of data or incorrect
+measurement results. The full terms are in sections 15 and 16 of the
+[licence](LICENSE).
+
+You are responsible for operating connected equipment safely and for checking
+that results are correct for your purpose. Benchloom is not certified or
+validated for safety-critical, medical, legal-metrology or other regulated
+uses; using it there requires your own validation.
+
+Instrument names and trademarks belong to their owners. Benchloom is not
+affiliated with or endorsed by any instrument maker.
 
 ## Licence
 

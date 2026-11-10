@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QToolButton, QVBoxLayout, QWidget,
 )
 
+from .. import HOMEPAGE, NOTICE, __version__
 from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
 from ..panel import Panel, PanelError
@@ -254,6 +255,8 @@ class MainWindow(QMainWindow):
         self.plugins_action = action("Plugins", self.open_plugin_manager)
         self.plugins_action.setToolTip("See, switch off, install and remove plugins")
         self.settings_action = action("Settings", self.open_settings, "Ctrl+,")
+        self.about_action = action("About", self.show_about)
+        self.about_action.setToolTip("Version, licence and warranty notice")
 
         toolbar = QToolBar("Main")
         toolbar.setObjectName("Main")
@@ -269,6 +272,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         toolbar.addAction(self.plugins_action)
         toolbar.addAction(self.settings_action)
+        toolbar.addAction(self.about_action)
         toolbar.addWidget(self._build_theme_button())
         self.addToolBar(toolbar)
 
@@ -303,6 +307,18 @@ class MainWindow(QMainWindow):
         self.editor.set_font_size(self.prefs.get("editor_font_size"))
         self.console.setFont(mono_font(self.prefs.get("console_font_size")))
         self.console.setMaximumBlockCount(self.prefs.get("console_lines"))
+
+    def show_about(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("About Benchloom")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<b>Benchloom {__version__}</b><br>Open lab automation")
+        box.setInformativeText(
+            html.escape(NOTICE.split("\n", 1)[1].strip()).replace("\n\n", "<br><br>")
+            .replace("\n", " ").replace(HOMEPAGE, f'<a href="{HOMEPAGE}">{HOMEPAGE}</a>'))
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        box.exec()
 
     def open_settings(self) -> bool:
         dialog = SettingsDialog(self.prefs, self)

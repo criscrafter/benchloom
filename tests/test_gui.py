@@ -357,3 +357,26 @@ def test_run_shows_waveforms_verdict_and_report(app, tmp_path):
     window.open_project(project.path)
     assert "gain_dB" in window.plot.hidden and "time_s" in window.plot.hidden
     window.close()
+
+
+def test_about_shows_the_licence_and_warranty_notice(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    shown = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: shown.append(box) or 0)
+    window = make_window(tmp_path)
+    window.about_action.trigger()
+    text = shown[0].informativeText()
+    assert "WITHOUT ANY WARRANTY" in text and "Affero General Public License" in text
+    assert "assistance from AI tools" in text and "Friedrich-Christer Rosenthal" in text
+    assert 'href="https://github.com/criscrafter/benchloom"' in text
+    window.close()
+
+
+def test_command_line_version_shows_the_notice(capsys):
+    from benchloom.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["--version"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert out.startswith("Benchloom 0.1.0") and "WITHOUT ANY WARRANTY" in out
