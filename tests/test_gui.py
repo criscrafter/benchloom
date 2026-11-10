@@ -274,3 +274,84 @@ def test_bode_project_plots_on_a_log_scale(app, tmp_path):
     window.open_project(project.path)
     assert not window.plot.log_x.isChecked()
     window.close()
+
+
+def test_numbers_on_the_front_panel_drop_trailing_zeros(app):
+    from PySide6.QtCore import QLocale
+
+    from patchbay.gui.panel_view import NumberBox, PanelView, WidgetDialog, format_number
+    from patchbay.panel import Panel, Widget
+
+    QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
+    try:
+        box = NumberBox()
+        box.setRange(0, 1e6)
+        box.setValue(50.0)
+        assert box.text() == "50"
+        box.setValue(1234.5)
+        assert box.text() == "1234,5"  # no thousands separator, the locale's point
+        fixed = NumberBox(2)
+        fixed.setRange(0, 100)
+        fixed.setValue(3)
+        assert fixed.text() == "3,00"
+        assert format_number(-89.2581, "°") == "-89,26 °"
+        assert format_number(5000.0, "Hz", 1) == "5000,0 Hz"
+    finally:
+        QLocale.setDefault(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
+
+    panel = Panel(None, [Widget("display", "gain", "Gain", unit="dB")])
+    dialog = WidgetDialog(panel, panel.widgets[0])
+    assert dialog.decimals_box.currentData() is None  # automatic
+    dialog.decimals_box.setCurrentIndex(dialog.decimals_box.findData(1))
+    dialog.accept()
+    assert panel.widgets[0].decimals == 1
+    view = PanelView()
+    view.set_panel(panel)
+    view.show_value("gain", -3.0127)
+    assert view.items["gain"].control.text() == "-3.0 dB"
+
+
+def test_plot_columns_menu_hides_curves(app):
+    from patchbay.gui.plot import PlotPanel
+
+    plot = PlotPanel()
+    for n in range(3):
+        plot.add_row({"time_s": n, "V": n * 2.0, "I": n / 10})
+    plot._redraw()
+    assert [a.text() for a in plot.columns_menu.actions()] == ["V", "I"]
+    seen = []
+    plot.hidden_columns_changed.connect(seen.append)
+    plot.columns_menu.actions()[0].setChecked(False)  # hide V
+    assert seen == [["V"]] and set(plot._curves) == {"I"}
+    assert [a.text() for a in plot.right_menu.actions()] == ["I"]  # V is not offered
+    plot.columns_menu.actions()[0].setChecked(True)
+    assert set(plot._curves) == {"V", "I"}
+
+
+def test_run_shows_waveforms_verdict_and_report(app, tmp_path):
+    project = create_project(tmp_path / "bode", template="bode")
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    values = window.panel_view.control_values()
+    for name, value in (("start_hz", 50.0), ("stop_hz", 500.0), ("points_per_decade", 2.0),
+                        ("check_limits", True)):
+        window.panel_view.items[name].show_value(value)
+    assert window.panel_view.control_values() != values
+    assert not window.report_action.isEnabled()
+    window.run()
+    status, error, path = wait_for_run(app, window)
+    assert status == "ok", error
+    names = [name for name, _ in window.waveforms.waveforms]
+    assert names == ["50 Hz", "158.1 Hz", "500 Hz"]
+    assert window.waveforms.list.currentRow() == 2  # follows the newest
+    assert "input" in window.waveforms.info.text() and "Vpp" in window.waveforms.info.text()
+    assert window.statusBar().currentMessage().startswith("PASS")
+    assert "PASS: 1 of 1 checks passed" in window.console.toPlainText()
+    assert window.report_action.isEnabled()
+    gain = next(a for a in window.plot.columns_menu.actions() if a.text() == "gain_dB")
+    gain.setChecked(False)  # remembered per project
+    window.close()
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    assert "gain_dB" in window.plot.hidden and "time_s" in window.plot.hidden
+    window.close()

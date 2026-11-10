@@ -2,19 +2,25 @@
 
 Thick solid wires are run order ("exec"), dashed blue wires carry values ("data").
 Unwired inputs are edited in place on the node.
+
+Undo and redo (Ctrl+Z, Ctrl+Y) go back through snapshots of the whole graph,
+taken once an edit is finished (a drag counts once). Copy, cut, paste and
+duplicate (Ctrl+C, X, V, D) take the selected nodes and the wires between them;
+the clipboard holds them as JSON, so they can be pasted into another project.
 """
 
 from __future__ import annotations
 
 import copy
+import json
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QMimeData, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen,
-    QPolygonF,
+    QColor, QFont, QFontMetricsF, QGuiApplication, QKeySequence, QPainter, QPainterPath,
+    QPainterPathStroker, QPen, QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QGraphicsItem, QGraphicsPathItem, QGraphicsProxyWidget,
+    QApplication, QCheckBox, QComboBox, QGraphicsItem, QGraphicsPathItem, QGraphicsProxyWidget,
     QGraphicsScene, QGraphicsView, QInputDialog, QLineEdit, QMenu,
 )
 
@@ -28,6 +34,9 @@ TEXT_EDIT_W = 130
 PAD = 12
 GRID = 24
 DATA_COLOR = QColor("#3b82f6")
+CLIPBOARD_TYPE = "application/x-patchbay-nodes"
+MAX_UNDO = 200
+PASTE_OFFSET = 2 * GRID
 ERROR_COLOR = QColor("#d9453c")
 HEADER_COLORS = {"start": "#6b7280", "flow": "#b45309", "action": "#6d28d9", "value": "#0f766e"}
 
@@ -333,6 +342,10 @@ class GraphEditor(QGraphicsView):
         self._drag_origin: PinItem | None = None
         self._pan_from = None
         self._home = False
+        self._history: list[dict] = []  # snapshots of the graph; _index is the current one
+        self._index = -1
+        self._snapshot_timer = QTimer(self, singleShot=True, interval=150)
+        self._snapshot_timer.timeout.connect(self._take_snapshot)
 
     # --- graph <-> scene ------------------------------------------------------
     def load(self, graph: dict, catalog: Catalog) -> None:
@@ -352,6 +365,141 @@ class GraphEditor(QGraphicsView):
         self.modified = False
         self._home = True
         self._go_home()
+        self._snapshot_timer.stop()
+        self._history, self._index = [self.to_graph()], 0
+
+    # --- undo and redo -------------------------------------------------------------
+    def _take_snapshot(self) -> None:
+        if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            self._snapshot_timer.start()  # still dragging: one step for the whole drag
+            return
+        graph = self.to_graph()
+        if self._history and graph == self._history[self._index]:
+            return
+        del self._history[self._index + 1:]
+        self._history.append(graph)
+        if len(self._history) > MAX_UNDO:
+            del self._history[0]
+        self._index = len(self._history) - 1
+
+    def can_undo(self) -> bool:
+        return self._index > 0 or self._snapshot_timer.isActive()
+
+    def can_redo(self) -> bool:
+        return self._index < len(self._history) - 1 and not self._snapshot_timer.isActive()
+
+    def undo(self) -> None:
+        if self._snapshot_timer.isActive():  # an edit not yet recorded counts first
+            self._snapshot_timer.stop()
+            self._take_snapshot()
+        if self._index > 0:
+            self._index -= 1
+            self._restore(self._history[self._index])
+
+    def redo(self) -> None:
+        if self.can_redo():
+            self._index += 1
+            self._restore(self._history[self._index])
+
+    def _restore(self, graph: dict) -> None:
+        """Show a snapshot again, keeping the view where it is."""
+        self._loading = True
+        self._drag_wire = self._drag_origin = None
+        self.scene().clear()
+        self.nodes.clear()
+        self._orphan_wires = []
+        for data in graph.get("nodes", []):
+            self._create_node(copy.deepcopy(data))
+        for wire in graph.get("wires", []):
+            if not self._connect_by_name(wire):
+                self._orphan_wires.append(wire)
+        self._loading = False
+        self.modified = True
+        self.changed.emit()
+
+    # --- copy and paste ------------------------------------------------------------
+    def selected_nodes(self) -> list["NodeItem"]:
+        return [i for i in self.scene().selectedItems()
+                if isinstance(i, NodeItem) and i.data["type"] != "core.start"]
+
+    def copy_selected(self) -> bool:
+        """Put the selected nodes (not Start) and the wires between them on the clipboard."""
+        nodes = self.selected_nodes()
+        if not nodes:
+            return False
+        graph = self.to_graph()
+        ids = {n.id for n in nodes}
+        clip = {"patchbay": "nodes", "version": GRAPH_VERSION,
+                "nodes": [n for n in graph["nodes"] if n["id"] in ids],
+                "wires": [w for w in graph["wires"]
+                          if w["from"][0] in ids and w["to"][0] in ids]}
+        text = json.dumps(clip, indent=1)
+        mime = QMimeData()
+        mime.setData(CLIPBOARD_TYPE, text.encode("utf-8"))
+        mime.setText(text)
+        QGuiApplication.clipboard().setMimeData(mime)
+        return True
+
+    def cut_selected(self) -> None:
+        if self.copy_selected():
+            self.delete_selected()
+
+    def paste(self, pos: QPointF | None = None) -> list["NodeItem"]:
+        """Paste nodes from the clipboard: new ids, shifted (or placed at ``pos``), selected."""
+        mime = QGuiApplication.clipboard().mimeData()
+        if mime is None:
+            return []
+        raw = bytes(mime.data(CLIPBOARD_TYPE)).decode("utf-8") if mime.hasFormat(
+            CLIPBOARD_TYPE) else mime.text()
+        try:
+            clip = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(clip, dict) or clip.get("patchbay") != "nodes":
+            return []
+        return self._insert(clip, pos)
+
+    def duplicate_selected(self) -> list["NodeItem"]:
+        nodes = self.selected_nodes()
+        if not nodes:
+            return []
+        graph = self.to_graph()
+        ids = {n.id for n in nodes}
+        return self._insert({"nodes": [n for n in graph["nodes"] if n["id"] in ids],
+                             "wires": [w for w in graph["wires"]
+                                       if w["from"][0] in ids and w["to"][0] in ids]}, None)
+
+    def _insert(self, clip: dict, pos: QPointF | None) -> list["NodeItem"]:
+        nodes = [n for n in clip.get("nodes", [])
+                 if isinstance(n, dict) and n.get("type") not in (None, "core.start")]
+        if not nodes:
+            return []
+        left = min(n.get("x", 0) for n in nodes)
+        top = min(n.get("y", 0) for n in nodes)
+        dx, dy = (pos.x() - left, pos.y() - top) if pos is not None else (PASTE_OFFSET,
+                                                                            PASTE_OFFSET)
+        new_ids, items = {}, []
+        self._loading = True  # one change, one undo step
+        try:
+            for data in nodes:
+                data = copy.deepcopy(data)
+                new_ids[data["id"]] = data["id"] = self._new_id()
+                data["x"], data["y"] = round(data.get("x", 0) + dx), round(data.get("y", 0) + dy)
+                items.append(self._create_node(data))
+            for wire in clip.get("wires", []):
+                try:
+                    (src, a), (dst, b) = wire["from"], wire["to"]
+                    self._connect_by_name({"kind": wire["kind"], "from": [new_ids[src], a],
+                                           "to": [new_ids[dst], b]})
+                except (KeyError, ValueError, TypeError):
+                    pass
+        finally:
+            self._loading = False
+        self.scene().clearSelection()
+        for item in items:
+            item.setSelected(True)
+        self.notify_changed()
+        return items
 
     def _go_home(self) -> None:
         """Put the top-left of the graph at the top-left of the view."""
@@ -383,6 +531,7 @@ class GraphEditor(QGraphicsView):
     def notify_changed(self) -> None:
         if not self._loading:
             self.modified = True
+            self._snapshot_timer.start()
             self.changed.emit()
 
     def _new_id(self) -> str:
@@ -530,7 +679,17 @@ class GraphEditor(QGraphicsView):
         elif isinstance(item, WireItem):
             menu.addAction("Delete wire", lambda: self.remove_wire(item))
         else:
-            self._add_menu(menu, self.mapToScene(event.pos()))
+            pos = self.mapToScene(event.pos())
+            self._add_menu(menu, pos)
+            menu.addSeparator()
+            paste = menu.addAction("Paste", lambda: self.paste(pos), QKeySequence.StandardKey.Paste)
+            mime = QGuiApplication.clipboard().mimeData()
+            paste.setEnabled(mime is not None and (mime.hasFormat(CLIPBOARD_TYPE)
+                                                   or '"patchbay": "nodes"' in mime.text()))
+            undo = menu.addAction("Undo", self.undo, QKeySequence.StandardKey.Undo)
+            undo.setEnabled(self.can_undo())
+            redo = menu.addAction("Redo", self.redo, QKeySequence.StandardKey.Redo)
+            redo.setEnabled(self.can_redo())
         if not menu.isEmpty():
             menu.exec(event.globalPos())
 
@@ -556,6 +715,13 @@ class GraphEditor(QGraphicsView):
                 for column in data["columns"]:
                     remove.addAction(column, lambda c=column: self._remove_column(node, c))
         if data["type"] != "core.start":
+            if not node.isSelected():
+                self.scene().clearSelection()
+                node.setSelected(True)
+            menu.addSeparator()
+            menu.addAction("Copy", self.copy_selected, QKeySequence.StandardKey.Copy)
+            menu.addAction("Cut", self.cut_selected, QKeySequence.StandardKey.Cut)
+            menu.addAction("Duplicate", self.duplicate_selected, QKeySequence("Ctrl+D"))
             menu.addAction("Delete", lambda: self.remove_node(node))
 
     def _set_sequenced(self, node: NodeItem, on: bool) -> None:
@@ -580,10 +746,31 @@ class GraphEditor(QGraphicsView):
     # --- view ------------------------------------------------------------------
     def keyPressEvent(self, event) -> None:
         editing = isinstance(self.scene().focusItem(), QGraphicsProxyWidget)
-        if not editing and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.delete_selected()
-            return
+        if not editing:
+            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                self.delete_selected()
+                return
+            shortcuts = (
+                (QKeySequence.StandardKey.Undo, self.undo),
+                (QKeySequence.StandardKey.Redo, self.redo),
+                (QKeySequence.StandardKey.Copy, self.copy_selected),
+                (QKeySequence.StandardKey.Cut, self.cut_selected),
+                (QKeySequence.StandardKey.Paste, self.paste),
+                (QKeySequence.StandardKey.SelectAll, self._select_all),
+            )
+            for key, slot in shortcuts:
+                if event.matches(key):
+                    slot()
+                    return
+            if (event.key() == Qt.Key.Key_D
+                    and event.modifiers() == Qt.KeyboardModifier.ControlModifier):
+                self.duplicate_selected()
+                return
         super().keyPressEvent(event)
+
+    def _select_all(self) -> None:
+        for item in self.nodes.values():
+            item.setSelected(True)
 
     def wheelEvent(self, event) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:

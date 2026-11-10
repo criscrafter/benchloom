@@ -240,15 +240,17 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
     `get_trigger_state`, `force_trigger`.
   - Timebase and acquisition: `set_timebase` (2 ns to 40 s per division, 2-4-8
     steps), `get_timebase`, `run`, `stop`, `autoset`.
-  - Data: `read_waveform(channel)` returns `{time = {...}, volts = {...}}`.
+  - Data: `read_waveform(channel)` returns `{time = {...}, volts = {...}}`, and
+    `capture()` returns that for every channel that is on, as
+    `{CH1 = ..., CH2 = ...}`, ready for `save_waveform`.
     `measure_vpp`, `measure_vrms` and `measure_mean` are worked out from that
     waveform. `measure_frequency` reads the scope's hardware counter for the
     trigger source. The counter takes 2 to 3 seconds to show a new frequency,
     so wait that long after changing the signal.
   - Frequency response: `measure_response(hertz, input, output, periods)`
     (input CH1 and output CH2 by default) returns `{gain_db, gain, phase_deg,
-    input_vpp, output_vpp}` for a sine of that frequency going through a
-    circuit. It sets the timebase to show about four periods, switches both
+    input_vpp, output_vpp, input, output}` for a sine of that frequency going
+    through a circuit; `input` and `output` are the waveforms it measured. It sets the timebase to show about four periods, switches both
     channels on, triggers on the input, sets each channel's volts/div so the
     signal fills about six divisions, and fits a sine of the known frequency to
     both waveforms (least squares, so noise matters little). `phase_deg` is the
@@ -259,6 +261,11 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
     So `measure_response` puts the output on the input's range as long as it
     still spans two divisions there, and gains near 0 dB compare like with
     like.
+  - Settings writes are what take the time: the scope ignores requests for
+    about 0.65 s after one. The driver writes all changes of a step at once,
+    skips writes that change nothing, and asks again every 0.1 s until the
+    scope answers (each unanswered request used to wait out the 1 s timeout).
+    A Bode point takes about 1.2 s, or 2.2 s when a range changes.
 - **Limits of the protocol:**
   - Only the on-screen part of the record comes over USB (3200 to 15360
     points).
@@ -281,14 +288,16 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   were tested.
 - **Frequency response, tried on hardware:** an FY6900 into 3.3 kΩ and a
   ceramic capacitor, generator to CH1, capacitor to CH2. The Bode template
-  swept 5 Hz to 100 kHz at four points per decade in about two minutes:
+  swept 5 Hz to 100 kHz at four points per decade in 75 s (126 s before the
+  writes were sped up), with the same results:
   -0.06 dB at 5 Hz, -56.3 dB at 100 kHz (-57.0 dB expected for a single pole),
   the phase from -2° to -89°, and the -3 dB point at 140.5 Hz, where the phase
   gives 142 Hz (about 340 nF). A point takes 1 to 6 s, more below 50 Hz.
 - **Simulator:** shows a 1 kHz sine on CH1. With
   `sim://?dut=rc_lowpass&cutoff_hz=150` it is wired like a filter test instead:
   CH1 shows channel 1 of a simulated FY6900 in the same run and CH2 shows it
-  after an RC low-pass with that cutoff.
+  after an RC low-pass with that cutoff; `dut=rc_highpass` puts a high-pass
+  there.
 - **Tried on hardware:** a DSO5102P on Windows 10 with WinUSB, measuring its
   own 1 kHz probe-compensation output on CH1.
   - **Waveform:** 3840 points read in 0.18 s. The signal is a 0 to 5 V square

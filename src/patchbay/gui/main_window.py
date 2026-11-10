@@ -25,6 +25,7 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .waveforms import WaveformPanel
 from .plugins import PluginManagerDialog
 from .runner import RunController
 from .settings import GuiSettings, SettingsDialog, default_projects_dir  # noqa: F401
@@ -142,14 +143,18 @@ class MainWindow(QMainWindow):
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
         self.plot.log_x_changed.connect(self._log_x_changed)
+        self.plot.hidden_columns_changed.connect(self._hidden_columns_changed)
         self.panel_view = PanelView()
+        self.waveforms = WaveformPanel()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Console", self.console, Qt.DockWidgetArea.BottomDockWidgetArea),
             self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
+            self._dock("Waveforms", self.waveforms, Qt.DockWidgetArea.RightDockWidgetArea),
         ]
         self.tabifyDockWidget(self._docks[1], self._docks[3])
+        self.tabifyDockWidget(self._docks[3], self._docks[4])
         self._docks[1].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
         self.resizeDocks(self._docks[2:3], [200], Qt.Orientation.Vertical)
@@ -158,6 +163,9 @@ class MainWindow(QMainWindow):
         self.runner.printed.connect(self._print)
         self.runner.row.connect(self.plot.add_row)
         self.runner.panel.connect(self.panel_view.show_value)
+        self.runner.waveform.connect(self.waveforms.add)
+        self.runner.check.connect(self._check_done)
+        self._failed_checks = self._checks = 0
         self.panel_view.control_changed.connect(self.runner.send_control)
         self.runner.finished.connect(self._run_finished)
         self._last_run: Path | None = None
@@ -236,6 +244,8 @@ class MainWindow(QMainWindow):
         self.run_action = action("▶ Run", self.run, "F5")
         self.stop_action = action("■ Stop", self.stop, "Shift+F5")
         self.runs_action = action("Show run folder", self.show_run_folder)
+        self.report_action = action("Report", self.show_report)
+        self.report_action.setToolTip("Open the last run's report: checks, data, waveforms")
         self.lua_action = action("View as Lua", self.view_lua)
         self.plugins_action = action("Plugins", self.open_plugin_manager)
         self.plugins_action.setToolTip("See, switch off, install and remove plugins")
@@ -249,7 +259,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addActions([self.run_action, self.stop_action])
         toolbar.addSeparator()
-        toolbar.addActions([self.runs_action, self.lua_action])
+        toolbar.addActions([self.runs_action, self.report_action, self.lua_action])
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
@@ -328,19 +338,25 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             self.settings.setValue(self._plot_key("plot_log_x"), on)
 
+    def _hidden_columns_changed(self, columns: list) -> None:
+        if self.project is not None:
+            self.settings.setValue(self._plot_key("plot_hidden"), columns)
+
     def _apply_plot_settings(self, project: Project | None) -> None:
         """The project's [plot] choices, unless changed in the plot for this project."""
         prefs = project.plot if project is not None else {}
         right = prefs.get("right", [])
+        hide = prefs.get("hide", [])
         log_x = bool(prefs.get("log_x", False))
         if project is not None:
             if self.settings.contains(self._plot_key()):
                 right = self.settings.value(self._plot_key(), [])
+            if self.settings.contains(self._plot_key("plot_hidden")):
+                hide = self.settings.value(self._plot_key("plot_hidden"), [])
             if self.settings.contains(self._plot_key("plot_log_x")):
                 log_x = str(self.settings.value(self._plot_key("plot_log_x"))).lower() == "true"
         self.plot.preferred_x = prefs.get("x") if isinstance(prefs.get("x"), str) else None
-        hide = prefs.get("hide", [])
-        self.plot.hidden = {str(c) for c in ([hide] if isinstance(hide, str) else hide)}
+        self.plot.hidden = {str(c) for c in ([hide] if isinstance(hide, str) else hide or [])}
         self.plot.set_right_columns([right] if isinstance(right, str) else list(right or []))
         self.plot.set_log_x(log_x)
 
@@ -367,6 +383,7 @@ class MainWindow(QMainWindow):
         self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
+        self.waveforms.clear()
         self._apply_plot_settings(project)
         self.editor.mark_error(None)
         self._last_run = None
@@ -404,6 +421,8 @@ class MainWindow(QMainWindow):
         self.lua_action.setEnabled(is_open and self.project.mode == "visual")
         self.stop_action.setEnabled(running)
         self.runs_action.setEnabled(self._last_run is not None)
+        self.report_action.setEnabled(self._last_run is not None
+                                      and (self._last_run / "report.html").is_file())
         self.new_action.setEnabled(not running)
         self.open_action.setEnabled(not running)
         self.devices.setEnabled(not running)
@@ -516,6 +535,8 @@ class MainWindow(QMainWindow):
             return
         self.console.clear()
         self.plot.clear()
+        self.waveforms.clear()
+        self._failed_checks = self._checks = 0
         self.editor.mark_error(None)
         if self.project.mode == "visual" and self._compile() is None:
             return
@@ -535,8 +556,17 @@ class MainWindow(QMainWindow):
             self.console.appendHtml(
                 f'<span style="color:#d9453c">{html.escape(text)}</span>'
             )
+        elif text.startswith("FAIL  "):
+            self.console.appendHtml(
+                f'<span style="color:#d9453c;font-weight:600">{html.escape(text)}</span>')
+        elif text.startswith("PASS  "):
+            self.console.appendHtml(f'<span style="color:#16a34a">{html.escape(text)}</span>')
         else:
             self.console.appendPlainText(text)
+
+    def _check_done(self, record: dict) -> None:
+        self._checks += 1
+        self._failed_checks += not record.get("passed")
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
         self._last_run = Path(path) if path else None
@@ -552,8 +582,21 @@ class MainWindow(QMainWindow):
                 self.graph.mark_error(self._line_map[line - 1])
         rows = len(self.plot.rows)
         message = {"ok": "Finished", "stopped": "Stopped", "error": "Failed"}[status]
-        self.statusBar().showMessage(f"{message} · {rows} row(s) logged")
+        parts = [message, f"{rows} row(s) logged"]
+        if self._checks:
+            verdict = "FAIL" if self._failed_checks else "PASS"
+            parts.insert(0, verdict)
+            parts.append(f"{self._checks - self._failed_checks} of {self._checks} checks passed")
+            self._print(f"{verdict}: {self._checks - self._failed_checks} of {self._checks} "
+                        "checks passed", error=bool(self._failed_checks))
+        if self.waveforms.waveforms:
+            parts.append(f"{len(self.waveforms.waveforms)} waveform(s) saved")
+        self.statusBar().showMessage(" · ".join(parts))
         self._update_actions()
+
+    def show_report(self) -> None:
+        if self._last_run and (self._last_run / "report.html").is_file():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_run / "report.html")))
 
     def show_run_folder(self) -> None:
         if self._last_run:

@@ -31,12 +31,18 @@ double-click a command there to add it to the test.
   Feeltech FY6900 generator and a Hantek DSO5102P scope. Wire generator CH1 to
   the circuit's input and to scope CH1, and the circuit's output to scope CH2.
   Set the sweep on the front panel; the plot shows gain and phase on a log
-  frequency axis, and the script measures the -3 dB point. It starts on
+  frequency axis, and the script measures the -3 dB points (3 dB below the
+  maximum gain, on either side, so low-, high- and band-passes all work). The
+  input and output waveform of each point are saved as images, and the -3 dB
+  point can be checked against limits for a PASS/FAIL verdict. It starts on
   simulators with a simulated RC low-pass; set the two resources for real
   hardware.
 
 Each run gets a folder under the project's `runs/` holding `data.csv`,
-`console.log`, `run.json` and a copy of the script.
+`console.log`, `run.json`, a copy of the script, `checks.csv` and `waveforms/`
+when the test made checks or saved waveforms, and `report.html`: one page with
+the PASS/FAIL verdict, the checks, a chart of the data, the waveform images, the
+devices, the data table and the console. **Report** in the toolbar opens it.
 
 The same works without the app:
 
@@ -88,6 +94,9 @@ Nodes are connected by two kinds of wire:
 Inputs without a wire are typed into the node. Right-click the canvas to add
 nodes (loops, conditions, math, logging, and every command of the project's
 devices); drag from pin to pin to wire; select and press Delete to remove.
+Ctrl+Z and Ctrl+Y undo and redo; Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste
+the selected nodes with the wires between them (also into another project), and
+Ctrl+D duplicates them. The canvas and node menus offer the same.
 
 Nodes without thick-wire pins, such as a measurement, run each time a node
 that uses their value runs. To measure at a fixed point instead and keep the
@@ -108,12 +117,30 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 
 Besides the devices, a script has `sleep(seconds)`, `log{...}` (one row in
 `data.csv`), `time()` (seconds since start), `print(...)` and `panel` (the
-front panel, below).
+front panel, below), and:
+
+- `check(name, value, low, high, unit)`: a pass/fail check. It passes when the
+  value lies within the limits (either may be `nil`), or, without limits, when
+  the value is `true`. It prints PASS or FAIL and returns whether it passed. A
+  run passes only if every check passed; the verdict is in the status bar,
+  `run.json` and the report. Visual tests have a **Check** node.
+- `save_waveform(name, traces)`: saves scope traces as CSV, SVG and PNG under
+  the run's `waveforms/` folder and shows them in the **Waveforms** tab while
+  the test runs. `traces` is what `read_waveform` returns, or several of those
+  by name: `save_waveform("ripple", scope:capture())` saves every channel that
+  is on. PNG images need the desktop app installed; the SVG images are always
+  made. Visual tests have a **Save waveform** node.
+
+```lua
+local v = psu:measure_voltage()
+check("Output voltage", v, 4.9, 5.1, "V")
+save_waveform("output", { output = scope:read_waveform(2) })
+```
 
 The plot draws every logged column live, against the column chosen as X axis
 (time by default). Columns of very different size, such as 230 V and 10 W, can
-go on a second scale under **Right axis**, and **Log X** puts the X axis on a
-log scale. A project's `[plot]` section sets how the plot starts out; changes
+go on a second scale under **Right axis**, **Columns** hides curves, and
+**Log X** puts the X axis on a log scale. A project's `[plot]` section sets how the plot starts out; changes
 made in the plot are kept per project.
 
 **Theme** in the toolbar switches between light, dark and the system setting.
@@ -127,7 +154,9 @@ extra folders to load plugins from.
 
 The Front panel tab holds controls you operate while a test runs and
 indicators the test updates. Tick **Edit layout**, use **Add**, then drag
-widgets into place; double-click one for its name, caption, unit and range.
+widgets into place; double-click one for its name, caption, unit, range and
+decimals. Numbers show about four significant digits without trailing zeros
+(50, 140.5, -89.26) unless a widget is set to a fixed number of decimals.
 
 | Widget | Kind | In a script |
 |---|---|---|

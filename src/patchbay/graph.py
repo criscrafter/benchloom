@@ -126,11 +126,19 @@ _CORE: dict[str, NodeSpec] = {
                          outputs=[Pin("result", "boolean")]),
     "core.time": NodeSpec("Elapsed time", "value",
                           outputs=[Pin("seconds", "number", unit="s")]),
+    "core.check": NodeSpec("Check (pass/fail)", "action", True, NEXT,
+                           [Pin("value", "any"), Pin("low", "number", required=False),
+                            Pin("high", "number", required=False)],
+                           [Pin("passed", "boolean")],
+                           options=[Option("name", default="Check"), Option("unit", default="")]),
+    "core.save_waveform": NodeSpec("Save waveform", "action", True, NEXT,
+                                   [Pin("traces", "any")],
+                                   options=[Option("name", default="waveform")]),
 }
 
 _PALETTE = [
     ("Flow", ["core.for", "core.while", "core.if", "core.wait", "core.fail"]),
-    ("Output", ["core.log", "core.print"]),
+    ("Output", ["core.log", "core.print", "core.check", "core.save_waveform"]),
     ("Values", ["core.math", "core.compare", "core.logic", "core.not", "core.time",
                 "core.set_var", "core.get_var"]),
 ]
@@ -339,6 +347,14 @@ class _Compiler:
         elif kind == "core.set_var":
             name = lua_literal(self.option(node_id, "name"))
             self.emit(f"vars[{name}] = {value('value')}", depth, node_id)
+        elif kind == "core.check":
+            name = lua_literal(self.option(node_id, "name"))
+            unit = lua_literal(self.option(node_id, "unit"))
+            self.emit(f"v.{node_id}_passed = check({name}, {value('value')}, {value('low')}, "
+                      f"{value('high')}, {unit})", depth, node_id)
+        elif kind == "core.save_waveform":
+            name = lua_literal(self.option(node_id, "name"))
+            self.emit(f"save_waveform({name}, {value('traces')})", depth, node_id)
         elif kind == "panel.set":
             self.emit(f"panel[{lua_literal(node['widget'])}] = {value('value')}", depth, node_id)
         elif kind == "core.log":

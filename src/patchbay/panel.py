@@ -9,6 +9,7 @@ where controls keep their saved values.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -52,6 +53,7 @@ class Widget:
     min: float = 0.0
     max: float = 100.0
     value: Any = None  # saved value of a control
+    decimals: int | None = None  # digits after the decimal point; None: automatic
 
     @property
     def is_control(self) -> bool:
@@ -69,6 +71,29 @@ class Widget:
         if self.type == "text":
             return "" if self.value is None else str(self.value)
         return None
+
+
+def format_value(value: float, decimals: int | None = None, point: str = ".") -> str:
+    """A number as people read it: fixed decimals, or about four significant digits.
+
+    Automatic: trailing zeros go (50, not 50.000), and very large or small numbers
+    use an exponent (1.5e-06).
+    """
+    if decimals is not None:
+        text = f"{value:.{max(0, int(decimals))}f}"
+    elif value == 0 or not math.isfinite(value):
+        text = f"{value:g}"
+    else:
+        magnitude = math.floor(math.log10(abs(value)))
+        if -3 <= magnitude < 7:
+            text = f"{value:.{max(0, 3 - magnitude)}f}"
+            if "." in text:
+                text = text.rstrip("0").rstrip(".")
+        else:
+            text = f"{value:.4g}"
+    if text.startswith("-") and float(text) == 0:
+        text = text[1:]  # no "-0" from a tiny negative value
+    return text.replace(".", point)
 
 
 class Panel:

@@ -20,6 +20,8 @@ class RunController(QObject):
     printed = Signal(str)
     row = Signal(object)
     panel = Signal(str, object)  # the test set a front panel widget
+    check = Signal(object)  # a pass/fail check, as a dict
+    waveform = Signal(str, object)  # a saved waveform: name, {trace: (times, volts)}
     finished = Signal(str, str, str)  # status, error, run folder
 
     def __init__(self, parent=None):
@@ -77,6 +79,10 @@ class RunController(QObject):
                 self.row.emit(message[1])
             elif message[0] == "panel":
                 self.panel.emit(message[1], message[2])
+            elif message[0] == "check":
+                self.check.emit(message[1])
+            elif message[0] == "waveform":
+                self.waveform.emit(message[1], message[2])
             elif message[0] == "done":
                 self._end(*message[1:])
                 return

@@ -25,7 +25,8 @@
 | Plugins | Folder with `plugin.toml` + Python driver; commands declared with `@command` carry types, units and ranges |
 | Instrument I/O | Core provides transports (serial, TCP, Prologix/AR488 GPIB, VISA). Vendor VISA and GPIB adapters are optional, never required. |
 | Simulation | Plugins ship wire-level simulators so driver code is exercised without hardware |
-| Data | Every run gets a folder: `data.csv`, console log, script copy, metadata. HDF5 to be added when waveform capture arrives. |
+| Data | Every run gets a folder: `data.csv`, console log, script copy, metadata, `checks.csv`, `waveforms/` (CSV, SVG, PNG per saved waveform) and `report.html`. Images are drawn as SVG in pure Python; PNG copies come from a short Qt helper process at the end of the run, so the test process never loads Qt. |
+| Pass/fail | `check(name, value, low, high, unit)` in Lua and a Check node; a run passes only if every check passed. The verdict is in `run.json`, the status bar and the report. |
 | Front panel | Layout in `panel.json`; widgets addressed by name. Control changes are sent to the running test's process, indicator updates come back on the event queue. A button reads true once per click. |
 | Output safety | Drivers of sources and loads switch their output off when a test ends (`Device.close`), unless the device entry says `leave_output_on = true`. |
 | Project templates | Folders under `src/patchbay/templates`: a finished project plus `template.toml` (title, description, mode). Templates start on simulators; a simulated bench (`simbench`) lets a simulated scope see a simulated generator, so a wired-up test runs without hardware. A project's `[plot]` section sets how the plot starts out. |
@@ -52,8 +53,9 @@
    templates.
 3. **Node editor** (done): nodes generated from plugin commands, flow nodes
    (for, while, if), values (math, compare, logic, variables), logging, graph
-   to Lua compiler, errors marked on the node. Still to do here: undo/redo,
-   copy/paste, highlighting the running node, comments, sub-graphs.
+   to Lua compiler, errors marked on the node, undo/redo, copy/paste and
+   duplicate. Still to do here: highlighting the running node, comments,
+   sub-graphs.
 4. **Front panel** (done): controls (number, switch, button, text) and
    indicators (value, light, bar, chart) laid out by drag and drop, live in both
    directions while a test runs, available as `panel.<name>` in Lua and as nodes.

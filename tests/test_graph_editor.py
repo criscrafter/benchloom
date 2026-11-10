@@ -164,3 +164,91 @@ def test_parse_value():
     assert parse_value("hello", "any") == "hello"
     with pytest.raises(ValueError):
         parse_value("abc", "number")
+
+
+def test_undo_and_redo(app, tmp_path):
+    project = create_project(tmp_path / "proj", "visual")
+    editor = GraphEditor()
+    editor.load(example_graph(), Catalog(project))
+    start = normalized(editor.to_graph())
+    assert not editor.can_undo() and not editor.can_redo()
+    editor.remove_node(editor.nodes["n5"])  # removes its wires too: one step
+    assert "n5" not in editor.nodes and editor.can_undo()
+    editor.undo()
+    assert normalized(editor.to_graph()) == start and wire_count(editor) == 12
+    assert editor.can_redo() and editor.modified
+    editor.redo()
+    assert "n5" not in editor.nodes and not editor.can_redo()
+    editor.undo()
+    editor.nodes["n6"].setPos(editor.nodes["n6"].pos().x() + 100, 0)  # a move
+    editor.undo()
+    assert normalized(editor.to_graph()) == start
+    editor.redo()
+    assert editor.to_graph()["nodes"] != example_graph()["nodes"]
+
+
+def test_copy_paste_and_duplicate(app, tmp_path):
+    project = create_project(tmp_path / "proj", "visual")
+    editor = GraphEditor()
+    editor.load(example_graph(), Catalog(project))
+    graph = editor.to_graph()
+    # two nodes with a wire between them, neither of them Start
+    wire = next(w for w in graph["wires"]
+                if "n1" not in (w["from"][0], w["to"][0]))
+    a, b = wire["from"][0], wire["to"][0]
+    between = [w for w in graph["wires"] if {w["from"][0], w["to"][0]} == {a, b}]
+    editor.scene().clearSelection()
+    editor.nodes[a].setSelected(True)
+    editor.nodes[b].setSelected(True)
+    editor.nodes["n1"].setSelected(True)  # Start is never copied
+    assert editor.copy_selected()
+    before_nodes, before_wires = len(editor.nodes), wire_count(editor)
+    pasted = editor.paste()
+    assert len(pasted) == 2 and len(editor.nodes) == before_nodes + 2
+    assert wire_count(editor) == before_wires + len(between)
+    assert {p.id for p in pasted}.isdisjoint({a, b})
+    assert pasted[0].pos().x() == editor.nodes[a].pos().x() + 48
+    assert all(p.isSelected() for p in pasted) and not editor.nodes[a].isSelected()
+    editor.undo()  # the paste is one step
+    assert len(editor.nodes) == before_nodes and wire_count(editor) == before_wires
+
+    editor.scene().clearSelection()
+    editor.nodes[a].setSelected(True)
+    assert len(editor.duplicate_selected()) == 1
+    editor.cut_selected()  # the duplicate goes, and is on the clipboard
+    assert len(editor.nodes) == before_nodes
+    assert editor.paste()[0].data["type"] == editor.nodes[a].data["type"]
+
+
+def test_paste_ignores_other_clipboard_text(app, tmp_path):
+    from PySide6.QtGui import QGuiApplication
+
+    project = create_project(tmp_path / "proj", "visual")
+    editor = GraphEditor()
+    editor.load(example_graph(), Catalog(project))
+    QGuiApplication.clipboard().setText("hello")
+    assert editor.paste() == []
+    QGuiApplication.clipboard().setText('{"nodes": []}')
+    assert editor.paste() == []
+
+
+def test_check_and_save_waveform_nodes_compile(app, tmp_path):
+    from patchbay.graph import compile_graph
+
+    project = create_project(tmp_path / "proj", "visual")
+    graph = {"nodes": [
+        {"id": "n1", "type": "core.start", "x": 0, "y": 0},
+        {"id": "n2", "type": "core.check", "x": 200, "y": 0,
+         "values": {"value": 1.5, "low": 1, "name": "Level", "unit": "V"}},
+        {"id": "n3", "type": "core.save_waveform", "x": 400, "y": 0,
+         "values": {"name": "trace"}},
+        {"id": "n4", "type": "device", "device": "psu", "command": "measure_voltage",
+         "x": 200, "y": 200},
+    ], "wires": [
+        {"kind": "exec", "from": ["n1", "next"], "to": ["n2", "in"]},
+        {"kind": "exec", "from": ["n2", "next"], "to": ["n3", "in"]},
+        {"kind": "data", "from": ["n4", "result"], "to": ["n3", "traces"]},
+    ]}
+    code, _ = compile_graph(graph, Catalog(project))
+    assert 'v.n2_passed = check("Level", 1.5, 1, nil, "V")' in code
+    assert 'save_waveform("trace", psu:measure_voltage())' in code

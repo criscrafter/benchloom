@@ -3,7 +3,8 @@
 Columns are drawn against the column chosen as X axis, on the left value scale
 or, when ticked under "Right axis", on a second scale on the right. That keeps
 columns of very different size readable together, such as 230 V and 10 W.
-"Log X" puts the X axis on a log scale, for frequency sweeps.
+"Columns" hides curves, and "Log X" puts the X axis on a log scale, for
+frequency sweeps.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ def style_plot(plot: pg.PlotWidget, palette, axes=("left", "bottom")) -> None:
 class PlotPanel(QWidget):
     right_columns_changed = Signal(list)  # the columns on the right scale
     log_x_changed = Signal(bool)
+    hidden_columns_changed = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,6 +58,11 @@ class PlotPanel(QWidget):
         self.right_button.setToolTip("Columns shown on a second scale on the right")
         self.right_button.setMenu(self.right_menu)
         self.right_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.columns_menu = QMenu(self)
+        self.columns_button = QToolButton(text="Columns")
+        self.columns_button.setToolTip("The columns drawn")
+        self.columns_button.setMenu(self.columns_menu)
+        self.columns_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.log_x = QCheckBox("Log X")
         self.log_x.setToolTip("Show the X axis on a log scale")
         self.log_x.toggled.connect(self._log_x_toggled)
@@ -64,6 +71,8 @@ class PlotPanel(QWidget):
         top.addWidget(self.x_axis)
         top.addSpacing(12)
         top.addWidget(self.right_button)
+        top.addSpacing(12)
+        top.addWidget(self.columns_button)
         top.addSpacing(12)
         top.addWidget(self.log_x)
         top.addStretch()
@@ -136,16 +145,39 @@ class PlotPanel(QWidget):
         return [self.x_axis.itemText(i) for i in range(self.x_axis.count())]
 
     def _rebuild_right_menu(self) -> None:
+        """Rebuild the Right axis and Columns menus from the logged columns."""
         self.right_menu.clear()
+        self.columns_menu.clear()
         x_key = self.x_axis.currentText()
         for key in self._columns():
             if key == x_key:
+                continue
+            shown = QAction(key, self.columns_menu, checkable=True)
+            shown.setChecked(key not in self.hidden)
+            shown.toggled.connect(lambda on, key=key: self._toggle_shown(key, on))
+            self.columns_menu.addAction(shown)
+            if key in self.hidden:
                 continue
             action = QAction(key, self.right_menu, checkable=True)
             action.setChecked(key in self.right_columns)
             action.toggled.connect(lambda on, key=key: self._toggle_right(key, on))
             self.right_menu.addAction(action)
         self.right_button.setEnabled(bool(self.right_menu.actions()))
+        self.columns_button.setEnabled(bool(self.columns_menu.actions()))
+
+    def set_hidden_columns(self, columns) -> None:
+        self.hidden = set(columns)
+        self._rebuild_right_menu()
+        self._redraw()
+
+    def _toggle_shown(self, key: str, on: bool) -> None:
+        if on:
+            self.hidden.discard(key)
+        else:
+            self.hidden.add(key)
+        self._rebuild_right_menu()
+        self._redraw()
+        self.hidden_columns_changed.emit(sorted(self.hidden))
 
     def _toggle_right(self, key: str, on: bool) -> None:
         if on:
@@ -205,7 +237,7 @@ class PlotPanel(QWidget):
         x_key = self.x_axis.currentText()
         self.plot.setLabel("bottom", x_key)
         columns = self._columns()
-        if set(a.text() for a in self.right_menu.actions()) != set(columns) - {x_key}:
+        if set(a.text() for a in self.columns_menu.actions()) != set(columns) - {x_key}:
             self._rebuild_right_menu()
         for key in columns:
             side = "right" if key in self.right_columns else "left"

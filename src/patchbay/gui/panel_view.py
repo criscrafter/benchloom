@@ -5,17 +5,18 @@ from __future__ import annotations
 import time
 
 import pyqtgraph as pg
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QLocale, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame,
+    QHBoxLayout,
     QLabel, QLineEdit, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
     QToolButton, QVBoxLayout, QWidget,
 )
 
 from .plot import style_plot
 from .theme import PALETTE_EVENTS
-from ..panel import CONTROLS, INDICATORS, WIDGET_TYPES, Panel, Widget, valid_name
+from ..panel import CONTROLS, INDICATORS, WIDGET_TYPES, Panel, Widget, format_value, valid_name
 
 GRID = 10
 MIN_W, MIN_H = 60, 30
@@ -28,12 +29,31 @@ def snap(value: float) -> int:
     return int(round(value / GRID) * GRID)
 
 
-def format_number(value, unit: str = "") -> str:
+def format_number(value, unit: str = "", decimals: int | None = None) -> str:
+    """How a display or bar shows a value, with the decimal point of the locale."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         text = "–" if value is None else str(value)
     else:
-        text = f"{value:.6g}"
+        text = format_value(float(value), decimals, QLocale().decimalPoint())
     return f"{text} {unit}".strip()
+
+
+class NumberBox(QDoubleSpinBox):
+    """A spin box that shows its value like a display: no trailing zeros unless fixed."""
+
+    def __init__(self, decimals: int | None = None):
+        super().__init__()
+        self.fixed = decimals
+        self.setDecimals(6 if decimals is None else decimals)
+
+    def textFromValue(self, value: float) -> str:
+        locale = self.locale()
+        locale.setNumberOptions(QLocale.NumberOption.OmitGroupSeparator)
+        text = locale.toString(value, "f", self.decimals())
+        point = locale.decimalPoint()
+        if self.fixed is None and point in text:
+            text = text.rstrip("0").rstrip(point)
+        return text
 
 
 class _Led(QWidget):
@@ -148,8 +168,7 @@ class PanelItem(QFrame):
     def _build(self) -> QWidget:
         model, kind = self.model, self.model.type
         if kind == "number":
-            box = QDoubleSpinBox()
-            box.setDecimals(3)
+            box = NumberBox(model.decimals)
             box.setRange(model.min, model.max)
             box.setSuffix(f" {model.unit}" if model.unit else "")
             box.setValue(model.initial())
@@ -175,7 +194,7 @@ class PanelItem(QFrame):
             edit.editingFinished.connect(lambda: self._changed(edit.text()))
             return edit
         if kind == "display":
-            label = QLabel(format_number(None, model.unit))
+            label = QLabel(format_number(None, model.unit, model.decimals))
             font = label.font()
             font.setPointSize(18)
             font.setBold(True)
@@ -186,7 +205,7 @@ class PanelItem(QFrame):
         if kind == "bar":
             bar = QProgressBar()
             bar.setRange(0, 1000)
-            bar.setFormat(format_number(None, model.unit))
+            bar.setFormat(format_number(None, model.unit, model.decimals))
             return bar
         if kind == "chart":
             plot = pg.PlotWidget()
@@ -202,14 +221,14 @@ class PanelItem(QFrame):
         """Display a value the test set (or, for a control, changed)."""
         model, kind, control = self.model, self.model.type, self.control
         if kind == "display":
-            control.setText(format_number(value, model.unit))
+            control.setText(format_number(value, model.unit, model.decimals))
         elif kind == "led":
             control.on = bool(value)
             control.update()
         elif kind == "bar" and isinstance(value, (int, float)):
             span = (model.max - model.min) or 1.0
             control.setValue(int(max(0.0, min(1.0, (value - model.min) / span)) * 1000))
-            control.setFormat(format_number(value, model.unit))
+            control.setFormat(format_number(value, model.unit, model.decimals))
         elif kind == "chart" and isinstance(value, (int, float)):
             xs, ys = self._points
             xs.append(self.view.elapsed())
@@ -256,6 +275,15 @@ class WidgetDialog(QDialog):
         if kind in ("number", "bar"):
             form.addRow("Minimum", self.min_box)
             form.addRow("Maximum", self.max_box)
+        self.decimals_box = QComboBox()
+        self.decimals_box.addItem("Automatic", None)
+        for n in range(10):
+            self.decimals_box.addItem(str(n), n)
+        self.decimals_box.setCurrentIndex(self.decimals_box.findData(model.decimals))
+        self.decimals_box.setToolTip("Digits after the decimal point. Automatic shows about "
+                                     "four significant digits, without trailing zeros.")
+        if kind in ("number", "display", "bar"):
+            form.addRow("Decimals", self.decimals_box)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -264,8 +292,7 @@ class WidgetDialog(QDialog):
 
     @staticmethod
     def _number(value: float) -> QDoubleSpinBox:
-        box = QDoubleSpinBox()
-        box.setDecimals(3)
+        box = NumberBox()
         box.setRange(-1e9, 1e9)
         box.setValue(value)
         return box
@@ -287,6 +314,7 @@ class WidgetDialog(QDialog):
         model.name, model.label = name, self.label_edit.text().strip()
         model.unit = self.unit_edit.text().strip()
         model.min, model.max = self.min_box.value(), self.max_box.value()
+        model.decimals = self.decimals_box.currentData()
         super().accept()
 
 

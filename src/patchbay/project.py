@@ -20,7 +20,7 @@ RESERVED_NAMES = frozenset("""
     assert collectgarbage dofile error getmetatable ipairs load loadfile next pairs pcall
     print rawequal rawget rawlen rawset require select setmetatable tonumber tostring type
     xpcall coroutine debug io math os package string table utf8
-    sleep log time panel python vars v
+    sleep log time panel python vars v check save_waveform
 """.split())
 
 
@@ -149,6 +149,9 @@ for volts = 1, 10 do
     sleep(0.1)
     log { set_V = volts, V = psu:measure_voltage(), I = psu:measure_current() }
 end
+
+-- A pass/fail check: the run passes only if every check does (see report.html).
+check("Current at 10 V", psu:measure_current(), 0.9, 1.1, "A")
 
 psu:set_output(false)
 print("Sweep finished")

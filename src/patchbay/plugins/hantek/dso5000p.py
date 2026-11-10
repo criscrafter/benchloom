@@ -26,7 +26,7 @@ from patchbay import CommandError, Device, Param, RawSimTransport, command, simb
 MARK = 0x53  # 'S', the normal protocol
 WILDCARD_SUM = 0x66
 REQUEST_GAP = 0.08  # the scope merges and rejects requests closer than 80 ms
-AFTER_WRITE = 0.35  # it ignores requests for about 0.3 s after a settings write
+AFTER_WRITE = 3.0  # wait at most this long after a settings write (it is deaf ~0.65 s)
 KEY_GAP = 0.15
 
 LAYOUT_FILE = Path(__file__).with_name("protocol.inf")  # copy for firmware 3.40.0
@@ -228,12 +228,34 @@ class DSO5000P(Device):
         if unsafe:
             raise CommandError(f"refusing to write untested settings: {', '.join(sorted(unsafe))}")
         values = self.settings_block()  # always write back fresh values
+        if all(values.get(k) == v for k, v in changes.items()):
+            return  # nothing to change: a write costs about 0.7 s
         values.update(changes)
         reply = self._request(0x11, encode(self.fields, values))
         if reply[:1] != b"\x00":
             raise CommandError("the scope rejected the settings")
-        if self.transport.scheme != "sim":
-            time.sleep(AFTER_WRITE)
+        self._wait_ready()
+
+    def _wait_ready(self) -> None:
+        """Echo until the scope answers again, as it does about 0.65 s after a settings
+        write. A short read timeout matters: each unanswered echo would otherwise block
+        for the whole transport timeout (1 s)."""
+        if self.transport.scheme == "sim":
+            return self._sync()
+        old = self.transport.timeout
+        self.transport.set_timeout(0.05)
+        try:
+            self.transport.clear_input()
+            deadline = time.monotonic() + AFTER_WRITE
+            while time.monotonic() < deadline:
+                self._send(0x00, b"PB")
+                try:
+                    if self._replies(0x00, lambda p: True, timeout=0.1)[0] == b"PB":
+                        return
+                except CommandError:
+                    pass
+        finally:
+            self.transport.set_timeout(old)
         self._sync()
 
     def _key(self, code: int) -> None:
@@ -398,7 +420,9 @@ class DSO5000P(Device):
     @command("Gain and phase of a sine going through a circuit: the input on one channel, "
              "the output on the other. Sets the timebase to show a few periods, ranges both "
              "channels and triggers on the input. Returns {gain_db, gain, phase_deg, "
-             "input_vpp, output_vpp}; phase_deg is the output relative to the input",
+             "input_vpp, output_vpp, input, output}; phase_deg is the output relative to "
+             "the input, and input and output are the waveforms measured, for "
+             "save_waveform",
              params={"hertz": Param(unit="Hz", min=0.1, max=100e6),
                      "input": Param(min=1, max=2), "output": Param(min=1, max=2),
                      "periods": Param(min=1, max=50)})
@@ -424,12 +448,17 @@ class DSO5000P(Device):
         values = self.settings_block()
         if values["TRIG-SRC"] != input - 1 or values["TRIG-TYPE"] != 0:
             self.set_trigger(f"CH{input}", "rising")
-        settle = 0 if self.transport.scheme == "sim" else max(0.5, 40 * timebase)
+        # A few screen times for the new frequency to reach the screen. A settings write
+        # waits for the scope itself (see _wait_ready), which restarts acquiring.
+        settle = 0 if self.transport.scheme == "sim" else max(0.2, 3 * 16 * timebase)
         fits: dict[int, tuple[float, float, float]] = {}
+        waves: dict[int, dict] = {}
+        todo = (input, output)
         for _ in range(6):
             time.sleep(settle)
-            fits = {ch: fit_sine(*self._waveform_pair(ch), hertz) for ch in (input, output)}
-            changed = False
+            for ch in todo:  # only what changed is read again
+                waves[ch] = self.read_waveform(ch)
+                fits[ch] = fit_sine(waves[ch]["time"], waves[ch]["volts"], hertz)
             values = self.settings_block()
             best, span = {}, {}
             for ch in (input, output):
@@ -442,16 +471,24 @@ class DSO5000P(Device):
             # input's range as long as it still spans two divisions there.
             if best[output] <= best[input] and span[output] >= 2 * best[input]:
                 best[output] = best[input]
+            changes = {}
             for ch in (input, output):
                 probe = PROBES[values[f"VERT-CH{ch}-PROBE"]]
-                current = VOLTS_PER_DIV[values[f"VERT-CH{ch}-VB"]] * probe
-                if not math.isclose(best[ch], current, rel_tol=0.01):
-                    self.set_volts_per_div(ch, best[ch])
-                    changed = True
-            if not changed:
+                index = _index(VOLTS_PER_DIV, best[ch] / probe, "volts/div setting")
+                if index != values[f"VERT-CH{ch}-VB"]:
+                    changes[f"VERT-CH{ch}-VB"] = index
+            if not changes:
                 break
-            if values["TRIG-SRC"] == input - 1:
-                self.set_trigger_level(fits[input][2])
+            if values["TRIG-SRC"] == input - 1:  # the trigger level in volts stays
+                scale = VOLTS_PER_DIV[changes.get(f"VERT-CH{input}-VB",
+                                                  values[f"VERT-CH{input}-VB"])]
+                scale *= PROBES[values[f"VERT-CH{input}-PROBE"]]
+                level = round(fits[input][2] / scale * 25 + values[f"VERT-CH{input}-POS"])
+                if level != values["TRIG-VPOS"]:
+                    changes["TRIG-VPOS"] = level
+            self._change(**changes)  # one write for all of them
+            todo = [ch for ch in (input, output) if f"VERT-CH{ch}-VB" in changes]
+            settle = 3 * 16 * timebase if self.transport.scheme != "sim" else 0
         a_in, p_in, _ = fits[input]
         a_out, p_out, _ = fits[output]
         if a_in <= 0:
@@ -459,11 +496,17 @@ class DSO5000P(Device):
         phase = (math.degrees(p_out - p_in) + 180) % 360 - 180
         gain = a_out / a_in
         return {"gain_db": 20 * math.log10(gain) if gain > 0 else -math.inf, "gain": gain,
-                "phase_deg": phase, "input_vpp": 2 * a_in, "output_vpp": 2 * a_out}
+                "phase_deg": phase, "input_vpp": 2 * a_in, "output_vpp": 2 * a_out,
+                "input": waves[input], "output": waves[output]}
 
-    def _waveform_pair(self, channel: int) -> tuple[list, list]:
-        wave = self.read_waveform(channel)
-        return wave["time"], wave["volts"]
+    @command("Read the on-screen waveforms of the channels that are on: {CH1 = {time = "
+             "{...}, volts = {...}}, CH2 = ...}, for save_waveform")
+    def capture(self) -> dict:
+        values = self.settings_block()
+        shown = [ch for ch in (1, 2) if values[f"VERT-CH{ch}-DISP"]]
+        if not shown:
+            raise CommandError("both channels are off")
+        return {f"CH{ch}": self.read_waveform(ch) for ch in shown}
 
     def identify(self) -> str:
         values = self.settings_block()
@@ -478,10 +521,11 @@ class DSO5000PSim(RawSimTransport):
     With ``dut=rc_lowpass`` (``sim://?dut=rc_lowpass&cutoff_hz=150``) it is wired
     like a filter test instead: CH1 shows channel 1 of a simulated generator in the
     same run (see :mod:`patchbay.simbench`) and CH2 shows it after an RC low-pass.
+    ``dut=rc_highpass`` puts an RC high-pass there instead.
     """
 
     SIGNAL_HZ, SIGNAL_PEAK = 1000.0, 1.0
-    DUTS = ("rc_lowpass",)
+    DUTS = ("rc_lowpass", "rc_highpass")
 
     def __init__(self, dut: str = "", cutoff_hz: float = 150.0, **options):
         if dut and dut not in self.DUTS:
@@ -552,10 +596,14 @@ class DSO5000PSim(RawSimTransport):
         if self.dut:
             sig = simbench.signal("ch1") or simbench.Signal(1.0, 0.0)
             hertz, peak, offset = sig.hertz, sig.peak, sig.offset
-            if channel == 2:  # after the RC low-pass: 1 / (1 + j f/fc)
+            if channel == 2:  # after the filter: 1 / (1 + j f/fc), or j f/fc times that
                 ratio = hertz / self.cutoff_hz
                 peak /= math.sqrt(1 + ratio * ratio)
                 shift = -math.atan(ratio)
+                if self.dut == "rc_highpass":
+                    peak *= ratio
+                    shift += math.pi / 2
+                    offset = 0.0  # a capacitor in series blocks DC
         samples = bytearray()
         for i in range(n):
             volts = offset + peak * math.sin(2 * math.pi * hertz * (i - n / 2) * dt + shift)

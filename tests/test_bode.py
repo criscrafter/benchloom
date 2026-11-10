@@ -37,6 +37,7 @@ def test_measure_response_of_a_simulated_rc_lowpass(hertz, gain_db, phase):
     assert r["gain_db"] == pytest.approx(gain_db, abs=0.05)
     assert r["phase_deg"] == pytest.approx(phase, abs=0.3)
     assert r["input_vpp"] == pytest.approx(4, rel=0.01)
+    assert len(r["input"]["volts"]) == len(r["output"]["time"]) > 1000  # the traces measured
     # The output spans at least two divisions; it shares the input's range while it
     # can, since the scope's ranges differ by up to 2 %.
     ranges = scope.settings_block()
@@ -83,12 +84,47 @@ def test_bode_template_runs_on_simulators(tmp_path):
 
     printed = []
     result = run_project(project.path, on_print=printed.append,
-                         panel_values={"start_hz": 5, "stop_hz": 5000, "points_per_decade": 3})
+                         panel_values={"start_hz": 5, "stop_hz": 5000, "points_per_decade": 3,
+                                       "check_limits": True, "limit_low_hz": 140,
+                                       "limit_high_hz": 145})
     assert result.status == "ok", result.error
     assert [round(r["frequency_Hz"]) for r in result.rows] == \
         [5, 11, 23, 50, 108, 232, 500, 1077, 2321, 5000]
-    corner = next(line for line in printed if line.startswith("-3 dB point"))
-    assert float(corner.split()[3]) == pytest.approx(150, rel=0.02)
+    corner = next(line for line in printed if line.startswith("Upper -3 dB point"))
+    assert float(corner.split()[4]) == pytest.approx(150, rel=0.01)
+    assert not any(line.startswith("Lower") for line in printed)
+    # one waveform per point, with input and output; the check fails: 150 Hz > 145 Hz
+    waveforms = sorted((result.path / "waveforms").glob("*.csv"))
+    assert len(waveforms) == 10 and waveforms[0].name == "001_5_Hz.csv"
+    assert waveforms[0].read_text().splitlines()[0] == "time_s,input_V,output_V"
+    assert result.verdict == "fail" and result.checks[0]["name"] == "-3 dB point"
+    assert "FAIL" in (result.path / "report.html").read_text(encoding="utf-8")
+
+
+def test_bode_template_finds_the_lower_point_of_a_highpass(tmp_path):
+    project = create_project(tmp_path / "hp", template="bode")
+    project.devices["scope"].resource = "sim://?dut=rc_highpass&cutoff_hz=1000"
+    project.save()
+    printed = []
+    result = run_project(project.path, on_print=printed.append,
+                         panel_values={"start_hz": 10, "stop_hz": 100000, "points_per_decade": 3,
+                                       "save_waveforms": False})
+    assert result.status == "ok", result.error
+    corner = next(line for line in printed if line.startswith("Lower -3 dB point"))
+    assert float(corner.split()[4]) == pytest.approx(1000, rel=0.02)
+    assert not (result.path / "waveforms").exists() and result.verdict == "none"
+
+
+def test_capture_reads_the_channels_that_are_on():
+    gen, scope = bench()
+    assert list(scope.capture()) == ["CH1"]
+    scope.set_channel(2, True)
+    both = scope.capture()
+    assert list(both) == ["CH1", "CH2"] and len(both["CH2"]["volts"]) == 3200
+    scope.set_channel(1, False)
+    scope.set_channel(2, False)
+    with pytest.raises(CommandError, match="both channels are off"):
+        scope.capture()
 
 
 def test_project_keeps_its_plot_settings(tmp_path):
