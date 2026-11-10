@@ -152,7 +152,17 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
     assert dialog.item_for("hp").checkState(0) == Qt.CheckState.Unchecked
     dialog.tree.setCurrentItem(dialog.item_for("hp"))
     assert not dialog.remove_button.isEnabled()  # built-in plugins are not removed
-    assert "Switched off" in dialog.details.toPlainText()
+    details = dialog.details
+    assert details.status_field.text() == "Switched off"
+    assert details.id_field.text() == "hp" and details.source_field.text() == "Built-in"
+    assert details.device_list.count() == 3 and details.device_box.title() == "Devices (3)"
+    details.device_list.setCurrentRow(2)  # the 53131A: its settings are listed one per line
+    assert details.device_type.text() == "hp.53131a"
+    assert details.device_default_name.text() == "counter"
+    assert "Gate time" in details.device_settings.toPlainText()
+    dialog.tree.setCurrentItem(dialog.item_for("hantek"))
+    assert details.device_resource.text() == "usb://049F:505A"
+    assert details.device_connections.text() == "usb, sim"
 
     source = tmp_path / "acme"
     source.mkdir()
@@ -167,6 +177,14 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
     monkeypatch.setattr(plugins_module, "move_to_trash", lambda path: False)
     dialog.remove_selected(confirm=False)
     assert dialog.item_for("acme") is None and not installed.path.exists()
+
+    broken = user_plugin_dir() / "broken"
+    broken.mkdir()
+    (broken / "plugin.toml").write_text("not toml [")
+    dialog.reload()
+    dialog.tree.setCurrentItem(dialog.tree.topLevelItem(dialog.tree.topLevelItemCount() - 1))
+    assert details.status_field.text() == "Failed to load"
+    assert details.description_label.text() == "Error" and not details.device_box.isVisibleTo(dialog)
 
     window.reload_plugins()  # what the main window does after the dialog
     assert "hp.3478a" not in window.devices.registry.devices

@@ -335,7 +335,9 @@ def read_manifest(folder: Path) -> PluginInfo:
                     default_resource=dev.get("default_resource", ""),
                 )
             )
-    except (KeyError, tomllib.TOMLDecodeError) as exc:
+    except KeyError as exc:
+        raise PluginError(f"{manifest}: invalid manifest: '{exc.args[0]}' is missing") from exc
+    except tomllib.TOMLDecodeError as exc:
         raise PluginError(f"{manifest}: invalid manifest: {exc}") from exc
     return info
 
