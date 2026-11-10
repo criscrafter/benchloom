@@ -31,7 +31,7 @@ from .graph import Catalog, GraphError, compile_graph
 from .panel import Panel, PanelError, PanelState
 from .plugin import Device, PluginRegistry
 from .project import DeviceConfig, Project, ProjectError
-from .transports import open_transport
+from .transports import Transport, TransportError, open_transport, parse_resource
 
 _STOP = "__patchbay_stop__"
 GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
@@ -208,15 +208,53 @@ class RunResult:
     rows: list[dict[str, Any]]
 
 
-def open_device(registry: PluginRegistry, config: DeviceConfig) -> Device:
+SHARED_SCHEMES = ("serial", "tcp")  # buses: several devices on one port (RS-485, gateways)
+
+
+class SharedPorts:
+    """The ports of a run, so devices on one bus share one open connection.
+
+    Several devices may name the same serial port (an RS-485 bus with one address
+    per device) or network address (a serial-to-Ethernet gateway). They then share
+    one transport; their settings must match.
+    """
+
+    def __init__(self):
+        self._open: dict[tuple[str, str], tuple[dict, Transport, str]] = {}
+
+    def get(self, resource: str) -> Transport | None:
+        scheme, target, options = parse_resource(resource)
+        if scheme not in SHARED_SCHEMES or (scheme, target) not in self._open:
+            return None
+        first_options, transport, first_user = self._open[(scheme, target)]
+        if options != first_options:
+            raise TransportError(
+                f"{target} is already open for '{first_user}' with other settings "
+                f"({resource} here); devices sharing a port need the same settings")
+        return transport
+
+    def add(self, resource: str, transport: Transport, user: str) -> None:
+        scheme, target, options = parse_resource(resource)
+        if scheme in SHARED_SCHEMES:
+            self._open.setdefault((scheme, target), (options, transport, user))
+
+
+def open_device(registry: PluginRegistry, config: DeviceConfig,
+                ports: SharedPorts | None = None) -> Device:
     spec = registry.device(config.device)
-    transport = open_transport(config.resource, spec.load_simulator())
+    transport = ports.get(config.resource) if ports else None
+    new = transport is None
+    if new:
+        transport = open_transport(config.resource, spec.load_simulator())
     try:
         device = spec.load_driver()(transport, config.settings)
         device.connect()
     except Exception:
-        transport.close()
+        if new:
+            transport.close()
         raise
+    if new and ports:
+        ports.add(config.resource, transport, config.name)
     return device
 
 
@@ -254,11 +292,12 @@ def run_project(
             on_row(row)
 
     devices: dict[str, Device] = {}
+    ports = SharedPorts()
     status, error = "ok", None
     try:
         for name, config in project.devices.items():
             try:
-                devices[name] = open_device(registry, config)
+                devices[name] = open_device(registry, config, ports)
             except Exception as exc:
                 raise ScriptError(f"device '{name}' ({config.resource}): {exc}") from exc
         try:
@@ -297,8 +336,9 @@ def run_project(
                 device.close()  # sources and loads switch their output off here
             except Exception as exc:
                 emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
+        for transport in {id(d.transport): d.transport for d in devices.values()}.values():
             try:
-                device.transport.close()
+                transport.close()  # once, also when devices share it
             except Exception:
                 pass
         run.finish(status, error, {

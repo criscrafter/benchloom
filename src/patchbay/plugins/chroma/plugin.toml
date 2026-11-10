@@ -16,3 +16,16 @@ driver = "chroma6404:Chroma6404"
 simulator = "chroma6404:Chroma6404Sim"
 transports = ["prologix", "visa", "serial", "sim"]
 default_name = "ac"
+
+[[device.setting]]
+name = "leave_output_on"
+label = "Leave the output on after a test"
+type = "bool"
+default = false
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+help = "Asks the instrument for errors after each setting; turn off only if it is too slow."

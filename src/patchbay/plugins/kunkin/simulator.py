@@ -15,9 +15,10 @@ WRITABLE = {0x010E, 0x0110, 0x0112, 0x0116, 0x011A, 0x011E}
 
 
 class KP184Sim(RawSimTransport):
-    def __init__(self, address="1", **options):
+    def __init__(self, address="1", echo="0", **options):
         super().__init__(**options)
         self.address = int(address)
+        self.echo = bool(int(echo))  # like an RS-485 adapter that hears itself
         self.remote = False
         self.registers = {0x010E: 0, 0x0110: 1, 0x0112: 0, 0x0116: 0, 0x011A: 100, 0x011E: 0}
 
@@ -54,6 +55,13 @@ class KP184Sim(RawSimTransport):
         return None
 
     def handle_bytes(self, data: bytes) -> bytes | None:
+        reply = self.answer(data)
+        if self.echo:
+            return data + (reply or b"")
+        return reply
+
+    def answer(self, data: bytes) -> bytes | None:
+        """The load's reply to one frame, or None when it stays silent."""
         if len(data) < 8 or not crc_ok(data) or data[0] != self.address:
             return None  # a real device stays silent
         register = int.from_bytes(data[2:4], "big")

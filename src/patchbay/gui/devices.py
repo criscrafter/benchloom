@@ -7,13 +7,13 @@ import re
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox,
+    QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..engine import open_device
-from ..plugin import CommandInfo, PluginError, PluginRegistry
+from ..plugin import CommandInfo, PluginError, PluginRegistry, SettingSpec
 from ..project import DeviceConfig, Project, device_name_problem
 from ..transports import TransportError, parse_resource
 
@@ -131,6 +131,11 @@ class DeviceDialog(QDialog):
         self._add_page("visa", [("Resource", self.visa_resource)])
         self._add_page("custom", [("Resource", self.custom_resource)])
 
+        # the settings the device type declares in its plugin.toml
+        self.settings_box = QGroupBox("Device settings")
+        self.settings_form = QFormLayout(self.settings_box)
+        self._setting_fields: dict[str, tuple[SettingSpec, QWidget]] = {}
+
         self.test_button = QPushButton("Test connection")
         self.test_button.clicked.connect(self._test)
         self.test_result = QLabel()
@@ -152,6 +157,7 @@ class DeviceDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(self.pages)
+        layout.addWidget(self.settings_box)
         layout.addLayout(test_row)
         layout.addWidget(buttons)
 
@@ -190,10 +196,50 @@ class DeviceDialog(QDialog):
         self.connection_box.setCurrentIndex(max(index, 0))
         self.connection_box.blockSignals(False)
         self._show_page()
+        self._build_settings(spec)
         # follow the device type with the suggested name until the user types their own
         if spec and self.name_edit.text() in ("", getattr(self, "_suggested", "")):
             self._suggested = self._free_name(spec.default_name or spec.id.rsplit(".", 1)[-1])
             self.name_edit.setText(self._suggested)
+
+    def _build_settings(self, spec) -> None:
+        while self.settings_form.rowCount():
+            self.settings_form.removeRow(0)
+        self._setting_fields.clear()
+        for setting in spec.settings if spec else ():
+            value = self.settings.get(setting.name, setting.default)
+            if setting.type == "bool":
+                field = QCheckBox()
+                field.setChecked(bool(value))
+            elif setting.type in ("int", "float"):
+                field = QSpinBox() if setting.type == "int" else QDoubleSpinBox(decimals=3)
+                field.setRange(setting.min if setting.min is not None else -1e9,
+                               setting.max if setting.max is not None else 1e9)
+                field.setValue(value if value is not None else 0)
+            else:
+                field = QLineEdit("" if value is None else str(value))
+            field.setToolTip(setting.help)
+            label = QLabel(setting.label)
+            label.setToolTip(setting.help)
+            self.settings_form.addRow(label, field)
+            self._setting_fields[setting.name] = (setting, field)
+        self.settings_box.setVisible(bool(self._setting_fields))
+
+    def _settings(self) -> dict:
+        """The device entry's settings: declared ones from the fields, others kept."""
+        settings = dict(self.settings)
+        for name, (setting, field) in self._setting_fields.items():
+            if isinstance(field, QCheckBox):
+                value = field.isChecked()
+            elif isinstance(field, (QSpinBox, QDoubleSpinBox)):
+                value = field.value()
+            else:
+                value = field.text().strip()
+            if value == setting.default or (value == "" and setting.default is None):
+                settings.pop(name, None)  # defaults stay out of the project file
+            else:
+                settings[name] = value
+        return settings
 
     def _free_name(self, base: str) -> str:
         base = re.sub(r"\W", "_", base)
@@ -260,7 +306,7 @@ class DeviceDialog(QDialog):
 
     def config(self) -> DeviceConfig:
         return DeviceConfig(self.name_edit.text().strip(), self.type_box.currentData(),
-                            self.resource(), self.settings)
+                            self.resource(), self._settings())
 
     def _test(self) -> None:
         """Open the device once and, where it has one, read its identification."""

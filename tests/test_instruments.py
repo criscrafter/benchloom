@@ -5,6 +5,8 @@ import pytest
 from patchbay.engine import open_device, run_project
 from patchbay.modbus import crc16, crc_ok, with_crc
 from patchbay.plugin import CommandError, PluginRegistry
+from patchbay.plugins.kunkin.simulator import KP184Sim
+from patchbay.transports import RawSimTransport
 from patchbay.project import DeviceConfig, Project, create_project
 
 REGISTRY = PluginRegistry.default()
@@ -77,6 +79,83 @@ def test_kp184_masks_the_remote_flag():
     load.set_mode("CR")
     assert sim._read(0x0110) & 0x10000000
     assert load.get_mode() == "CR" and not load.is_input_on()
+
+
+def test_kp184_works_through_an_echoing_rs485_adapter():
+    load = open_device(REGISTRY, DeviceConfig("eload", "kunkin.kp184", "sim://?echo=1"))
+    load.constant_current(2)
+    load.set_input(True)  # writes 1: its acknowledgement begins like the request
+    assert load.is_input_on() and load.get_mode() == "CC"
+    assert load.measure_current() == pytest.approx(2, abs=0.01)
+    assert load.read_raw_register(0x0116) == 2000
+
+
+def test_kp184_keeps_a_reply_that_only_begins_like_the_request():
+    load, sim = open_sim("kunkin.kp184")
+    sent = with_crc(bytes.fromhex("0106010e00010400000001"))
+    reply = sent[:8]  # same first bytes, but not a copy of the whole request
+    assert load._skip_echo(sent, reply, 8) == reply
+
+
+class Rs485Bus(RawSimTransport):
+    """Several simulated KP184s on one RS-485 bus; each answers its own address."""
+
+    scheme = "serial"
+    opened = []
+
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.loads = {n: KP184Sim(address=str(n)) for n in (1, 2)}
+        self.closed = 0
+        Rs485Bus.opened.append(self)
+
+    def handle_bytes(self, data):
+        replies = [load.answer(data) for load in self.loads.values()]
+        return next((r for r in replies if r), None)
+
+    def close(self):
+        self.closed += 1
+
+
+def test_two_kp184s_share_one_rs485_port(tmp_path, monkeypatch):
+    import patchbay.engine as engine
+
+    monkeypatch.setattr(engine, "open_transport", lambda resource, simulator=None: Rs485Bus())
+    Rs485Bus.opened.clear()
+    project = create_project(tmp_path / "bus")
+    project.devices = {
+        "load1": DeviceConfig("load1", "kunkin.kp184", "serial://COM9?baud=9600", {"address": 1}),
+        "load2": DeviceConfig("load2", "kunkin.kp184", "serial://COM9?baud=9600", {"address": 2}),
+    }
+    project.save()
+    (project.path / "main.lua").write_text(
+        "load1:constant_current(1)\nload2:constant_current(3)\n"
+        "load1:set_input(true)\nload2:set_input(true)\n"
+        "log { I1 = load1:measure_current(), I2 = load2:measure_current() }\n",
+        encoding="utf-8")
+    result = run_project(project.path, on_print=lambda line: None)
+    assert result.status == "ok", result.error
+    assert len(Rs485Bus.opened) == 1  # one port for both
+    bus = Rs485Bus.opened[0]
+    assert result.rows[0]["I1"] == pytest.approx(1, abs=0.01)
+    assert result.rows[0]["I2"] == pytest.approx(3, abs=0.01)
+    assert [load.registers[0x010E] for load in bus.loads.values()] == [0, 0]  # both off
+    assert bus.closed == 1
+
+
+def test_devices_on_one_port_need_the_same_settings(tmp_path, monkeypatch):
+    import patchbay.engine as engine
+
+    monkeypatch.setattr(engine, "open_transport", lambda resource, simulator=None: Rs485Bus())
+    project = create_project(tmp_path / "bus")
+    project.devices = {
+        "load1": DeviceConfig("load1", "kunkin.kp184", "serial://COM9?baud=9600", {"address": 1}),
+        "load2": DeviceConfig("load2", "kunkin.kp184", "serial://COM9?baud=19200", {"address": 2}),
+    }
+    project.save()
+    result = run_project(project.path, on_print=lambda line: None)
+    assert result.status == "error"
+    assert "COM9 is already open for 'load1' with other settings" in result.error
 
 def test_kp184_modes_and_measurements():
     load, sim = open_sim("kunkin.kp184")

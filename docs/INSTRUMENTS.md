@@ -18,9 +18,29 @@ not react to Stop within three seconds) cannot do this.
 
 - **Connection:** the RS-232 or RS-485 port, through a USB serial adapter.
   `resource = "serial://COM5?baud=9600"`; 9600 baud, 8N1 is the factory setting.
-- **Device entry options:** `address = 1` (Modbus address set on the load),
-  `crc_high_byte_first = true` (only if commands get no reply on newer firmware;
-  some 2020+ firmware is reported to swap the CRC bytes), `timeout = 0.5`.
+- **Device settings** (fields in the Add device dialog): Modbus address (set on
+  the load, 1 by default); CRC high byte first (only if commands get no reply on
+  newer firmware; some 2020+ firmware is reported to swap the CRC bytes); leave
+  the input on after a test. `timeout = 0.5` can be added to the device entry by
+  hand.
+- **RS-485:** use a USB-RS485 adapter on the load's A/B terminals. The protocol
+  is the same as on RS-232.
+  - **Several loads on one adapter:** give each load its own address on its
+    front panel. In Patchbay, add one device per load with the same port and
+    baud rate and that load's address. Patchbay opens the port once and the
+    loads share it.
+  - **Echoing adapters:** some adapters hear their own transmission and pass it
+    back before the reply. The driver recognises and skips that echo, so no
+    setting is needed.
+  - **Wiring:** the KP184's RS485A goes to the adapter's **+** terminal (T/R+,
+    D+) and RS485B to **−**. Kunkin labels the lines the opposite way to the
+    TIA-485 standard. With A and B swapped the load stays silent, and the
+    adapter's RX/TX lamp may stay lit while idle.
+  - **Tried on hardware:** a single KP184 through an FTDI USB-RS485 adapter, at
+    9600 baud and address 1 (the factory settings), loading a 27.8 V bench
+    supply up to 9.4 A and 250 W. A read takes about 90 ms. That adapter does
+    not echo. Several loads on one bus and an echoing adapter are tested only
+    against simulated loads so far.
 - **Commands:** `set_input`, `set_mode` (CV, CC, CR, CW), setpoints per mode,
   `constant_current(amps)` and friends that set mode and value in one step,
   `measure_voltage`, `measure_current`, `measure_power` (computed as V × I),

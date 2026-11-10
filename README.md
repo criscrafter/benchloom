@@ -166,6 +166,21 @@ the node editor and device panels will be generated from. A plugin can ship a
 simulator (a `SimTransport` subclass that answers the instrument's commands) so
 tests can be written without the hardware.
 
+Settings of a device entry, such as a bus address, can be declared in
+`plugin.toml`; the Add device dialog then shows them as fields, and the driver
+reads them from `self.settings`:
+
+```toml
+[[device.setting]]
+name = "address"
+label = "Modbus address"
+type = "int"          # int, float, bool or text
+default = 1
+min = 1
+max = 247
+help = "Set on the instrument."
+```
+
 Plugins are ordinary Python and run with full access to the computer; only
 install ones you trust.
 

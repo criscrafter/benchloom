@@ -7,11 +7,33 @@ description = "Kunkin electronic loads."
 [[device]]
 id = "kp184"
 name = "Kunkin KP184 electronic load"
-description = """150 V / 40 A / 400 W DC load, controlled over its RS-232/RS-485 port \
-(Modbus RTU, 9600 baud 8N1 by default). Set the load's address in the device entry \
-with `address = 1` if it is not 1. Switches the load input off when a test ends \
-unless `leave_output_on = true`."""
+description = """150 V / 40 A / 400 W DC load, controlled over its RS-232 or RS-485 port \
+(Modbus RTU, 9600 baud 8N1 by default). Several loads can share one RS-485 adapter: \
+give each its own address on the load and in its device entry, with the same port. \
+Switches the load input off when a test ends unless told not to."""
 driver = "driver:KP184"
 simulator = "simulator:KP184Sim"
 transports = ["serial", "tcp", "sim"]
 default_name = "eload"
+
+[[device.setting]]
+name = "address"
+label = "Modbus address"
+type = "int"
+default = 1
+min = 1
+max = 247
+help = "Set on the load. Loads on one RS-485 bus need different addresses."
+
+[[device.setting]]
+name = "crc_high_byte_first"
+label = "CRC high byte first"
+type = "bool"
+default = false
+help = "Only if the load does not answer; some 2020+ firmware is reported to need it."
+
+[[device.setting]]
+name = "leave_output_on"
+label = "Leave the input on after a test"
+type = "bool"
+default = false

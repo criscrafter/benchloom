@@ -103,3 +103,22 @@ def test_project_save_round_trip(tmp_path):
     assert list(loaded.devices) == ["psu", "ard"]
     assert loaded.devices["ard"].settings == {"startup_delay": 0.5}
     assert loaded.devices["ard"].resource == "serial://COM3?baud=9600"
+
+
+def test_device_dialog_shows_the_settings_a_plugin_declares(app):
+    registry = PluginRegistry.default()
+    config = DeviceConfig("eload", "kunkin.kp184", "serial://COM5?baud=9600",
+                          {"address": 3, "timeout": 1.0})
+    dialog = DeviceDialog(registry, set(), config)
+    assert set(dialog._setting_fields) == {"address", "crc_high_byte_first", "leave_output_on"}
+    address = dialog._setting_fields["address"][1]
+    assert address.value() == 3 and address.maximum() == 247
+    dialog._setting_fields["leave_output_on"][1].setChecked(True)
+    # undeclared settings (timeout) are kept; defaults are left out of the file
+    assert dialog.config().settings == {"address": 3, "timeout": 1.0, "leave_output_on": True}
+    address.setValue(1)
+    dialog._setting_fields["leave_output_on"][1].setChecked(False)
+    assert dialog.config().settings == {"timeout": 1.0}
+
+    dialog.type_box.setCurrentIndex(dialog.type_box.findData("generic.scpi"))
+    assert not dialog._setting_fields and dialog.settings_box.isHidden()

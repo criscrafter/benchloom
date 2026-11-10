@@ -48,8 +48,9 @@ class KP184(Device):
         if self.transport.scheme != "sim":
             time.sleep(0.01)  # Modbus RTU needs a pause between frames
         self.transport.clear_input()
-        self.transport.write_raw(with_crc(frame, self.crc_swapped))
-        reply = self.transport.read_some(reply_size)
+        sent = with_crc(frame, self.crc_swapped)
+        self.transport.write_raw(sent)
+        reply = self._skip_echo(sent, self.transport.read_some(reply_size), reply_size)
         if not reply:
             raise CommandError("no reply from the KP184; check the port, baud rate and "
                                f"address ({self.address})")
@@ -60,6 +61,24 @@ class KP184(Device):
         if strict and (len(reply) < reply_size or not crc_ok(reply)):
             raise CommandError(f"garbled reply from the KP184: {reply.hex(' ')}")
         return reply
+
+    def _skip_echo(self, sent: bytes, reply: bytes, reply_size: int) -> bytes:
+        """Drop our own request if the adapter echoed it (some RS-485 adapters do).
+
+        Only a complete copy of the request counts as echo, so a real reply that
+        merely begins like the request is kept.
+        """
+        n = min(len(reply), len(sent))
+        if n < 4 or reply[:n] != sent[:n]:
+            return reply
+        if len(reply) < len(sent):
+            reply += self.transport.read_some(len(sent) - len(reply))
+            if reply[:len(sent)] != sent:
+                return reply  # not an echo after all
+        rest = reply[len(sent):]
+        if len(rest) < reply_size:
+            rest += self.transport.read_some(reply_size - len(rest))
+        return rest
 
     def read_register(self, register: int) -> int:
         frame = bytes([self.address, 0x03, register >> 8, register & 0xFF, 0x00, 0x04])

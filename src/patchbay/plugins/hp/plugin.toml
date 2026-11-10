@@ -15,6 +15,19 @@ simulator = "hp6655a:HP6655ASim"
 transports = ["prologix", "visa", "sim"]
 default_name = "psu"
 
+[[device.setting]]
+name = "leave_output_on"
+label = "Leave the output on after a test"
+type = "bool"
+default = false
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+help = "Asks the instrument for errors after each setting; turn off only if it is too slow."
+
 [[device]]
 id = "3478a"
 name = "HP 3478A multimeter"
@@ -24,3 +37,11 @@ driver = "hp3478a:HP3478A"
 simulator = "hp3478a:HP3478ASim"
 transports = ["prologix", "visa", "sim"]
 default_name = "dmm"
+
+[[device.setting]]
+name = "digits"
+label = "Digits at the start"
+type = "int"
+default = 5
+min = 3
+max = 5

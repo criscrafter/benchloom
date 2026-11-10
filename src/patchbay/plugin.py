@@ -250,6 +250,27 @@ class PluginInfo:
             raise PluginError(f"plugin '{self.id}': cannot load '{ref}': {exc}") from exc
 
 
+SETTING_TYPES = ("int", "float", "bool", "text")
+
+
+@dataclass
+class SettingSpec:
+    """A setting of a device entry that the app offers as a field.
+
+    Declared in plugin.toml under ``[[device.setting]]``; the driver reads it from
+    ``self.settings``. Settings a plugin does not declare can still be written into
+    the device entry by hand.
+    """
+
+    name: str
+    label: str
+    type: str = "text"
+    default: Any = None
+    min: float | None = None
+    max: float | None = None
+    help: str = ""
+
+
 @dataclass
 class DeviceSpec:
     id: str
@@ -260,12 +281,24 @@ class DeviceSpec:
     transports: tuple[str, ...] = ()
     description: str = ""
     default_name: str = ""  # suggested name in a project, e.g. "psu"
+    settings: tuple[SettingSpec, ...] = ()
 
     def load_driver(self) -> type[Device]:
         return self.plugin.load(self.driver)
 
     def load_simulator(self) -> type | None:
         return self.plugin.load(self.simulator) if self.simulator else None
+
+
+def _setting(entry: dict) -> SettingSpec:
+    kind = entry.get("type", "text")
+    if kind not in SETTING_TYPES:
+        raise KeyError(f"setting type must be one of {', '.join(SETTING_TYPES)}, not {kind!r}")
+    return SettingSpec(
+        name=entry["name"], label=entry.get("label", entry["name"]), type=kind,
+        default=entry.get("default"), min=entry.get("min"), max=entry.get("max"),
+        help=entry.get("help", ""),
+    )
 
 
 def read_manifest(folder: Path) -> PluginInfo:
@@ -291,6 +324,7 @@ def read_manifest(folder: Path) -> PluginInfo:
                     transports=tuple(dev.get("transports", ())),
                     description=dev.get("description", ""),
                     default_name=dev.get("default_name", ""),
+                    settings=tuple(_setting(entry) for entry in dev.get("setting", ())),
                 )
             )
     except (KeyError, tomllib.TOMLDecodeError) as exc:
