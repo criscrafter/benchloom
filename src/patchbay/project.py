@@ -52,6 +52,8 @@ class Project:
     mode: str
     script: str
     devices: dict[str, DeviceConfig]
+    # How the plot shows the logged rows: x (column), log_x (bool), right (columns).
+    plot: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str | Path) -> "Project":
@@ -80,8 +82,11 @@ class Project:
             except KeyError:
                 raise ProjectError(f"{file}: device '{name}' is missing 'device'") from None
         default_script = "main.lua" if mode == "lua" else "main.graph.json"
+        plot = data.get("plot", {})
+        if not isinstance(plot, dict):
+            raise ProjectError(f"{file}: [plot] must be a table")
         return cls(path, meta.get("name", path.name), mode,
-                   meta.get("script", default_script), devices)
+                   meta.get("script", default_script), devices, dict(plot))
 
     def save(self) -> None:
         """Rewrite patchbay.toml from this object (comments in the file are lost)."""
@@ -92,6 +97,9 @@ class Project:
             f"script = {_toml(self.script)}",
             "",
         ]
+        if self.plot:
+            lines += ["[plot]"] + [f"{key} = {_toml(value)}" for key, value in self.plot.items()]
+            lines.append("")
         for device in self.devices.values():
             lines += [
                 f"[devices.{device.name}]",
@@ -148,13 +156,61 @@ print("Sweep finished")
 
 
 
-def create_project(path: str | Path, mode: str = "lua") -> Project:
+TEMPLATES_DIR = Path(__file__).with_name("templates")
+
+
+@dataclass
+class Template:
+    """A starting point for a new project.
+
+    The built-in example works in either mode; a template folder holds a finished
+    project (``patchbay.toml`` with ``{name}`` for the project name, the test, maybe
+    a ``panel.json``) plus ``template.toml`` with its title, description and mode.
+    """
+
+    id: str
+    title: str
+    description: str
+    mode: str | None = None  # None: either mode
+    folder: Path | None = None
+
+
+EXAMPLE = Template("example", "Example", "A simulated power supply swept from 1 to 10 V, "
+                   "so the project runs straight away.")
+
+
+def templates() -> list[Template]:
+    found = [EXAMPLE]
+    for folder in sorted(TEMPLATES_DIR.iterdir()) if TEMPLATES_DIR.is_dir() else []:
+        meta_file = folder / "template.toml"
+        if not meta_file.is_file():
+            continue
+        meta = tomllib.loads(meta_file.read_text(encoding="utf-8"))
+        found.append(Template(folder.name, meta.get("title", folder.name),
+                              meta.get("description", ""), meta.get("mode"), folder))
+    return found
+
+
+def create_project(path: str | Path, mode: str = "lua", template: str = "example") -> Project:
+    chosen = next((t for t in templates() if t.id == template), None)
+    if chosen is None:
+        raise ProjectError(f"there is no project template '{template}'")
+    if chosen.mode:
+        mode = chosen.mode
     if mode not in MODES:
         raise ProjectError(f"mode must be one of {', '.join(MODES)}")
     path = Path(path).resolve()
     if (path / PROJECT_FILE).exists():
         raise ProjectError(f"{path} already contains a Patchbay project")
     path.mkdir(parents=True, exist_ok=True)
+    if chosen.folder is not None:
+        for source in chosen.folder.iterdir():
+            if source.is_file() and source.name != "template.toml":
+                text = source.read_text(encoding="utf-8")
+                if source.name == PROJECT_FILE:
+                    text = text.replace("{name}", json.dumps(path.name)[1:-1])
+                (path / source.name).write_text(text, encoding="utf-8")
+        return Project.load(path)
     script = "main.lua" if mode == "lua" else "main.graph.json"
     (path / PROJECT_FILE).write_text(
         _TOML.format(name=path.name, mode=mode, script=script), encoding="utf-8"

@@ -1,0 +1,24 @@
+[project]
+name = "{name}"
+mode = "lua"
+script = "main.lua"
+
+# The Bode plot: frequency on a log scale, phase on the right-hand scale.
+[plot]
+x = "frequency_Hz"
+log_x = true
+right = ["phase_deg"]
+hide = ["time_s"]
+
+# Wiring: generator CH1 -> circuit input and scope CH1; circuit output -> scope CH2.
+# For real hardware set the resources, for example:
+#   gen:   resource = "serial://COM12"
+#   scope: resource = "usb://049F:505A"
+[devices.gen]
+device = "feeltech.fy6900"
+resource = "sim://"
+
+# On the simulator, scope CH2 shows generator CH1 after an RC low-pass at 150 Hz.
+[devices.scope]
+device = "hantek.dso5000p"
+resource = "sim://?dut=rc_lowpass&cutoff_hz=150"

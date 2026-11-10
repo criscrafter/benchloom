@@ -8,11 +8,11 @@ from pathlib import Path
 
 from .engine import run_project
 from .plugin import PluginError, PluginRegistry
-from .project import ProjectError, create_project
+from .project import ProjectError, create_project, templates
 
 
 def _new(args) -> int:
-    project = create_project(args.path, args.mode)
+    project = create_project(args.path, args.mode, args.template)
     print(f"Created {project.mode} project in {project.path}")
     print(f"Run it with: patchbay run {args.path}")
     return 0
@@ -141,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     new = sub.add_parser("new", help="create a project with a working example")
     new.add_argument("path")
     new.add_argument("--mode", choices=("lua", "visual"), default="lua")
+    new.add_argument("--template", choices=[t.id for t in templates()], default="example",
+                     help="what the project starts with: " + "; ".join(
+                         f"{t.id} = {t.title}" for t in templates()))
     new.set_defaults(func=_new)
 
     run = sub.add_parser("run", help="run a project's test")

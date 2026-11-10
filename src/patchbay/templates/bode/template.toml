@@ -1,0 +1,6 @@
+title = "Bode plot"
+mode = "lua"
+description = """Gain and phase of a circuit against frequency, with a Feeltech \
+FY6900 generator and a Hantek DSO5102P scope. Wire generator CH1 to the \
+circuit's input and to scope CH1, and the circuit's output to scope CH2. \
+Starts on simulators with a simulated RC low-pass."""

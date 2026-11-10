@@ -75,7 +75,7 @@ from __future__ import annotations
 
 import re
 
-from patchbay import CommandError, Device, Param, command
+from patchbay import CommandError, Device, Param, command, simbench
 from patchbay.transports import SimTransport
 
 CHANNELS = (1, 2)
@@ -544,6 +544,14 @@ class FY6900Sim(SimTransport):
         self.slots: dict[int, dict] = {}
         self.log: list[str] = []
         self.config: dict = {}
+        simbench.add_source(f"fy6900-{id(self)}", self)
+
+    def bench_signal(self, output: str) -> simbench.Signal | None:
+        """What a simulated scope sees on ``ch1`` or ``ch2``: sines only."""
+        ch = self.channels.get(PREFIX.get({"ch1": 1, "ch2": 2}.get(output)))
+        if ch is None or ch["N"] != ON or ch["W"] != 0:
+            return None
+        return simbench.Signal(ch["F"], ch["A"] / 20000, ch["O"] / 1000)
 
     def configure(self, **options) -> None:
         self.config = options

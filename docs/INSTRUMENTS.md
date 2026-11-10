@@ -245,10 +245,33 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
     waveform. `measure_frequency` reads the scope's hardware counter for the
     trigger source. The counter takes 2 to 3 seconds to show a new frequency,
     so wait that long after changing the signal.
+  - Frequency response: `measure_response(hertz, input, output, periods)`
+    (input CH1 and output CH2 by default) returns `{gain_db, gain, phase_deg,
+    input_vpp, output_vpp}` for a sine of that frequency going through a
+    circuit. It sets the timebase to show about four periods, switches both
+    channels on, triggers on the input, sets each channel's volts/div so the
+    signal fills about six divisions, and fits a sine of the known frequency to
+    both waveforms (least squares, so noise matters little). `phase_deg` is the
+    output relative to the input, between -180 and 180°. The Bode plot project
+    template uses it.
+  - The volts/div ranges differ by up to 2 % (0.5 V/div read 0.18 dB below
+    1 V/div), while the two channels on the same range agreed within 0.1 dB.
+    So `measure_response` puts the output on the input's range as long as it
+    still spans two divisions there, and gains near 0 dB compare like with
+    like.
 - **Limits of the protocol:**
   - Only the on-screen part of the record comes over USB (3200 to 15360
     points).
   - Waveforms can only be read while the scope runs.
+  - From about 8 ms/div up, a waveform is there only for a moment between
+    acquisitions; asked at the wrong time, the scope answers that it has none.
+    Asking again straight away got one usually within a second, but sometimes
+    only after 3 to 8 s, at random, so `read_waveform` keeps asking for up to
+    10 s. With a pause of 0.25 s between requests, 20 and 40 ms/div often got
+    nothing at all.
+  - From 80 ms/div on the scope scrolls (scan mode). The two channels are then
+    read from different moments, so `measure_response` goes no slower than
+    40 ms/div and refuses frequencies below about 1.6 Hz.
   - The timebase is set by pressing the time/div keys, because a settings
     write stores it without applying it.
 - **Safety:** the driver uses only commands that were verified on a real
@@ -256,6 +279,16 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   brick the scope or wipe its calibration), never writes the memory depth (that
   crashed the scope) and changes only the channel and trigger settings that
   were tested.
+- **Frequency response, tried on hardware:** an FY6900 into 3.3 kΩ and a
+  ceramic capacitor, generator to CH1, capacitor to CH2. The Bode template
+  swept 5 Hz to 100 kHz at four points per decade in about two minutes:
+  -0.06 dB at 5 Hz, -56.3 dB at 100 kHz (-57.0 dB expected for a single pole),
+  the phase from -2° to -89°, and the -3 dB point at 140.5 Hz, where the phase
+  gives 142 Hz (about 340 nF). A point takes 1 to 6 s, more below 50 Hz.
+- **Simulator:** shows a 1 kHz sine on CH1. With
+  `sim://?dut=rc_lowpass&cutoff_hz=150` it is wired like a filter test instead:
+  CH1 shows channel 1 of a simulated FY6900 in the same run and CH2 shows it
+  after an RC low-pass with that cutoff.
 - **Tried on hardware:** a DSO5102P on Windows 10 with WinUSB, measuring its
   own 1 kHz probe-compensation output on CH1.
   - **Waveform:** 3840 points read in 0.18 s. The signal is a 0 to 5 V square

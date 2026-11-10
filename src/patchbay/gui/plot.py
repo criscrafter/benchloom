@@ -3,6 +3,7 @@
 Columns are drawn against the column chosen as X axis, on the left value scale
 or, when ticked under "Right axis", on a second scale on the right. That keeps
 columns of very different size readable together, such as 230 V and 10 W.
+"Log X" puts the X axis on a log scale, for frequency sweeps.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .theme import PALETTE_EVENTS
@@ -36,6 +37,7 @@ def style_plot(plot: pg.PlotWidget, palette, axes=("left", "bottom")) -> None:
 
 class PlotPanel(QWidget):
     right_columns_changed = Signal(list)  # the columns on the right scale
+    log_x_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +45,8 @@ class PlotPanel(QWidget):
         self.right_columns: set[str] = set()
         self._curves: dict[str, pg.PlotDataItem] = {}
         self._curve_side: dict[str, str] = {}
+        self.preferred_x: str | None = None  # chosen as X axis as soon as it is logged
+        self.hidden: set[str] = set()  # columns not drawn (the project's [plot] hide)
 
         self.x_axis = QComboBox()
         self.x_axis.setMinimumWidth(120)
@@ -52,11 +56,16 @@ class PlotPanel(QWidget):
         self.right_button.setToolTip("Columns shown on a second scale on the right")
         self.right_button.setMenu(self.right_menu)
         self.right_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.log_x = QCheckBox("Log X")
+        self.log_x.setToolTip("Show the X axis on a log scale")
+        self.log_x.toggled.connect(self._log_x_toggled)
         top = QHBoxLayout()
         top.addWidget(QLabel("X axis"))
         top.addWidget(self.x_axis)
         top.addSpacing(12)
         top.addWidget(self.right_button)
+        top.addSpacing(12)
+        top.addWidget(self.log_x)
         top.addStretch()
 
         self.plot = pg.PlotWidget()
@@ -96,6 +105,26 @@ class PlotPanel(QWidget):
         item = self.plot.getPlotItem()
         self.right_view.setGeometry(item.vb.sceneBoundingRect())
         self.right_view.linkedViewChanged(item.vb, self.right_view.XAxis)
+
+    # --- log X ------------------------------------------------------------
+    def set_log_x(self, on: bool) -> None:
+        self.log_x.blockSignals(True)
+        self.log_x.setChecked(on)
+        self.log_x.blockSignals(False)
+        self._apply_log_x()
+
+    def _log_x_toggled(self, on: bool) -> None:
+        self._apply_log_x()
+        self.log_x_changed.emit(on)
+
+    def _apply_log_x(self) -> None:
+        on = self.log_x.isChecked()
+        # Curves live in our own view boxes, so each is told, not only the axis.
+        self.plot.getPlotItem().setLogMode(x=on, y=False)
+        for curve in self._curves.values():
+            curve.setLogMode(on, False)
+        self.plot.getPlotItem().vb.enableAutoRange()
+        self.right_view.enableAutoRange()
 
     # --- right axis -------------------------------------------------------
     def set_right_columns(self, columns) -> None:
@@ -156,6 +185,10 @@ class PlotPanel(QWidget):
                 self.x_axis.blockSignals(False)
                 added = True
         if added:
+            if self.preferred_x and self.x_axis.findText(self.preferred_x) >= 0                     and self.x_axis.currentText() != self.preferred_x:
+                self.x_axis.blockSignals(True)
+                self.x_axis.setCurrentText(self.preferred_x)
+                self.x_axis.blockSignals(False)
             self._rebuild_right_menu()
         if not self._timer.isActive():
             self._timer.start()
@@ -178,7 +211,9 @@ class PlotPanel(QWidget):
             side = "right" if key in self.right_columns else "left"
             if key in self._curves and (key == x_key or self._curve_side[key] != side):
                 self._remove_curve(key)
-            if key == x_key:
+            if key == x_key or key in self.hidden:
+                if key in self._curves:
+                    self._remove_curve(key)
                 continue
             points = [(r[x_key], r[key]) for r in self.rows
                       if _is_number(r.get(x_key)) and _is_number(r.get(key))]
@@ -188,6 +223,7 @@ class PlotPanel(QWidget):
                     name=key, pen=pg.mkPen(color, width=2),
                     symbol="o", symbolSize=5, symbolBrush=color, symbolPen=color,
                 )
+                curve.setLogMode(self.log_x.isChecked(), False)
                 self._view(side).addItem(curve)  # not PlotItem.addItem: legend is ours
                 self.legend.addItem(curve, f"{key} (right)" if side == "right" else key)
                 self._curves[key], self._curve_side[key] = curve, side

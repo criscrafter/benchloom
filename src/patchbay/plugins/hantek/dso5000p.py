@@ -21,7 +21,7 @@ import math
 import time
 from pathlib import Path
 
-from patchbay import CommandError, Device, Param, RawSimTransport, command
+from patchbay import CommandError, Device, Param, RawSimTransport, command, simbench
 
 MARK = 0x53  # 'S', the normal protocol
 WILDCARD_SUM = 0x66
@@ -35,6 +35,7 @@ VOLTS_PER_DIV = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0,
 PROBES = (1, 10, 100, 1000)
 COUPLINGS = ("DC", "AC", "GND")
 TIMEBASES = tuple(m * 10.0 ** e for e in range(-9, 2) for m in (2, 4, 8))[:32]  # 2 ns … 40 s
+SLOWEST_TRIGGERED = 0.04  # s/div; slower timebases scroll (scan mode)
 TRIGGER_STATES = {0: "stop", 1: "ready", 2: "auto", 3: "triggered", 4: "scan", 6: "armed"}
 TRIGGER_SOURCES = ("CH1", "CH2", "EXT", "EXT/5", "AC50")
 
@@ -103,6 +104,31 @@ def encode(fields, values: dict[str, int]) -> bytes:
     for name, o, n in fields:
         block[o:o + n] = int(values[name]).to_bytes(n, "little", signed=n in (2, 8))
     return bytes(block)
+
+
+def fit_sine(times, volts, hertz: float) -> tuple[float, float, float]:
+    """Peak amplitude, phase (radians, of a sine) and mean of a sine at ``hertz``.
+
+    A least-squares fit of a*sin + b*cos + c, so noise and a few periods are fine.
+    """
+    w = 2 * math.pi * hertz
+    rows = [(math.sin(w * t), math.cos(w * t), 1.0) for t in times]
+    m = [[sum(r[i] * r[j] for r in rows) for j in range(3)] for i in range(3)]
+    y = [sum(r[i] * v for r, v in zip(rows, volts)) for i in range(3)]
+    for col in range(3):  # Gaussian elimination with partial pivoting
+        pivot = max(range(col, 3), key=lambda r: abs(m[r][col]))
+        m[col], m[pivot], y[col], y[pivot] = m[pivot], m[col], y[pivot], y[col]
+        if abs(m[col][col]) < 1e-12:
+            raise CommandError("cannot fit a sine: too few samples or too few periods")
+        for r in range(col + 1, 3):
+            k = m[r][col] / m[col][col]
+            m[r] = [a - k * b for a, b in zip(m[r], m[col])]
+            y[r] -= k * y[col]
+    x = [0.0, 0.0, 0.0]
+    for r in (2, 1, 0):
+        x[r] = (y[r] - sum(m[r][c] * x[c] for c in range(r + 1, 3))) / m[r][r]
+    a, b, c = x
+    return math.hypot(a, b), math.atan2(b, a), c
 
 
 def _index(values, wanted: float, what: str) -> int:
@@ -314,8 +340,10 @@ class DSO5000P(Device):
     def read_waveform(self, channel: int) -> dict:
         values = self.settings_block()
         # At slow timebases the scope has no waveform to hand out while it is still
-        # acquiring one, so a running scope gets a few screen times to finish.
-        deadline = time.monotonic() + max(1.5, 3 * 16 * TIMEBASES[values["HORIZ-TB"]])
+        # acquiring one. From 8 ms/div up it was usually ready within a second but
+        # sometimes only after 3 to 8 s, at random, so a running scope gets 10 s.
+        deadline = time.monotonic() + max(10.0, 3 * 16 * TIMEBASES[values["HORIZ-TB"]])
+        checked = time.monotonic()
         while True:
             payloads = self._exchange(0x02, bytes([0x01, channel - 1]),
                                       lambda p: p[:1] in (b"\x02", b"\x03"), timeout=5.0)
@@ -326,8 +354,11 @@ class DSO5000P(Device):
                 raise CommandError(
                     f"the scope has no waveform for CH{channel}: is the channel on and the "
                     "scope running and triggering? A stopped scope hands out no waveforms.")
-            time.sleep(0.25)
-            values = self.settings_block()
+            # Ask again straight away: a waveform seems to be there only for a moment
+            # between acquisitions. Check now and then that the scope still runs.
+            if time.monotonic() - checked > 1.0:
+                values = self.settings_block()
+                checked = time.monotonic()
         samples = []
         for p in payloads:
             if p[:1] == b"\x01":
@@ -364,6 +395,76 @@ class DSO5000P(Device):
     def measure_frequency(self) -> float:
         return self.settings_block()["TRIG-FREQUENCY"] / 1000  # reported in millihertz
 
+    @command("Gain and phase of a sine going through a circuit: the input on one channel, "
+             "the output on the other. Sets the timebase to show a few periods, ranges both "
+             "channels and triggers on the input. Returns {gain_db, gain, phase_deg, "
+             "input_vpp, output_vpp}; phase_deg is the output relative to the input",
+             params={"hertz": Param(unit="Hz", min=0.1, max=100e6),
+                     "input": Param(min=1, max=2), "output": Param(min=1, max=2),
+                     "periods": Param(min=1, max=50)})
+    def measure_response(self, hertz: float, input: int = 1, output: int = 2,
+                         periods: float = 4) -> dict:
+        if input == output:
+            raise CommandError("the input and output must be on different channels")
+        values = self.settings_block()
+        for ch in (input, output):
+            if not values[f"VERT-CH{ch}-DISP"]:
+                self.set_channel(ch, True)
+        # Both channels on: the scope goes no faster than 400 ns/div. From 80 ms/div
+        # on it scrolls (scan mode), and the two channels then come from different
+        # moments, so 40 ms/div is the slowest used: fewer periods at low frequencies.
+        wanted = max(periods / (16 * hertz), 400e-9)
+        timebase = min(next((tb for tb in TIMEBASES if tb >= wanted * 0.99), TIMEBASES[-1]),
+                       SLOWEST_TRIGGERED)
+        if 16 * timebase * hertz < 1:
+            raise CommandError(f"{hertz:g} Hz is too slow: the scope shows at most "
+                               f"{16 * SLOWEST_TRIGGERED:g} s without scrolling, so it needs "
+                               f"{1 / (16 * SLOWEST_TRIGGERED):g} Hz or more")
+        self.set_timebase(timebase)
+        values = self.settings_block()
+        if values["TRIG-SRC"] != input - 1 or values["TRIG-TYPE"] != 0:
+            self.set_trigger(f"CH{input}", "rising")
+        settle = 0 if self.transport.scheme == "sim" else max(0.5, 40 * timebase)
+        fits: dict[int, tuple[float, float, float]] = {}
+        for _ in range(6):
+            time.sleep(settle)
+            fits = {ch: fit_sine(*self._waveform_pair(ch), hertz) for ch in (input, output)}
+            changed = False
+            values = self.settings_block()
+            best, span = {}, {}
+            for ch in (input, output):
+                probe = PROBES[values[f"VERT-CH{ch}-PROBE"]]
+                span[ch] = 2 * fits[ch][0] + abs(fits[ch][2]) * 2  # room for the offset
+                steps = [v * probe for v in VOLTS_PER_DIV[1:]]
+                best[ch] = next((v for v in steps if v * 6 >= span[ch]), steps[-1])
+            # The volts/div ranges differ by up to 2 % (0.5 vs 1 V/div), while the two
+            # channels on the same range agree within 0.1 dB. So the output shares the
+            # input's range as long as it still spans two divisions there.
+            if best[output] <= best[input] and span[output] >= 2 * best[input]:
+                best[output] = best[input]
+            for ch in (input, output):
+                probe = PROBES[values[f"VERT-CH{ch}-PROBE"]]
+                current = VOLTS_PER_DIV[values[f"VERT-CH{ch}-VB"]] * probe
+                if not math.isclose(best[ch], current, rel_tol=0.01):
+                    self.set_volts_per_div(ch, best[ch])
+                    changed = True
+            if not changed:
+                break
+            if values["TRIG-SRC"] == input - 1:
+                self.set_trigger_level(fits[input][2])
+        a_in, p_in, _ = fits[input]
+        a_out, p_out, _ = fits[output]
+        if a_in <= 0:
+            raise CommandError(f"no {hertz:g} Hz signal on the input (CH{input})")
+        phase = (math.degrees(p_out - p_in) + 180) % 360 - 180
+        gain = a_out / a_in
+        return {"gain_db": 20 * math.log10(gain) if gain > 0 else -math.inf, "gain": gain,
+                "phase_deg": phase, "input_vpp": 2 * a_in, "output_vpp": 2 * a_out}
+
+    def _waveform_pair(self, channel: int) -> tuple[list, list]:
+        wave = self.read_waveform(channel)
+        return wave["time"], wave["volts"]
+
     def identify(self) -> str:
         values = self.settings_block()
         return (f"Hantek DSO5000P: {TIMEBASES[values['HORIZ-TB']]:g} s/div, "
@@ -372,11 +473,20 @@ class DSO5000P(Device):
 
 # --- simulator ------------------------------------------------------------------------
 class DSO5000PSim(RawSimTransport):
-    """A DSO5102P showing a 1 kHz, 2 Vpp sine on CH1; CH2 is off."""
+    """A DSO5102P showing a 1 kHz, 2 Vpp sine on CH1; CH2 is off.
+
+    With ``dut=rc_lowpass`` (``sim://?dut=rc_lowpass&cutoff_hz=150``) it is wired
+    like a filter test instead: CH1 shows channel 1 of a simulated generator in the
+    same run (see :mod:`patchbay.simbench`) and CH2 shows it after an RC low-pass.
+    """
 
     SIGNAL_HZ, SIGNAL_PEAK = 1000.0, 1.0
+    DUTS = ("rc_lowpass",)
 
-    def __init__(self, **options):
+    def __init__(self, dut: str = "", cutoff_hz: float = 150.0, **options):
+        if dut and dut not in self.DUTS:
+            raise ValueError(f"unknown simulated circuit '{dut}' (known: {', '.join(self.DUTS)})")
+        self.dut, self.cutoff_hz = dut, float(cutoff_hz)
         super().__init__(**options)
         self.layout_text = LAYOUT_FILE.read_text(encoding="ascii")
         self.fields = parse_layout(self.layout_text)
@@ -438,9 +548,17 @@ class DSO5000PSim(RawSimTransport):
             return frame(0x82, bytes([3, src])) + frame(0x82, bytes([2, src]))
         scale = VOLTS_PER_DIV[v[f"VERT-CH{channel}-VB"]] * PROBES[v[f"VERT-CH{channel}-PROBE"]]
         dt = TIMEBASES[v["HORIZ-TB"]] * 16 / n
+        hertz, peak, offset, shift = self.SIGNAL_HZ, self.SIGNAL_PEAK, 0.0, 0.0
+        if self.dut:
+            sig = simbench.signal("ch1") or simbench.Signal(1.0, 0.0)
+            hertz, peak, offset = sig.hertz, sig.peak, sig.offset
+            if channel == 2:  # after the RC low-pass: 1 / (1 + j f/fc)
+                ratio = hertz / self.cutoff_hz
+                peak /= math.sqrt(1 + ratio * ratio)
+                shift = -math.atan(ratio)
         samples = bytearray()
         for i in range(n):
-            volts = self.SIGNAL_PEAK * math.sin(2 * math.pi * self.SIGNAL_HZ * (i - n / 2) * dt)
+            volts = offset + peak * math.sin(2 * math.pi * hertz * (i - n / 2) * dt + shift)
             count = round(volts / scale * 25 + v[f"VERT-CH{channel}-POS"])
             samples.append(max(-127, min(127, count)) & 0xFF)
         out = frame(0x82, bytes([0]) + n.to_bytes(3, "little"))

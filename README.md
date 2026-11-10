@@ -25,6 +25,16 @@ Choose **New project**, pick **Visual** or **Lua script**, then press **Run**
 it runs without hardware. Add real instruments in the Devices panel;
 double-click a command there to add it to the test.
 
+**Start from** offers ready-made projects as well:
+
+- **Bode plot:** gain and phase of a circuit against frequency, with a
+  Feeltech FY6900 generator and a Hantek DSO5102P scope. Wire generator CH1 to
+  the circuit's input and to scope CH1, and the circuit's output to scope CH2.
+  Set the sweep on the front panel; the plot shows gain and phase on a log
+  frequency axis, and the script measures the -3 dB point. It starts on
+  simulators with a simulated RC low-pass; set the two resources for real
+  hardware.
+
 Each run gets a folder under the project's `runs/` holding `data.csv`,
 `console.log`, `run.json` and a copy of the script.
 
@@ -32,6 +42,7 @@ The same works without the app:
 
 ```
 patchbay new my-test
+patchbay new my-filter --template bode
 patchbay run my-test
 patchbay devices             # device types the installed plugins provide
 patchbay describe demo.psu   # commands of one device type
@@ -51,6 +62,12 @@ script = "main.lua"
 [devices.psu]
 device = "demo.psu"
 resource = "sim://"
+
+[plot]                # optional: how the plot starts out
+x = "set_V"           # the column for the X axis
+log_x = false         # a log scale for X, for frequency sweeps
+right = ["I"]         # columns on the right-hand scale
+hide = ["time_s"]     # columns not drawn
 ```
 
 | Resource | Connection |
@@ -95,7 +112,9 @@ front panel, below).
 
 The plot draws every logged column live, against the column chosen as X axis
 (time by default). Columns of very different size, such as 230 V and 10 W, can
-go on a second scale under **Right axis**; the choice is kept per project.
+go on a second scale under **Right axis**, and **Log X** puts the X axis on a
+log scale. A project's `[plot]` section sets how the plot starts out; changes
+made in the plot are kept per project.
 
 **Theme** in the toolbar switches between light, dark and the system setting.
 **Settings** (Ctrl+,) also holds the projects folder, editor and console font

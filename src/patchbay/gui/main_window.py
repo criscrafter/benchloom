@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, Qt, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
-    QButtonGroup, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QFormLayout,
+    QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QRadioButton, QSizePolicy, QStackedWidget, QToolBar,
     QToolButton, QVBoxLayout, QWidget,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
 from ..panel import Panel, PanelError
-from ..project import PROJECT_FILE, Project, ProjectError, create_project
+from ..project import PROJECT_FILE, Project, ProjectError, create_project, templates
 from .devices import DevicesPanel
 from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
@@ -56,6 +56,14 @@ class NewProjectDialog(QDialog):
         modes.addWidget(self.lua_radio)
         modes.addWidget(self.visual_radio)
 
+        self.templates = templates()
+        self.template_combo = QComboBox()
+        for template in self.templates:
+            self.template_combo.addItem(template.title, template.id)
+        self.template_info = QLabel(wordWrap=True)
+        self.template_info.setMinimumHeight(self.fontMetrics().lineSpacing() * 4)
+        self.template_combo.currentIndexChanged.connect(self._template_changed)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -66,10 +74,24 @@ class NewProjectDialog(QDialog):
         form = QFormLayout(self)
         form.addRow("Name", self.name_edit)
         form.addRow("Location", location)
+        form.addRow("Start from", self.template_combo)
+        form.addRow(self.template_info)
         form.addRow("Test type", modes)
-        form.addRow(QLabel("The project starts with a simulated power supply and a working "
-                           "example, so it can be run straight away."))
         form.addRow(buttons)
+        self._template_changed()
+
+    def _template_changed(self, *_) -> None:
+        template = self.templates[self.template_combo.currentIndex()]
+        text = template.description
+        if template.mode:
+            text += f" It is a {'Lua' if template.mode == 'lua' else 'visual'} test."
+            (self.lua_radio if template.mode == "lua" else self.visual_radio).setChecked(True)
+        self.template_info.setText(text)
+        for radio in (self.lua_radio, self.visual_radio):
+            radio.setEnabled(template.mode is None)
+
+    def template(self) -> str:
+        return self.template_combo.currentData()
 
     def _browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Location", self.location_edit.text())
@@ -119,6 +141,7 @@ class MainWindow(QMainWindow):
         self.console = QPlainTextEdit(readOnly=True)
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
+        self.plot.log_x_changed.connect(self._log_x_changed)
         self.panel_view = PanelView()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
@@ -294,12 +317,32 @@ class MainWindow(QMainWindow):
             apply_theme("system")
 
     # --- plot settings per project ------------------------------------------
-    def _plot_key(self) -> str:
-        return "plot_right_axis/" + str(self.project.path).replace("\\", "/").replace("/", "|")
+    def _plot_key(self, kind: str = "plot_right_axis") -> str:
+        return kind + "/" + str(self.project.path).replace("\\", "/").replace("/", "|")
 
     def _right_columns_changed(self, columns: list) -> None:
         if self.project is not None:
             self.settings.setValue(self._plot_key(), columns)
+
+    def _log_x_changed(self, on: bool) -> None:
+        if self.project is not None:
+            self.settings.setValue(self._plot_key("plot_log_x"), on)
+
+    def _apply_plot_settings(self, project: Project | None) -> None:
+        """The project's [plot] choices, unless changed in the plot for this project."""
+        prefs = project.plot if project is not None else {}
+        right = prefs.get("right", [])
+        log_x = bool(prefs.get("log_x", False))
+        if project is not None:
+            if self.settings.contains(self._plot_key()):
+                right = self.settings.value(self._plot_key(), [])
+            if self.settings.contains(self._plot_key("plot_log_x")):
+                log_x = str(self.settings.value(self._plot_key("plot_log_x"))).lower() == "true"
+        self.plot.preferred_x = prefs.get("x") if isinstance(prefs.get("x"), str) else None
+        hide = prefs.get("hide", [])
+        self.plot.hidden = {str(c) for c in ([hide] if isinstance(hide, str) else hide)}
+        self.plot.set_right_columns([right] if isinstance(right, str) else list(right or []))
+        self.plot.set_log_x(log_x)
 
     # --- project handling -------------------------------------------------
     def _recent(self) -> list[str]:
@@ -324,8 +367,7 @@ class MainWindow(QMainWindow):
         self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
-        right = self.settings.value(self._plot_key(), []) if project is not None else []
-        self.plot.set_right_columns([right] if isinstance(right, str) else list(right or []))
+        self._apply_plot_settings(project)
         self.editor.mark_error(None)
         self._last_run = None
         for dock in self._docks:
@@ -384,7 +426,8 @@ class MainWindow(QMainWindow):
         dialog = NewProjectDialog(self, self.prefs.projects_dir())
         if dialog.exec() and self._keep_changes():
             try:
-                self._set_project(create_project(dialog.path(), dialog.mode()))
+                self._set_project(create_project(dialog.path(), dialog.mode(),
+                                                 dialog.template()))
             except (ProjectError, OSError) as exc:
                 QMessageBox.critical(self, "New project", str(exc))
 

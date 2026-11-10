@@ -233,3 +233,44 @@ def test_device_dialog_offers_the_fixed_baud_rate(app):
     dialog.serial_port.set_port("COM12")
     assert dialog.name_edit.text() == "gen"
     assert dialog.config().resource == "serial://COM12?baud=115200"
+
+
+def test_new_project_dialog_offers_templates(app, tmp_path):
+    from patchbay.gui.main_window import NewProjectDialog
+
+    dialog = NewProjectDialog(location=tmp_path)
+    assert [dialog.template_combo.itemData(i) for i in range(dialog.template_combo.count())] \
+        == ["example", "bode"]
+    assert dialog.lua_radio.isEnabled() and "power supply" in dialog.template_info.text()
+    dialog.visual_radio.setChecked(True)
+    dialog.template_combo.setCurrentIndex(1)
+    assert dialog.template() == "bode" and dialog.mode() == "lua"
+    assert not dialog.lua_radio.isEnabled() and not dialog.visual_radio.isEnabled()
+    assert "scope CH2" in dialog.template_info.text()
+    dialog.template_combo.setCurrentIndex(0)
+    assert dialog.visual_radio.isEnabled()
+
+
+def test_bode_project_plots_on_a_log_scale(app, tmp_path):
+    project = create_project(tmp_path / "bode", template="bode")
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    plot = window.plot
+    assert plot.log_x.isChecked() and plot.right_columns == {"phase_deg"}
+    window.run()
+    status, error, _ = wait_for_run(app, window)
+    assert status == "ok", error
+    plot._redraw()
+    assert plot.x_axis.currentText() == "frequency_Hz"
+    assert plot._curves["phase_deg"] in plot.right_view.addedItems
+    assert set(plot._curves) == {"gain_dB", "phase_deg"}  # time_s is hidden
+    assert plot._curves["gain_dB"].opts["logMode"][0]  # also the curve outside the PlotItem
+    assert plot.plot.getPlotItem().getAxis("bottom").logMode
+
+    plot.log_x.setChecked(False)  # the user's choice wins over the project's next time
+    assert not plot._curves["gain_dB"].opts["logMode"][0]
+    window.close()
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    assert not window.plot.log_x.isChecked()
+    window.close()
