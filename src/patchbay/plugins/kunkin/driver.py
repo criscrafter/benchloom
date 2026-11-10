@@ -2,7 +2,12 @@
 
 The KP184 speaks a Modbus-RTU variant: every register holds a 32-bit value.
 Reading sends function 0x03 with a count of 4 (bytes) and gets 4 data bytes back;
-writing sends function 0x06 followed by count 1, byte count 4 and 4 data bytes.
+writing sends function 0x06 followed by count 1, byte count 4 and 4 data bytes,
+and the load acknowledges with 8 bytes: address, 0x06, the register, the low 16
+bits of the value and the CRC (checked on a real KP184).
+
+Bit 28 of the status registers (input, mode) is set once the load has received a
+command; the driver masks it out.
 
 The register map follows the community documentation of the protocol (see the
 tuxmike/KP184 and markmerz/kunkin-kp184-py projects and the EEVblog thread
@@ -69,8 +74,9 @@ class KP184(Device):
             raise CommandError(f"register value {value} out of range")
         frame = (bytes([self.address, 0x06, register >> 8, register & 0xFF, 0x00, 0x01, 0x04])
                  + value.to_bytes(4, "big"))
-        # The write acknowledgement is not documented exactly; check only its start.
-        self._exchange(frame, 9, strict=False)
+        reply = self._exchange(frame, 8, strict=True)
+        if reply[2:6] != frame[2:4] + value.to_bytes(4, "big")[2:]:
+            raise CommandError(f"unexpected reply from the KP184: {reply.hex(' ')}")
 
     # --- commands -------------------------------------------------------------------
     @command("Switch the load input on or off")
@@ -85,6 +91,13 @@ class KP184(Device):
              params={"mode": Param(choices=MODES)})
     def set_mode(self, mode: str) -> None:
         self.write_register(REG_MODE, MODES.index(mode))
+        # The load acknowledges a mode it then ignores (seen with CV while its battery
+        # test was active), so check.
+        actual = self.get_mode()
+        if actual != mode:
+            raise CommandError(f"the KP184 did not switch to {mode} mode (it is in "
+                               f"{actual} mode); is a front-panel function such as the "
+                               "battery test active?")
 
     @command("Read the operating mode")
     def get_mode(self) -> str:

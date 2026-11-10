@@ -79,6 +79,31 @@ def test_stop_interrupts_a_busy_loop(tmp_path):
     assert result.status == "stopped"
 
 
+
+def test_stop_ends_a_script_that_sleeps_and_calls_devices(tmp_path):
+    # A normal test loop runs far fewer than 10000 Lua instructions between stop
+    # checks of the count hook; Stop must still end it, and no device may get
+    # another command afterwards (found with a real KP184 load).
+    stop = threading.Event()
+    lua = """
+for step = 1, 50 do
+    psu:set_voltage(step / 10)
+    sleep(0.05)
+    log { step = step, V = psu:measure_voltage() }
+end
+print("loop finished")
+"""
+    rows = []
+
+    def on_row(row):
+        rows.append(row)
+        if len(rows) == 3:
+            stop.set()
+
+    result, lines = run(make(tmp_path, lua), stop_event=stop, on_row=on_row)
+    assert result.status == "stopped"
+    assert len(rows) == 3 and "loop finished" not in lines
+
 def test_scripts_cannot_reach_python(tmp_path):
     result, lines = run(make(tmp_path, "print(python)\n"))
     assert lines == ["nil"]

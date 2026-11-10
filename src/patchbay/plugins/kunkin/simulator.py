@@ -18,6 +18,7 @@ class KP184Sim(RawSimTransport):
     def __init__(self, address="1", **options):
         super().__init__(**options)
         self.address = int(address)
+        self.remote = False
         self.registers = {0x010E: 0, 0x0110: 1, 0x0112: 0, 0x0116: 0, 0x011A: 100, 0x011E: 0}
 
     def _operating_point(self) -> tuple[float, float]:
@@ -41,7 +42,10 @@ class KP184Sim(RawSimTransport):
 
     def _read(self, register: int) -> int | None:
         if register in self.registers:
-            return self.registers[register]
+            value = self.registers[register]
+            if register in (0x010E, 0x0110) and self.remote:
+                value |= 0x10000000  # flag a real KP184 sets once it has received a write
+            return value
         volts, amps = self._operating_point()
         if register == 0x0122:
             return max(0, round((volts + random.gauss(0, 0.002)) * 1000))
@@ -61,5 +65,7 @@ class KP184Sim(RawSimTransport):
         if data[1] == 0x06 and len(data) == 13 and data[4:7] == b"\x00\x01\x04":
             if register in WRITABLE:
                 self.registers[register] = int.from_bytes(data[7:11], "big")
-            return with_crc(data[:7])
+            self.remote = True
+            # The real load echoes the register and the low 16 bits of the value.
+            return with_crc(data[:4] + data[9:11])
         return None

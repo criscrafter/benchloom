@@ -50,6 +50,34 @@ def test_kp184_frames_match_the_protocol():
     assert sent[2] == with_crc(bytes.fromhex("010301220004"))
 
 
+
+def test_kp184_write_acknowledgement_is_checked():
+    # A real KP184 answers a write with 8 bytes: address, 06, register, low 16 bits
+    # of the value, CRC. Anything else is reported.
+    load, sim = open_sim("kunkin.kp184")
+    load.set_current(1.234)
+    assert sim.handle_bytes(with_crc(bytes.fromhex("0106011600010400 0004d2"))) ==         with_crc(bytes.fromhex("0106011604d2"))
+    sim.handle_bytes = lambda data: with_crc(bytes.fromhex("0106011600 00"))
+    with pytest.raises(CommandError, match="unexpected reply"):
+        load.set_current(1.234)
+
+
+def test_kp184_reports_a_mode_it_did_not_take():
+    # Seen on hardware with the battery test active: CV is acknowledged, but the load
+    # stays in CC.
+    load, sim = open_sim("kunkin.kp184")
+    original = sim._read
+    sim._read = lambda register: 1 if register == 0x0110 else original(register)
+    with pytest.raises(CommandError, match="did not switch to CV mode"):
+        load.set_mode("CV")
+
+
+def test_kp184_masks_the_remote_flag():
+    load, sim = open_sim("kunkin.kp184")
+    load.set_mode("CR")
+    assert sim._read(0x0110) & 0x10000000
+    assert load.get_mode() == "CR" and not load.is_input_on()
+
 def test_kp184_modes_and_measurements():
     load, sim = open_sim("kunkin.kp184")
     assert not load.is_input_on()

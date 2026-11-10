@@ -60,12 +60,25 @@ function(emit, should_stop, panel_get, panel_set)
         emit(table.concat(parts, "\\t"))
     end
 
-    debug.sethook(function()
+    local function check_stop()
         if should_stop() then error("%s", 0) end
-    end, "", 10000)
+    end
+    -- The count hook catches busy loops. Most scripts spend their time in sleep()
+    -- and device calls instead, so those check too (see guard and the device
+    -- wrapper below): after Stop, no device gets another command.
+    debug.sethook(check_stop, "", 10000)
+
+    local function guard(fn)
+        return function(...)
+            check_stop()
+            local result = fn(...)
+            check_stop()
+            return result
+        end
+    end
 
     -- Builds the script-side object for one device.
-    return function(device_name, names, call)
+    local function make_device(device_name, names, call)
         local device = {}
         for _, name in ipairs(names) do
             device[name] = function(self, ...)
@@ -73,13 +86,17 @@ function(emit, should_stop, panel_get, panel_set)
                     error("use a colon to call device commands: " .. device_name
                           .. ":" .. name .. "(...)", 2)
                 end
+                check_stop()
                 local ok, result = call(name, ...)
+                check_stop()
                 if not ok then error(result, 2) end
                 return result
             end
         end
         return device
     end
+
+    return make_device, guard
 end
 """ % _STOP
 
@@ -113,13 +130,13 @@ class LuaEngine:
             unpack_returned_tuples=True, register_eval=False, register_builtins=False,
             attribute_filter=_no_attributes,
         )
-        self._make_device = self.lua.eval(_BOOTSTRAP)(
+        self._make_device, guard = self.lua.eval(_BOOTSTRAP)(
             on_print, self.stop_event.is_set, self._panel_get, self._panel_set)
         g = self.lua.globals()
         self._load = g.load  # kept, so a device or script redefining `load` cannot break runs
-        g.sleep = self._sleep
+        g.sleep = guard(self._sleep)
         g.time = elapsed
-        g.log = lambda table: log_row(self._to_python(table, as_dict=True))
+        g.log = guard(lambda table: log_row(self._to_python(table, as_dict=True)))
 
     def _to_python(self, value: Any, as_dict: bool = False) -> Any:
         if lupa.lua_type(value) != "table":

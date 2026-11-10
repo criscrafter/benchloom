@@ -4,9 +4,10 @@ Every plugin below ships a simulator, so a test can be written with
 `resource = "sim://"` and switched to the real instrument later by changing only
 the resource.
 
-**None of these drivers has been run against real hardware yet.** They are
-written from the manuals and protocol notes listed for each instrument and are
-tested against their simulators. Expect small fixes on first contact.
+The KP184 driver has been tried on a real load (see below). **The other drivers
+have not been run against real hardware yet.** They are written from the manuals
+listed for each instrument and are tested against their simulators. Expect small
+fixes on first contact.
 
 Sources, loads and AC sources switch their output off when a test ends,
 including when it fails or is stopped. To keep the output on, add
@@ -31,8 +32,33 @@ not react to Stop within three seconds) cannot do this.
   Kunkin's register numbering in its own manual is written for the KP182 family.
 - **Not covered:** dynamic test, battery test, compare mode. Those registers are
   reported as unreliable.
-- **Uncertain:** the exact length of the write acknowledgement; the driver only
-  checks its first bytes.
+- **Tried on hardware:** a KP184 through a CH340 USB-RS232 adapter (9600 baud,
+  address 1, normal CRC order), loading a 22.37 V bench supply up to 6 A and
+  about 130 W. Covered:
+  - all four modes, setpoints and input on/off;
+  - Lua test runs, including switching off at the end and on Stop.
+
+  | Mode | Result |
+  |---|---|
+  | CC, 0.5 to 6 A | within 2 mA |
+  | CR, 4 to 10 Ω | within 0.4 % (3.9 % at 100 Ω, i.e. 0.22 A) |
+  | CW, 20 to 100 W | within 1 % |
+  | CV below the supply voltage | holds the setpoint within a few mV |
+
+- **Timing:** a read takes about 80 ms and a setting about 130 ms. The load
+  refreshes its readings about every 0.23 s, so after changing a setpoint or
+  switching the input, wait about 0.6 s before measuring. Readings taken sooner
+  still show the old value.
+- **Found on hardware:**
+  - A write is acknowledged with 8 bytes: address, 0x06, register, low 16 bits of
+    the value, CRC.
+  - Once the load has received a write, bit 28 is set in its status registers;
+    the driver ignores it.
+  - Writing the undocumented mode values 4 to 7 is accepted and can leave the
+    load in its battery test (display shows Ah). While that is active, CV is
+    acknowledged but not taken. `set_mode` reads the mode back and reports this.
+- **CH340 adapters on Windows** refuse to reopen a port with the settings it was
+  last closed with. Patchbay works around it, so no setting is needed.
 
 ## HP 6655A power supply (`hp.6655a`)
 

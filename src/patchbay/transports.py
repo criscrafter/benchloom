@@ -165,7 +165,24 @@ class SerialTransport(Transport):
         try:
             self._serial = serial.Serial(self.port, timeout=self.timeout, **self.serial_options)
         except serial.SerialException as exc:
-            raise TransportError(f"cannot open serial port {self.port}: {exc}") from exc
+            # Some USB serial drivers (seen with the CH340 on Windows) refuse to apply
+            # settings identical to the ones the port was last closed with. Opening
+            # at another baud rate and then switching works around it.
+            try:
+                options = dict(self.serial_options, baudrate=self._other_baud())
+                self._serial = serial.Serial(self.port, timeout=self.timeout, **options)
+                self._serial.baudrate = self.serial_options["baudrate"]
+            except serial.SerialException:
+                self.close()
+                raise TransportError(f"cannot open serial port {self.port}: {exc}") from exc
+
+    def _other_baud(self) -> int:
+        return 19200 if self.serial_options["baudrate"] != 19200 else 9600
+
+    def _reconfigure(self) -> None:
+        """Re-apply the port settings by changing the baud rate away and back."""
+        self._serial.baudrate = self._other_baud()
+        self._serial.baudrate = self.serial_options["baudrate"]
 
     def close(self) -> None:
         if self._serial is not None:
@@ -190,7 +207,13 @@ class SerialTransport(Transport):
     def set_timeout(self, seconds: float) -> None:
         super().set_timeout(seconds)
         if self._serial is not None:
-            self._serial.timeout = self.timeout
+            import serial
+
+            try:
+                self._serial.timeout = self.timeout
+            except serial.SerialException:
+                # The timeout is stored before the driver rejects the settings.
+                self._reconfigure()
 
     def read_until(self, term: bytes) -> bytes:
         data = self._serial.read_until(term)
