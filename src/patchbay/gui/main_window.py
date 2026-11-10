@@ -8,11 +8,12 @@ import re
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QButtonGroup, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QRadioButton, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMessageBox,
+    QPlainTextEdit, QPushButton, QRadioButton, QSizePolicy, QStackedWidget, QToolBar,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..engine import GRAPH_CHUNK
@@ -25,6 +26,7 @@ from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
 from .runner import RunController
+from .theme import THEMES, apply_theme
 
 MAX_RECENT = 8
 
@@ -99,6 +101,8 @@ class MainWindow(QMainWindow):
         self.project: Project | None = None
         self.settings = settings or QSettings("Patchbay", "Patchbay")
         self.resize(1280, 800)
+        apply_theme(self.theme())
+        QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_theme_changed)
 
         # central area: welcome page, Lua editor, or the visual placeholder
         self.editor = CodeEditor()
@@ -117,6 +121,7 @@ class MainWindow(QMainWindow):
         self.console.setMaximumBlockCount(10000)
         self.console.setFont(mono_font(10))
         self.plot = PlotPanel()
+        self.plot.right_columns_changed.connect(self._right_columns_changed)
         self.panel_view = PanelView()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
@@ -221,7 +226,50 @@ class MainWindow(QMainWindow):
         toolbar.addActions([self.run_action, self.stop_action])
         toolbar.addSeparator()
         toolbar.addActions([self.runs_action, self.lua_action])
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+        toolbar.addWidget(self._build_theme_button())
         self.addToolBar(toolbar)
+
+    # --- theme ------------------------------------------------------------
+    def theme(self) -> str:
+        theme = str(self.settings.value("theme", "system"))
+        return theme if theme in THEMES else "system"
+
+    def _build_theme_button(self) -> QToolButton:
+        menu = QMenu(self)
+        group = QActionGroup(self)
+        self.theme_actions = {}
+        for key, label in THEMES.items():
+            item = QAction(label, self, checkable=True)
+            item.setChecked(key == self.theme())
+            item.triggered.connect(lambda _=False, key=key: self.set_theme(key))
+            group.addAction(item)
+            menu.addAction(item)
+            self.theme_actions[key] = item
+        button = QToolButton(text="Theme")
+        button.setToolTip("Light, dark, or follow the system")
+        button.setMenu(menu)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        return button
+
+    def set_theme(self, theme: str) -> None:
+        self.settings.setValue("theme", theme)
+        self.theme_actions[theme].setChecked(True)
+        apply_theme(theme)
+
+    def _system_theme_changed(self, *_) -> None:
+        if self.theme() == "system":
+            apply_theme("system")
+
+    # --- plot settings per project ------------------------------------------
+    def _plot_key(self) -> str:
+        return "plot_right_axis/" + str(self.project.path).replace("\\", "/").replace("/", "|")
+
+    def _right_columns_changed(self, columns: list) -> None:
+        if self.project is not None:
+            self.settings.setValue(self._plot_key(), columns)
 
     # --- project handling -------------------------------------------------
     def _recent(self) -> list[str]:
@@ -246,6 +294,8 @@ class MainWindow(QMainWindow):
         self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
+        right = self.settings.value(self._plot_key(), []) if project is not None else []
+        self.plot.set_right_columns([right] if isinstance(right, str) else list(right or []))
         self.editor.mark_error(None)
         self._last_run = None
         for dock in self._docks:

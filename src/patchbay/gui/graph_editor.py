@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsView, QInputDialog, QLineEdit, QMenu,
 )
 
+from .theme import PALETTE_EVENTS
 from ..graph import GRAPH_VERSION, Catalog, GraphError, NodeSpec, Option, Pin
 
 HEADER = 28
@@ -318,12 +319,7 @@ class GraphEditor(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
-        palette = self.palette()
-        self.body_color = palette.base().color()
-        self.text_color = palette.text().color()
-        self.border_color = palette.mid().color()
-        self.highlight_color = palette.highlight().color()
-        self.canvas_color = palette.window().color()
+        self._read_palette()
         self.node_font = QFont(self.font())
         self.title_font = QFont(self.font())
         self.title_font.setBold(True)
@@ -629,6 +625,21 @@ class GraphEditor(QGraphicsView):
             self.unsetCursor()
             return
         super().mouseReleaseEvent(event)
+
+    def _read_palette(self) -> None:
+        palette = self.palette()
+        self.body_color = palette.base().color()
+        self.text_color = palette.text().color()
+        self.border_color = palette.mid().color()
+        self.highlight_color = palette.highlight().color()
+        self.canvas_color = palette.window().color()
+
+    def changeEvent(self, event) -> None:
+        if event.type() in PALETTE_EVENTS:
+            self._read_palette()
+            self.scene().update()
+            self.viewport().update()
+        super().changeEvent(event)
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
         painter.fillRect(rect, self.canvas_color)

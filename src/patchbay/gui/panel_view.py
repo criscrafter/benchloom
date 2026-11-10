@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QToolButton, QVBoxLayout, QWidget,
 )
 
+from .plot import style_plot
+from .theme import PALETTE_EVENTS
 from ..panel import CONTROLS, INDICATORS, WIDGET_TYPES, Panel, Widget, valid_name
 
 GRID = 10
@@ -128,6 +130,12 @@ class PanelItem(QFrame):
         self.overlay.setVisible(view.editing)
         self.show()
 
+    def changeEvent(self, event) -> None:
+        if event.type() in PALETTE_EVENTS and isinstance(getattr(self, "control", None),
+                                                          pg.PlotWidget):
+            style_plot(self.control, self.palette())
+        super().changeEvent(event)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())
@@ -181,13 +189,9 @@ class PanelItem(QFrame):
             bar.setFormat(format_number(None, model.unit))
             return bar
         if kind == "chart":
-            palette = self.palette()
-            text = palette.text().color()
-            plot = pg.PlotWidget(background=palette.base().color())
+            plot = pg.PlotWidget()
             plot.showGrid(x=True, y=True, alpha=0.2)
-            for name in ("left", "bottom"):
-                plot.getAxis(name).setPen(text)
-                plot.getAxis(name).setTextPen(text)
+            style_plot(plot, self.palette())
             plot.setLabel("left", model.unit or None)
             self._points: tuple[list, list] = ([], [])
             self._curve = plot.plot(pen=pg.mkPen("#3b82f6", width=2))

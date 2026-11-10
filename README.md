@@ -92,6 +92,12 @@ Besides the devices, a script has `sleep(seconds)`, `log{...}` (one row in
 `data.csv`), `time()` (seconds since start), `print(...)` and `panel` (the
 front panel, below).
 
+The plot draws every logged column live, against the column chosen as X axis
+(time by default). Columns of very different size, such as 230 V and 10 W, can
+go on a second scale under **Right axis**; the choice is kept per project.
+
+**Theme** in the toolbar switches between light, dark and the system setting.
+
 ## A front panel
 
 ![A front panel while its test runs](docs/images/panel.png)

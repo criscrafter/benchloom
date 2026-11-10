@@ -11,6 +11,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
+from .theme import PALETTE_EVENTS
+
 KEYWORDS = (
     "and break do else elseif end false for function goto if in local nil not or "
     "repeat return then true until while"
@@ -37,6 +39,10 @@ def is_dark(palette) -> bool:
 class LuaHighlighter(QSyntaxHighlighter):
     def __init__(self, document, dark: bool):
         super().__init__(document)
+        self.formats = {}
+        self.set_dark(dark)
+
+    def set_dark(self, dark: bool) -> None:
         colors = (
             {"keyword": "#c792ea", "builtin": "#82aaff", "number": "#f78c6c",
              "string": "#c3e88d", "comment": "#7f8c98"}
@@ -51,6 +57,7 @@ class LuaHighlighter(QSyntaxHighlighter):
             if name == "comment":
                 fmt.setFontItalic(True)
             self.formats[name] = fmt
+        self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
         for match in _WORD.finditer(text):
@@ -111,6 +118,11 @@ class CodeEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self._update_margin)
         self.updateRequest.connect(self._on_update_request)
         self._update_margin()
+
+    def changeEvent(self, event) -> None:
+        if event.type() in PALETTE_EVENTS:
+            self.highlighter.set_dark(is_dark(self.palette()))
+        super().changeEvent(event)
 
     # --- line numbers -----------------------------------------------------
     def gutter_width(self) -> int:
