@@ -224,3 +224,12 @@ def test_settings_dialog_saves_and_applies(app, tmp_path):
     assert again.editor_font.value() == 11 and again.theme_combo.currentData() == "system"
     assert again.folder_list.count() == 1  # plugin folders are kept
     window.set_theme("system")
+
+
+def test_device_dialog_offers_the_fixed_baud_rate(app):
+    dialog = DeviceDialog(PluginRegistry.default(), set())
+    dialog.type_box.setCurrentIndex(dialog.type_box.findData("feeltech.fy6900"))
+    dialog.connection_box.setCurrentIndex(dialog.connection_box.findData("serial"))
+    dialog.serial_port.set_port("COM12")
+    assert dialog.name_edit.text() == "gen"
+    assert dialog.config().resource == "serial://COM12?baud=115200"

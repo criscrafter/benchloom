@@ -4,8 +4,8 @@ Every plugin below ships a simulator, so a test can be written with
 `resource = "sim://"` and switched to the real instrument later by changing only
 the resource.
 
-The KP184, Chroma 6404 and Hantek DSO5102P drivers have been tried on real
-instruments (see below). **The HP drivers have not been run against real
+The KP184, Chroma 6404, Hantek DSO5102P and Feeltech FY6900 drivers have been
+tried on real instruments (see below). **The HP drivers have not been run against real
 hardware yet.** They are written from the manuals or protocol notes listed for each
 instrument and are tested against their simulators. Expect small fixes on first
 contact.
@@ -243,7 +243,8 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   - Data: `read_waveform(channel)` returns `{time = {...}, volts = {...}}`.
     `measure_vpp`, `measure_vrms` and `measure_mean` are worked out from that
     waveform. `measure_frequency` reads the scope's hardware counter for the
-    trigger source.
+    trigger source. The counter takes 2 to 3 seconds to show a new frequency,
+    so wait that long after changing the signal.
 - **Limits of the protocol:**
   - Only the on-screen part of the record comes over USB (3200 to 15360
     points).
@@ -274,3 +275,122 @@ USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
   there. At connect the driver reads the scope's own copy and falls back to this
   one.
 
+## Feeltech FY6900 function generator (`feeltech.fy6900`)
+
+- **Connection:** the generator's USB port is a serial port:
+  `resource = "serial://COM12"`. Its settings are fixed at 115200 baud, 8N2; the
+  driver sets them itself, and the Add device dialog fills in 115200.
+- **Signal** (channel is 1 or 2):
+  - `set_signal(channel, waveform, hertz, vpp, offset)` sets all four at once.
+  - `set_waveform`, `set_frequency`, `set_amplitude` (Vpp, up to 24 V),
+    `set_offset` (±12 V), `set_duty_cycle`, `set_phase`, `set_output`, each with a
+    `get_` command, and `idn`.
+  - `set_pulse_width(ns)` for `adjustable_pulse` (channel 1; the pulse goes from
+    0 V to the amplitude), `set_trapezoid_edge(channel, setting)` for
+    `trapezoid` (1000 gives a 10-90 % rise of about 1.65 µs).
+  - Waveforms: `sine`, `square`, `rectangle`, `trapezoid`, `cmos`,
+    `adjustable_pulse` (channel 1 only), `dc`, `triangle`, `ramp`,
+    `negative_ramp`, the stair, exponential, logarithmic and rectified waves,
+    `lorentz`, `multitone`, `noise`, `ecg`, `trapezoid_pulse`, `sinc`, `impulse`,
+    `gaussian_noise`, `am`, `fm`, `chirp`, and `arb1` to `arb64` (the stored
+    arbitrary waveforms).
+- **Modulation** of channel 1, by channel 2 or by a signal on EXT IN:
+  - `start_modulation(kind, source)` with kind `am`, `fm`, `pm`, `fsk`, `ask`,
+    `psk` or `burst` and source `ch2` (default), `external_ac` or `external_dc`.
+    `stop_modulation()` or `set_output(1, …)` ends it.
+  - `set_am_depth(percent)` (up to 120 %), `set_fm_deviation(hertz)` (the total
+    swing: 500 Hz around 1 kHz goes from 750 to 1250 Hz), `set_pm_deviation(degrees)`,
+    `set_fsk_frequency(hertz)` (the second frequency), `set_burst_count(cycles)`
+    (a burst per rising edge of the source).
+- **Sweep** of channel 1:
+  - `set_sweep(what, start, end, seconds, direction, logarithmic)` with what
+    `frequency` (whole Hz), `amplitude`, `offset` or `duty_cycle`, direction `up`,
+    `down` or `up_down`; then `start_sweep()` and `stop_sweep()`.
+  - The generator cannot read sweep settings back, so they are not checked.
+- **Other:**
+  - `set_sync(what, on)`: channel 2 follows channel 1's `waveform`, `frequency`,
+    `amplitude`, `offset` or `duty_cycle`.
+  - `set_uplink(on)` (linking several generators), `set_buzzer(on)`.
+  - `save_settings(slot)` / `load_settings(slot)`, slots 1 to 20. Slot 1 is
+    loaded at power-on.
+  - Counter on EXT IN: `measure_frequency`, `measure_period`,
+    `measure_high_time`, `measure_low_time`, `measure_duty_cycle`,
+    `measure_count`, `reset_counter`, `set_counter_gate(1, 10 or 100 s)`,
+    `set_counter_coupling(dc or ac)`.
+  - The counter shows a new signal about two gate times after it changes. At
+    a 1 s gate the frequency is in whole Hz, so for slow signals use
+    `1 / measure_period()` (12.345 Hz read as 81004456 ns). DC coupling
+    switches at a positive level, which suits logic signals; a 2 Vpp sine
+    around 0 V was not counted. With AC coupling only the frequency was read.
+    The pulse count starts 1 to 2 s after `reset_counter`; reading the
+    frequency in between once stopped it. After a slow signal, a new one can
+    take several seconds to show.
+- **Checks:** the generator clamps out-of-range values without an error, so the
+  driver reads every setting back and fails with what was set instead (for
+  example a too high amplitude at a high frequency). The device setting "Read
+  every setting back" switches this off. The offset DAC has 12 bits (4.095 V
+  becomes 4.094 V), so the offset check allows 1 mV.
+- **Frequencies it cannot produce:** the firmware loses 65536 µHz when the part
+  of the frequency below 0.1 Hz is 0.065536 Hz or more (1000.567 Hz comes out as
+  1000.501 Hz; measured on the output, not only in the readback). Those
+  frequencies, about a third of all with three or more decimals, cannot be set.
+  The driver sets the nearest one that can, at most 17 mHz away:
+  `set_frequency(1, 1000.567)` gives 1000.565535 Hz. The FSK frequency has the
+  same fault and gets the same treatment.
+- **Phase needs uplink off.** With uplink on (it was on, on the tested unit) the
+  generator stores the phase but ignores it, so `set_phase` fails with a hint
+  to call `set_uplink(false)`. With uplink off, channel 2 leads channel 1 by the
+  difference of the two phases.
+- **Duty cycle** applies to `rectangle` and the pulse waveforms; `square` is
+  always 50 %.
+- **Not offered:**
+  - Uploading arbitrary waveforms: the generator acknowledges the upload
+    (`DDS_WAVEnn`, then "W" and "HN") but the slot keeps playing what it had,
+    with either byte order, in one go or in chunks.
+  - A manual trigger for bursts: no remote command for it is known.
+- **Output safety:** a running sweep is stopped and both outputs are switched
+  off when a test ends, unless the device entry says `leave_output_on = true`.
+- **FY6800:** supported from fygen's notes (frequency in µHz, no rectangle or
+  trapezoid), not tried on hardware. Other Feeltech models are refused at
+  connect.
+- **Tried on hardware:** an FY6900-60M with firmware V1.8 on Windows 10, its two
+  outputs on the two inputs of a Hantek DSO5102P:
+  - 4 Vpp read as 4.12 Vpp, and an offset of +1 V moved the mean by +1.02 V
+    (the scope reads about 0.1 V high).
+  - Sine, square, rectangle, triangle, ramp, negative ramp and DC look right
+    on both channels, which confirms that channel 2 numbers its waveforms one
+    lower from DC on.
+  - Rectangle at 25 % and 75 % duty measured 25.0 % and 75.0 %; 2000 Hz
+    measured 2000.0 Hz.
+  - With uplink off, phases of 0, 90 and 180° on channel 2 measured 4, 86 and
+    183°.
+  - AM, FM, PM, FSK, ASK, PSK and burst, each modulated by channel 2, looked as
+    set (for example a burst of 4 cycles, FSK between 1 and 3 kHz, PM of 90° at
+    10 Hz as ±16 Hz).
+  - Sweeps of frequency (linear and log, up and down), amplitude, offset and
+    duty cycle ran as set and stopped cleanly.
+  - Sync, pulse width and trapezoid edge did what they say.
+  - A Lua project stepped the frequency while the scope measured it, and the
+    outputs were off afterwards.
+  - The counter, with channel 2 wired to EXT IN, read 777, 98765, 1234567,
+    20000001 and 60000003 Hz for those frequencies, and the period, high time
+    and duty cycle of a 25 % rectangle exactly at 1 kHz.
+  - Not tried: the external modulation sources, and saving or loading memory
+    slots (to keep the generator's stored settings).
+- **Protocol quirks found on the way** (for whoever extends the driver):
+  - Reads are answered with the value and an extra empty line; unknown
+    commands get no answer at all.
+  - The documented sweep start (`SBE1`) swept the wrong range and `SBE0` only
+    paused, so the driver uses the front panel's run key (`KEY17`).
+  - A log sweep ignores the output write that ends a linear sweep until it is
+    paused, so the driver pauses first.
+  - Sweep offsets are sent counted from -12 V.
+  - Counter coupling: `WCC0` is DC and `WCC1` AC, as in the FY6600 document
+    (fygen has them swapped). `WCP0`, documented as "pause", answers with the
+    pulse count.
+- **Sources:** the official FY6600 serial protocol (rev 1.5),
+  [mattwach/fygen](https://github.com/mattwach/fygen) (waveform numbers from its
+  `wavedef.py`), [katzenjens/fy6900commander](https://github.com/katzenjens/fy6900commander),
+  [tspspi/pyfy6900](https://github.com/tspspi/pyfy6900), an EEVblog post on the
+  FY6600/FY6800 serial interface, and FD-Cluster-Tester, all checked on the real
+  generator. No code was copied from them.

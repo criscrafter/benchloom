@@ -237,6 +237,14 @@ class DeviceDialog(QDialog):
         self.connection_box.blockSignals(False)
         if spec and spec.default_resource.startswith("usb://") and not self.usb_id.text():
             self.usb_id.setText(spec.default_resource[len("usb://"):])
+        if spec and spec.default_resource.startswith("serial://"):
+            # a device with a fixed baud rate; editing loads the saved resource after this
+            try:
+                baud = parse_resource(spec.default_resource)[2].get("baud")
+            except TransportError:
+                baud = None
+            if baud:
+                self.serial_baud.setEditText(str(baud))
         self._show_page()
         self._build_settings(spec)
         # follow the device type with the suggested name until the user types their own

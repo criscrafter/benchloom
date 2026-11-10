@@ -58,15 +58,16 @@
    widget without breaking the nodes that use it, a full-window panel mode.
 5. **Device plugins**, each with a simulator. Done: Arduino line protocol
    (generic) · Kunkin KP184 (Modbus/serial, RS-485) · HP 6655A · HP 3478A
-   (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB). GPIB through
-   the xyphro UsbGpib adapter (USBTMC) without a vendor VISA. Tried on hardware:
-   KP184, 6404 and DSO5102P. See [INSTRUMENTS.md](INSTRUMENTS.md).
+   (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB) · Feeltech
+   FY6900. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
+   VISA. Tried on hardware: KP184, 6404, DSO5102P and FY6900. See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build, then Linux, then Mac. Plugin install
    from a registry (install from a folder or .zip is done).
 
 ## Not verified yet
 
-- The serial transport has been used with a real KP184 (CH340 adapter, Windows).
+- The serial transport has been used with a real KP184 (CH340 adapter, Windows)
+  and a real FY6900 (115200 baud 8N2).
   The USB transport has been used with a real DSO5102P. The TCP, Prologix, VISA
   and USBTMC transports have not been run against real hardware.
 - The KP184 driver has been tried on a real load, up to 6 A and 130 W, and the

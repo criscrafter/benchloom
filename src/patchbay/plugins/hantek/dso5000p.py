@@ -282,7 +282,9 @@ class DSO5000P(Device):
             deadline = time.monotonic() + 1.0
             while self.settings_block()["HORIZ-TB"] == current and time.monotonic() < deadline:
                 pass  # the block updates a little after the key press
-        raise CommandError(f"could not set the timebase to {seconds:g} s/div")
+        raise CommandError(f"the scope stopped at {TIMEBASES[current]:g} s/div and would not go "
+                           f"to {seconds:g} s/div (some timebases are only offered with one "
+                           "channel on, or in some acquisition modes)")
 
     @command("Read the timebase", unit="s/div")
     def get_timebase(self) -> float:
@@ -311,11 +313,21 @@ class DSO5000P(Device):
              params={"channel": Param(min=1, max=2)})
     def read_waveform(self, channel: int) -> dict:
         values = self.settings_block()
-        payloads = self._exchange(0x02, bytes([0x01, channel - 1]),
-                                  lambda p: p[:1] in (b"\x02", b"\x03"), timeout=5.0)
-        if payloads[-1][:1] == b"\x03":
-            raise CommandError(f"the scope has no waveform for CH{channel}: is the channel on "
-                               "and the scope running? A stopped scope hands out no waveforms.")
+        # At slow timebases the scope has no waveform to hand out while it is still
+        # acquiring one, so a running scope gets a few screen times to finish.
+        deadline = time.monotonic() + max(1.5, 3 * 16 * TIMEBASES[values["HORIZ-TB"]])
+        while True:
+            payloads = self._exchange(0x02, bytes([0x01, channel - 1]),
+                                      lambda p: p[:1] in (b"\x02", b"\x03"), timeout=5.0)
+            if payloads[-1][:1] != b"\x03":
+                break
+            running = values["TRIG-STATE"] != 0 and values.get(f"VERT-CH{channel}-DISP", 1)
+            if not running or time.monotonic() > deadline:
+                raise CommandError(
+                    f"the scope has no waveform for CH{channel}: is the channel on and the "
+                    "scope running and triggering? A stopped scope hands out no waveforms.")
+            time.sleep(0.25)
+            values = self.settings_block()
         samples = []
         for p in payloads:
             if p[:1] == b"\x01":

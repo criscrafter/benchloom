@@ -1,0 +1,33 @@
+[plugin]
+id = "feeltech"
+name = "Feeltech"
+version = "0.1.0"
+description = "Feeltech (FeelElec) function generators."
+
+[[device]]
+id = "fy6900"
+name = "Feeltech FY6900 / FY6800 function generator"
+description = """Two-channel DDS function generator over its USB serial port (115200 baud \
+8N2; the driver sets this itself). Sets waveform, frequency, amplitude, offset, duty \
+cycle, phase and output per channel; modulates channel 1 (AM, FM, PM, FSK, ASK, PSK, \
+burst) and sweeps it; syncs channel 2 to channel 1; reads the counter on EXT IN. \
+Reads every setting back, because the generator clamps out-of-range values without \
+an error. Stops sweeps and switches both outputs off when a test ends unless told \
+not to. Tried on a real FY6900-60M; FY6800 support is untested."""
+driver = "fy6900:FY6900"
+simulator = "fy6900:FY6900Sim"
+transports = ["serial", "sim"]
+default_name = "gen"
+default_resource = "serial://COM1?baud=115200"
+
+[[device.setting]]
+name = "leave_output_on"
+label = "Leave the outputs on after a test"
+type = "bool"
+default = false
+
+[[device.setting]]
+name = "check_settings"
+label = "Read every setting back and report clamping"
+type = "bool"
+default = true

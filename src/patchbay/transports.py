@@ -182,6 +182,18 @@ class SerialTransport(Transport):
                 self.close()
                 raise TransportError(f"cannot open serial port {self.port}: {exc}") from exc
 
+    def configure(self, *, baud=None, bytesize=None, parity=None, stopbits=None) -> None:
+        """Change the port settings, also while open. For instruments whose serial
+        settings are fixed, so the driver can set them whatever the resource says."""
+        changes = {"baudrate": baud, "bytesize": bytesize,
+                   "parity": None if parity is None else str(parity).upper()[:1],
+                   "stopbits": stopbits}
+        for key, value in changes.items():
+            if value is not None:
+                self.serial_options[key] = value
+                if self._serial is not None:
+                    setattr(self._serial, key, value)
+
     def _other_baud(self) -> int:
         return 19200 if self.serial_options["baudrate"] != 19200 else 9600
 
