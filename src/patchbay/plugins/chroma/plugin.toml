@@ -14,7 +14,7 @@ front panel (2400-19200 baud); the manual names RTS/CTS as signals in use, so ad
 test ends unless `leave_output_on = true`."""
 driver = "chroma6404:Chroma6404"
 simulator = "chroma6404:Chroma6404Sim"
-transports = ["prologix", "visa", "serial", "sim"]
+transports = ["usbtmc", "prologix", "visa", "serial", "sim"]
 default_name = "ac"
 
 [[device.setting]]

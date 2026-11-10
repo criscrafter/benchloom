@@ -1,4 +1,4 @@
-"""Command line: ``patchbay gui | new | run | devices | describe``."""
+"""Command line: ``patchbay gui | new | run | devices | describe | usbgpib``."""
 
 from __future__ import annotations
 
@@ -62,6 +62,31 @@ def _describe(args) -> int:
     return 0
 
 
+def _usbgpib(args) -> int:
+    from .transports import TransportError, find_usbtmc, open_transport
+
+    if not args.commands:
+        found = find_usbtmc(0x03EB, 0x2065)
+        for _, _, serial in found:
+            print(f"usbgpib://{serial}" if serial else "usbgpib:// (serial number not readable)")
+        if not found:
+            print("no UsbGpib adapter found (it only appears while a powered instrument "
+                  "is connected to it)")
+        return 0
+    try:
+        transport = open_transport(f"usbgpib://{args.serial or ''}")
+    except TransportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        for text in args.commands:
+            reply = transport.adapter_command(text)
+            print(f"{text} -> {reply}" if reply is not None else f"{text}: sent")
+    finally:
+        transport.close()
+    return 0
+
+
 def _gui(args) -> int:
     from .gui import main as gui_main
 
@@ -89,6 +114,15 @@ def main(argv: list[str] | None = None) -> int:
     describe.add_argument("device", help="device type, e.g. demo.psu")
     describe.add_argument("--project", help="also include this project's plugins folder")
     describe.set_defaults(func=_describe)
+
+    usbgpib = sub.add_parser(
+        "usbgpib", help="list xyphro UsbGpib adapters, or send them their own '!' commands",
+        description="Without commands: list the adapters. With commands: send them to the "
+                    "adapter, e.g. patchbay usbgpib \"!autoid off\" for instruments that "
+                    "do not understand *IDN? (HP 3478A), or \"!ver?\".")
+    usbgpib.add_argument("commands", nargs="*")
+    usbgpib.add_argument("--serial", help="the adapter's serial number, if there are several")
+    usbgpib.set_defaults(func=_usbgpib)
 
     gui = sub.add_parser("gui", help="open the desktop app")
     gui.add_argument("path", nargs="?", help="project folder to open")

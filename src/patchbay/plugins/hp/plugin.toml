@@ -12,7 +12,7 @@ Works with the other 665xA models too, within their own ratings. Switches the \
 output off when a test ends unless `leave_output_on = true`."""
 driver = "hp6655a:HP6655A"
 simulator = "hp6655a:HP6655ASim"
-transports = ["prologix", "visa", "sim"]
+transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "psu"
 
 [[device.setting]]
@@ -35,7 +35,7 @@ description = """5½-digit bench multimeter with GPIB (pre-SCPI command set): DC
 volts, DC/AC current, 2- and 4-wire resistance."""
 driver = "hp3478a:HP3478A"
 simulator = "hp3478a:HP3478ASim"
-transports = ["prologix", "visa", "sim"]
+transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "dmm"
 
 [[device.setting]]
@@ -45,3 +45,27 @@ type = "int"
 default = 5
 min = 3
 max = 5
+
+[[device]]
+id = "53131a"
+name = "HP 53131A universal counter"
+description = """225 MHz two-channel counter with GPIB and SCPI (also the 53132A): frequency, period, ratio, time interval, phase, pulse width, duty cycle, rise and fall time, peak voltages, totalize. The gate time sets the resolution of frequency, period and ratio."""
+driver = "hp53131a:HP53131A"
+simulator = "hp53131a:HP53131ASim"
+transports = ["usbtmc", "prologix", "visa", "sim"]
+default_name = "counter"
+
+[[device.setting]]
+name = "gate_time"
+label = "Gate time at the start (s)"
+type = "float"
+default = 0.1
+min = 0.001
+max = 1000
+help = "Longer gates give more digits on frequency, period and ratio."
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true

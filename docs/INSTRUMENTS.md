@@ -4,10 +4,11 @@ Every plugin below ships a simulator, so a test can be written with
 `resource = "sim://"` and switched to the real instrument later by changing only
 the resource.
 
-The KP184 and Chroma 6404 drivers have been tried on real instruments (see
-below). **The HP drivers have not been run against real hardware yet.** They are written from the manuals
-listed for each instrument and are tested against their simulators. Expect small
-fixes on first contact.
+The KP184, Chroma 6404 and Hantek DSO5102P drivers have been tried on real
+instruments (see below). **The HP drivers have not been run against real
+hardware yet.** They are written from the manuals or protocol notes listed for each
+instrument and are tested against their simulators. Expect small fixes on first
+contact.
 
 Sources, loads and AC sources switch their output off when a test ends,
 including when it fails or is stopped. To keep the output on, add
@@ -80,10 +81,37 @@ not react to Stop within three seconds) cannot do this.
 - **CH340 adapters on Windows** refuse to reopen a port with the settings it was
   last closed with. Patchbay works around it, so no setting is needed.
 
+## GPIB through the xyphro UsbGpib adapter
+
+[UsbGpib](https://github.com/xyphro/UsbGpib) turns one GPIB instrument into a
+USB instrument (USBTMC). Patchbay can talk to it without a vendor VISA.
+
+- **Connection:** "USB instrument or UsbGpib adapter" in the Add device dialog,
+  or `resource = "usbtmc://03EB:2065"`. That is the first adapter found; add
+  `/<serial>` to pick one. `usbgpib://` is the same, shorter. The adapter only
+  appears on USB while a powered instrument is connected to it.
+- **Once per PC (Windows):**
+  1. Run `pip install "patchbay[usb]"` (pyusb, python-usbtmc and the libusb
+     library).
+  2. With the instrument switched on, use [Zadig](https://zadig.akeo.ie/) to
+     install the WinUSB driver for the adapter (USB ID 03EB 2065). Zadig is a
+     free download and needs no installation.
+- **Alternative:** with a VISA installed (the adapter's author recommends R&S
+  VISA), use `visa://USB0::0x03EB::0x2065::<serial>::INSTR` instead.
+- **Instruments without `*IDN?`** (the HP 3478A): the adapter asks every
+  instrument `*IDN?` at power-up. Turn that off once with
+  `patchbay usbgpib "!autoid off"`. `patchbay usbgpib` with no command lists
+  the adapters.
+- **One instrument per adapter.** The adapter can address several GPIB
+  instruments, but Patchbay does not switch between them yet.
+- **Not tried on hardware.** The transport is tested against a stand-in for the
+  USBTMC library only.
+
 ## HP 6655A power supply (`hp.6655a`)
 
-- **Connection:** GPIB. `prologix://COM4/5` (Prologix or AR488 adapter, GPIB
-  address 5) or `visa://GPIB0::5::INSTR`.
+- **Connection:** GPIB: `usbtmc://03EB:2065` (UsbGpib, above),
+  `prologix://COM4/5` (Prologix or AR488 adapter, GPIB address 5) or
+  `visa://GPIB0::5::INSTR`.
 - **Ratings:** programmable to 122.85 V and 4.095 A; over-voltage protection to
   132 V (from Table 3-1 of the programming guide).
 - **Commands:** `set_voltage`, `set_current`, `set_output`, `set_ovp`, `set_ocp`,
@@ -166,3 +194,83 @@ not react to Stop within three seconds) cannot do this.
 - **Timing:** settings and queries take 15-60 ms, but each measurement takes
   about a second, because the source makes a new measurement for every query.
   A row with voltage, current and frequency therefore takes about 3 s.
+
+## HP 53131A universal counter (`hp.53131a`)
+
+- **Connection:** GPIB, as for the 6655A. The 53132A works with the same driver.
+- **Commands:**
+  - Measurements: `measure_frequency(channel)` (1, 2 or 3), `measure_period`,
+    `measure_ratio` (channel 1 / 2), `measure_time_interval` (1 to 2),
+    `measure_phase`, `measure_pulse_width`, `measure_negative_width`,
+    `measure_duty_cycle`, `measure_rise_time`, `measure_fall_time`,
+    `measure_max_voltage`, `measure_min_voltage`, `measure_peak_to_peak`,
+    `measure_totalize(seconds)`.
+  - Settings: `set_gate_time`, `set_coupling`, `set_impedance` (50 Ω or 1 MΩ),
+    `set_attenuation` (x1, x10), `set_filter` (100 kHz low-pass),
+    `set_trigger_level` (turns auto trigger off), `set_auto_trigger`,
+    `set_trigger_slope`.
+- **Gate time:** frequency, period and ratio use time gating with the gate time
+  set by `set_gate_time` or the device setting (0.1 s by default). A longer gate
+  gives more digits.
+- **No signal:** a measurement waits for its signal, and the counter then
+  ignores every other command until a device clear. If no reading arrives within
+  the gate time plus 2 s, the driver sends a device clear and fails with "no
+  reading on channel N".
+- **Not a number:** the counter's "no valid result" (9.91E37) is returned as NaN.
+- **Source:** HP 53131A/132A Programming Guide, part no. 53131-90044 (November
+  1996).
+
+## Hantek DSO5102P oscilloscope (`hantek.dso5000p`)
+
+- **Connection:** USB, `resource = "usb://049F:505A"`, which the Add device
+  dialog fills in. The scope uses its own protocol, not SCPI.
+- **Once per PC (Windows):**
+  1. Run `pip install "patchbay[usb]"`.
+  2. Use [Zadig](https://zadig.akeo.ie/) to replace Hantek's driver with
+     WinUSB for the scope. In Zadig, choose Options → List All Devices; the
+     scope is listed as **"Gadget Serial v2.4"** (USB ID 049F 505A), while
+     Device Manager calls it "DSO Measurement Device".
+
+  Hantek's own PC software no longer finds the scope after that, until its
+  driver is put back in Device Manager.
+- **Commands:**
+  - Channels: `set_channel`, `set_volts_per_div` (including the probe factor),
+    `set_coupling`, `set_probe`, `set_position`, `set_bandwidth_limit`.
+  - Trigger: `set_trigger(source, slope)`, `set_trigger_level` (volts),
+    `get_trigger_state`, `force_trigger`.
+  - Timebase and acquisition: `set_timebase` (2 ns to 40 s per division, 2-4-8
+    steps), `get_timebase`, `run`, `stop`, `autoset`.
+  - Data: `read_waveform(channel)` returns `{time = {...}, volts = {...}}`.
+    `measure_vpp`, `measure_vrms` and `measure_mean` are worked out from that
+    waveform. `measure_frequency` reads the scope's hardware counter for the
+    trigger source.
+- **Limits of the protocol:**
+  - Only the on-screen part of the record comes over USB (3200 to 15360
+    points).
+  - Waveforms can only be read while the scope runs.
+  - The timebase is set by pressing the time/div keys, because a settings
+    write stores it without applying it.
+- **Safety:** the driver uses only commands that were verified on a real
+  DSO5102P. It never sends the factory/debug protocol (some of its commands can
+  brick the scope or wipe its calibration), never writes the memory depth (that
+  crashed the scope) and changes only the channel and trigger settings that
+  were tested.
+- **Tried on hardware:** a DSO5102P on Windows 10 with WinUSB, measuring its
+  own 1 kHz probe-compensation output on CH1.
+  - **Waveform:** 3840 points read in 0.18 s. The signal is a 0 to 5 V square
+    wave, and its period from the waveform is 1.0000 ms.
+  - **Measurements:** the hardware counter reads 1000.000 Hz; mean 2.49 V,
+    RMS 3.51 V.
+  - **Settings and keys:** volts/div, position, trigger level, timebase (by key
+    presses, 0.4 to 0.7 s per change), stop and run all work. Reading a
+    waveform while stopped fails as described above.
+  - **Settings layout:** the copy read from the scope matches the bundled one.
+- **Pacing:** the scope drops a request that follows a reply too closely. The
+  driver therefore waits 80 ms after the end of each reply, not after the
+  request. It also re-syncs and retries a request that goes unanswered.
+- **Source:** the reverse-engineered protocol notes of
+  [kooscode/hantek-dso5000p-linux](https://github.com/kooscode/hantek-dso5000p-linux)
+  (MIT licence). `protocol.inf`, the layout of the settings block, is copied from
+  there. At connect the driver reads the scope's own copy and falls back to this
+  one.
+

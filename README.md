@@ -132,12 +132,17 @@ the command line, controls have the values they had when last run in the app.
 | Kunkin KP184 electronic load | `kunkin.kp184` | serial (RS-232/RS-485) |
 | HP 6655A power supply | `hp.6655a` | GPIB |
 | HP 3478A multimeter | `hp.3478a` | GPIB |
+| HP 53131A universal counter | `hp.53131a` | GPIB |
 | Chroma 6404 AC source | `chroma.6404` | GPIB or serial |
+| Hantek DSO5102P oscilloscope | `hantek.dso5000p` | USB |
 | Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA |
 | Arduino and other line-based serial devices | `generic.serial` | serial, network |
 
-Each comes with a simulator. The KP184 and Chroma 6404 drivers have been tried
-on real hardware; the HP drivers not yet; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
+GPIB works through the xyphro UsbGpib adapter without a vendor VISA, or
+through a Prologix/AR488 adapter or a VISA.
+
+Each comes with a simulator. The KP184, Chroma 6404 and Hantek drivers have been
+tried on real hardware; the HP drivers not yet; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
 and the documentation each driver is based on. Sources and loads switch their
 output off when a test ends, unless the device entry says
 `leave_output_on = true`.

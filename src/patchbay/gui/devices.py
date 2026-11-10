@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from ..engine import open_device
 from ..plugin import CommandInfo, PluginError, PluginRegistry, SettingSpec
 from ..project import DeviceConfig, Project, device_name_problem
-from ..transports import TransportError, parse_resource
+from ..transports import USBGPIB_IDS, TransportError, find_usbtmc, parse_resource
 
 BAUD_RATES = ["9600", "19200", "38400", "57600", "115200"]
 
@@ -24,7 +24,9 @@ CONNECTIONS = [
     ("sim", "Simulated (no hardware)", "sim"),
     ("serial", "Serial port / USB serial", "serial"),
     ("tcp", "Network (TCP)", "tcp"),
+    ("usbtmc", "USB instrument or UsbGpib adapter (USBTMC)", "usbtmc"),
     ("prologix", "GPIB via Prologix / AR488 adapter", "prologix"),
+    ("usb", "USB (the device's own protocol)", "usb"),
     ("visa", "VISA resource (vendor GPIB, USB-TMC, LAN)", "visa"),
     ("custom", "Custom resource string", None),
 ]
@@ -91,6 +93,36 @@ class _PortBox(QWidget):
             self.combo.setEditText(port)
 
 
+class _UsbTmcBox(QWidget):
+    """USBTMC devices found on USB, editable, with a refresh button."""
+
+    DEFAULT = f"{USBGPIB_IDS[0]:04X}:{USBGPIB_IDS[1]:04X}"
+
+    def __init__(self):
+        super().__init__()
+        self.combo = QComboBox(editable=True)
+        self.combo.setToolTip("USB vendor:product ID, optionally /serial number. "
+                              f"{self.DEFAULT} is the xyphro UsbGpib adapter.")
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self.refresh)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.combo, 1)
+        layout.addWidget(refresh)
+        self.refresh()
+
+    def refresh(self) -> None:
+        current = self.combo.currentText() or self.DEFAULT
+        self.combo.clear()
+        for vid, pid, serial in find_usbtmc():
+            target = f"{vid:04X}:{pid:04X}" + (f"/{serial}" if serial else "")
+            self.combo.addItem(target)
+        self.combo.setEditText(current)
+
+    def target(self) -> str:
+        return self.combo.currentText().strip() or self.DEFAULT
+
+
 class DeviceDialog(QDialog):
     def __init__(self, registry: PluginRegistry, taken_names: set[str],
                  config: DeviceConfig | None = None, parent=None):
@@ -119,6 +151,9 @@ class DeviceDialog(QDialog):
         self.tcp_port = QSpinBox(minimum=1, maximum=65535, value=5025)
         self.gpib_port = _PortBox()
         self.gpib_address = QSpinBox(minimum=0, maximum=30, value=5)
+        self.usbtmc_device = _UsbTmcBox()
+        self.usb_id = QLineEdit()
+        self.usb_id.setPlaceholderText("049F:505A")
         self.visa_resource = QLineEdit()
         self.visa_resource.setPlaceholderText("GPIB0::5::INSTR")
         self.custom_resource = QLineEdit()
@@ -126,6 +161,11 @@ class DeviceDialog(QDialog):
         self._add_page("sim", [(None, QLabel("Uses the plugin's built-in simulator."))])
         self._add_page("serial", [("Port", self.serial_port), ("Baud rate", self.serial_baud)])
         self._add_page("tcp", [("Host", self.tcp_host), ("Port", self.tcp_port)])
+        self._add_page("usbtmc", [("Device", self.usbtmc_device), (None, QLabel(
+            "Needs the WinUSB driver on Windows (install it once with Zadig), "
+            "or use VISA instead."))])
+        self._add_page("usb", [("USB ID", self.usb_id), (None, QLabel(
+            "Needs the WinUSB driver on Windows (install it once with Zadig)."))])
         self._add_page("prologix", [("Adapter port", self.gpib_port),
                                     ("GPIB address", self.gpib_address)])
         self._add_page("visa", [("Resource", self.visa_resource)])
@@ -195,6 +235,8 @@ class DeviceDialog(QDialog):
         index = self.connection_box.findData(previous)
         self.connection_box.setCurrentIndex(max(index, 0))
         self.connection_box.blockSignals(False)
+        if spec and spec.default_resource.startswith("usb://") and not self.usb_id.text():
+            self.usb_id.setText(spec.default_resource[len("usb://"):])
         self._show_page()
         self._build_settings(spec)
         # follow the device type with the suggested name until the user types their own
@@ -283,6 +325,14 @@ class DeviceDialog(QDialog):
                 self.gpib_port.set_port(port)
                 self.gpib_address.setValue(int(address))
                 return
+        if scheme in ("usbtmc", "usbgpib") and not options and self._select("usbtmc"):
+            if scheme == "usbgpib":
+                target = _UsbTmcBox.DEFAULT + (f"/{target}" if target else "")
+            self.usbtmc_device.combo.setEditText(target)
+            return
+        if scheme == "usb" and not options and self._select("usb"):
+            self.usb_id.setText(target)
+            return
         if scheme == "visa" and not options and self._select("visa"):
             self.visa_resource.setText(target)
             return
@@ -300,6 +350,10 @@ class DeviceDialog(QDialog):
             return f"tcp://{self.tcp_host.text().strip()}:{self.tcp_port.value()}"
         if kind == "prologix":
             return f"prologix://{self.gpib_port.port()}/{self.gpib_address.value()}"
+        if kind == "usbtmc":
+            return f"usbtmc://{self.usbtmc_device.target()}"
+        if kind == "usb":
+            return f"usb://{self.usb_id.text().strip() or self.usb_id.placeholderText()}"
         if kind == "visa":
             return f"visa://{self.visa_resource.text().strip()}"
         return self.custom_resource.text().strip()

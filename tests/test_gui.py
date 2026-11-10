@@ -92,6 +92,17 @@ def test_device_dialog_round_trips_resources(app):
         assert dialog.config().resource == resource
     dialog = DeviceDialog(registry, {"psu"})
     assert dialog.config().resource == "sim://"
+    for resource in ("usbtmc://03EB:2065/GPIB_22_ABC", "usbtmc://03EB:2065"):
+        dialog = DeviceDialog(registry, set(), DeviceConfig("dmm", "hp.3478a", resource))
+        assert dialog.connection_box.currentData() == "usbtmc"
+        assert dialog.config().resource == resource
+    dialog = DeviceDialog(registry, set(), DeviceConfig("dmm", "hp.3478a", "usbgpib://GPIB_23_X"))
+    assert dialog.config().resource == "usbtmc://03EB:2065/GPIB_23_X"
+    # the scope's USB ID is filled in from its plugin
+    dialog = DeviceDialog(registry, set())
+    dialog.type_box.setCurrentIndex(dialog.type_box.findData("hantek.dso5000p"))
+    dialog.connection_box.setCurrentIndex(dialog.connection_box.findData("usb"))
+    assert dialog.config().resource == "usb://049F:505A"
 
 
 def test_project_save_round_trip(tmp_path):

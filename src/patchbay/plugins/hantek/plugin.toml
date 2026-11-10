@@ -1,0 +1,18 @@
+[plugin]
+id = "hantek"
+name = "Hantek"
+version = "0.1.0"
+description = "Hantek oscilloscopes."
+
+[[device]]
+id = "dso5000p"
+name = "Hantek DSO5102P / DSO5000P oscilloscope"
+description = """100/200 MHz two-channel scope over USB (ID 049F:505A), through its \
+reverse-engineered protocol. Reads the on-screen waveform and sets channels, trigger \
+and timebase. On Windows the scope needs the WinUSB driver instead of Hantek's \
+(install it once with Zadig, where it is listed as "Gadget Serial v2.4"). Waveforms can only be read while the scope runs."""
+driver = "dso5000p:DSO5000P"
+simulator = "dso5000p:DSO5000PSim"
+transports = ["usb", "sim"]
+default_name = "scope"
+default_resource = "usb://049F:505A"

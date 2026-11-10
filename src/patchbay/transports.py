@@ -68,6 +68,12 @@ class Transport:
     def clear_input(self) -> None:
         """Throw away anything received but not read yet."""
 
+    def device_clear(self) -> None:
+        """Send the GPIB/USBTMC device clear, which aborts a measurement in progress.
+
+        Transports without such a signal (serial, TCP) do nothing.
+        """
+
     def set_timeout(self, seconds: float) -> None:
         self.timeout = float(seconds)
 
@@ -245,6 +251,9 @@ class PrologixTransport(SerialTransport):
     def _adapter(self, text: str) -> None:
         self._serial.write((text + "\n").encode("ascii"))
 
+    def device_clear(self) -> None:
+        self._adapter("++clr")
+
     def open(self) -> None:
         super().open()
         for line in ("++mode 1", "++auto 0", "++eoi 1", f"++eos {self.eos}",
@@ -379,6 +388,9 @@ class VisaTransport(Transport):
     def write_raw(self, data: bytes) -> None:
         self._instrument.write_raw(data)
 
+    def device_clear(self) -> None:
+        self._instrument.clear()
+
     def read_raw(self, size: int) -> bytes:
         return self._instrument.read_bytes(size)
 
@@ -414,6 +426,317 @@ def parse_resource(resource: str) -> tuple[str, str, dict[str, str]]:
     return scheme.lower(), target, dict(parse_qsl(query, keep_blank_values=True))
 
 
+USBGPIB_IDS = (0x03EB, 0x2065)  # xyphro UsbGpib adapter
+
+
+class UsbTmcTransport(Transport):
+    """A USBTMC instrument or USB-GPIB adapter, without a vendor VISA.
+
+    Resource: ``usbtmc://03EB:2065`` (the first such device) or
+    ``usbtmc://03EB:2065/<serial>``; ``usbgpib://`` is short for the xyphro UsbGpib
+    adapter (``usbgpib://`` or ``usbgpib://<serial>``). Needs pyusb and a libusb
+    backend (``pip install "patchbay[usb]"``); on Windows the device must use the
+    WinUSB driver, which Zadig installs. With a vendor VISA installed instead, use
+    ``visa://USB0::0x03EB::0x2065::<serial>::INSTR``.
+
+    One USBTMC message is one reply, so :meth:`read` needs no termination
+    character; the UsbGpib adapter ends a GPIB reply on EOI.
+    """
+
+    scheme = "usbtmc"
+
+    def __init__(self, target: str, **options):
+        super().__init__(**options)
+        ids, _, self.serial = target.partition("/")
+        vid, _, pid = ids.partition(":")
+        try:
+            self.vid, self.pid = int(vid, 16), int(pid, 16)
+        except ValueError:
+            raise TransportError("usbtmc resource must look like usbtmc://03EB:2065 or "
+                                 "usbtmc://03EB:2065/<serial>") from None
+        self._instrument = None
+        self._buffer = bytearray()
+
+    @property
+    def name(self) -> str:
+        return f"USB device {self.vid:04X}:{self.pid:04X}"
+
+    def open(self) -> None:
+        try:
+            import usb.core
+            import usbtmc
+        except ImportError as exc:
+            raise TransportError(
+                'USB instrument support is not installed. Install it with: '
+                'pip install "patchbay[usb]"') from exc
+        backend = libusb_backend()
+        if backend is None:
+            raise TransportError("libusb was not found; install it with: pip install libusb-package")
+        devices = list(usb.core.find(find_all=True, idVendor=self.vid, idProduct=self.pid,
+                                     backend=backend))
+        if not devices:
+            hint = (" A UsbGpib adapter only appears while a powered instrument is connected "
+                    "to it." if (self.vid, self.pid) == USBGPIB_IDS else "")
+            raise TransportError(f"{self.name} not found.{hint}")
+        chosen = None
+        for device in devices:
+            try:
+                serial = device.serial_number or ""
+            except (ValueError, usb.core.USBError, NotImplementedError):
+                raise TransportError(
+                    f"{self.name} is connected but cannot be opened. On Windows it needs the "
+                    "WinUSB driver (install it once with Zadig), or use a VISA such as R&S "
+                    "VISA with a visa:// resource.") from None
+            if not self.serial or serial == self.serial:
+                chosen = device
+                break
+        if chosen is None:
+            raise TransportError(f"{self.name} with serial number {self.serial} not found")
+        try:
+            self._instrument = usbtmc.Instrument(chosen)
+            self._instrument.timeout = self.timeout
+            self._instrument.open()
+        except Exception as exc:
+            self._instrument = None
+            raise TransportError(f"cannot open {self.name}: {exc}") from exc
+
+    def close(self) -> None:
+        if self._instrument is not None:
+            try:
+                self._instrument.close()
+            finally:
+                self._instrument = None
+
+    def set_timeout(self, seconds: float) -> None:
+        super().set_timeout(seconds)
+        if self._instrument is not None:
+            self._instrument.timeout = self.timeout
+
+    def write_raw(self, data: bytes) -> None:
+        self._instrument.write_raw(bytes(data))
+
+    def _message(self) -> bytes:
+        try:
+            return self._instrument.read_raw()
+        except Exception as exc:  # pyusb reports a timeout as USBTimeoutError
+            text = str(exc).lower()
+            if "timeout" in text or "timed out" in text:
+                raise TimeoutError(f"timeout reading from {self.name}") from exc
+            raise
+
+    def read(self) -> str:
+        data = bytes(self._buffer) or self._message()
+        self._buffer.clear()
+        return data.decode(self.encoding).rstrip("\r\n")
+
+    def read_raw(self, size: int) -> bytes:
+        while len(self._buffer) < size:
+            self._buffer += self._message()
+        data = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return data
+
+    def read_some(self, size: int) -> bytes:
+        try:
+            return self.read_raw(size)
+        except TimeoutError:
+            data = bytes(self._buffer)
+            self._buffer.clear()
+            return data
+
+    def read_until(self, term: bytes) -> bytes:
+        while term not in self._buffer:
+            self._buffer += self._message()
+        end = self._buffer.index(term) + len(term)
+        data = bytes(self._buffer[:end])
+        del self._buffer[:end]
+        return data
+
+    def clear_input(self) -> None:
+        self._buffer.clear()
+
+    def device_clear(self) -> None:
+        self._buffer.clear()
+        self._instrument.clear()
+
+    def adapter_command(self, text: str) -> str | None:
+        """Send one of the UsbGpib adapter's own '!' commands; return its reply if any.
+
+        The adapter takes them after a USBTMC indicator-pulse request, for example
+        ``!autoid off`` for instruments that do not understand ``*IDN?``.
+        """
+        self._instrument.pulse()
+        self._instrument.write(text)
+        return self._instrument.read().strip() if text.endswith("?") else None
+
+
+class UsbBulkTransport(Transport):
+    """A USB device with its own bulk protocol, through libusb (``usb://049F:505A``).
+
+    Writes go out as one bulk transfer each; reads return what one or more bulk
+    transfers bring. On Windows the device needs the WinUSB driver (Zadig). Needs
+    pyusb and libusb-package (``pip install "patchbay[usb]"``).
+    """
+
+    scheme = "usb"
+
+    def __init__(self, target: str, interface="0", **options):
+        super().__init__(**options)
+        vid, _, pid = target.partition(":")
+        try:
+            self.vid, self.pid = int(vid, 16), int(pid, 16)
+        except ValueError:
+            raise TransportError("usb resource must look like usb://049F:505A") from None
+        self.interface = int(interface)
+        self._device = None
+        self._ep_in = self._ep_out = None
+        self._buffer = bytearray()
+
+    @property
+    def name(self) -> str:
+        return f"USB device {self.vid:04X}:{self.pid:04X}"
+
+    def open(self) -> None:
+        try:
+            import usb.core
+            import usb.util
+        except ImportError as exc:
+            raise TransportError('USB support is not installed. Install it with: '
+                                 'pip install "patchbay[usb]"') from exc
+        backend = libusb_backend()
+        if backend is None:
+            raise TransportError("libusb was not found; install it with: pip install libusb-package")
+        device = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
+        if device is None:
+            raise TransportError(f"{self.name} not found")
+        try:
+            try:
+                if device.is_kernel_driver_active(self.interface):
+                    device.detach_kernel_driver(self.interface)
+            except (NotImplementedError, usb.core.USBError):
+                pass  # Windows has no kernel drivers to detach
+            try:
+                config = device.get_active_configuration()
+            except usb.core.USBError:
+                config = None
+            if config is None:  # configuring an already configured device may reset it
+                device.set_configuration()
+                config = device.get_active_configuration()
+            usb.util.claim_interface(device, self.interface)
+        except (usb.core.USBError, NotImplementedError, ValueError) as exc:
+            raise TransportError(
+                f"{self.name} is connected but cannot be opened ({exc}). On Windows it needs "
+                "the WinUSB driver: install it once with Zadig.") from None
+        iface = config[(self.interface, 0)]
+        for ep in iface:
+            if usb.util.endpoint_type(ep.bmAttributes) != usb.util.ENDPOINT_TYPE_BULK:
+                continue
+            if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN:
+                self._ep_in = self._ep_in or ep
+            else:
+                self._ep_out = self._ep_out or ep
+        if self._ep_in is None or self._ep_out is None:
+            raise TransportError(f"{self.name} has no bulk endpoints on interface {self.interface}")
+        self._device = device
+
+    def close(self) -> None:
+        if self._device is not None:
+            import usb.util
+
+            try:
+                usb.util.release_interface(self._device, self.interface)
+            except Exception:
+                pass
+            usb.util.dispose_resources(self._device)
+            self._device = None
+
+    def write_raw(self, data: bytes) -> None:
+        written = self._ep_out.write(bytes(data), int(self.timeout * 1000))
+        if written != len(data):
+            raise TransportError(f"short write to {self.name}: {written} of {len(data)} bytes")
+
+    def _transfer(self, timeout: float) -> bytes:
+        import usb.core
+
+        try:
+            return bytes(self._ep_in.read(65536, max(1, int(timeout * 1000))))
+        except usb.core.USBTimeoutError:
+            return b""
+        except usb.core.USBError as exc:
+            if "timed out" in str(exc).lower():
+                return b""
+            raise
+
+    def read_some(self, size: int) -> bytes:
+        if not self._buffer:
+            self._buffer += self._transfer(self.timeout)
+        data = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return data
+
+    def read_raw(self, size: int) -> bytes:
+        import time
+
+        deadline = time.monotonic() + self.timeout
+        while len(self._buffer) < size:
+            left = deadline - time.monotonic()
+            chunk = self._transfer(left) if left > 0 else b""
+            if not chunk:
+                raise TimeoutError(f"timeout reading from {self.name}")
+            self._buffer += chunk
+        data = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return data
+
+    def clear_input(self) -> None:
+        self._buffer.clear()
+        while self._transfer(0.05):
+            pass
+
+
+def find_usbtmc(vid: int | None = None, pid: int | None = None) -> list[tuple[int, int, str]]:
+    """USBTMC devices libusb can see, as (vendor id, product id, serial number)."""
+    try:
+        import usb.core
+    except ImportError:
+        return []
+    backend = libusb_backend()
+    if backend is None:
+        return []
+    found = []
+    for device in usb.core.find(find_all=True, backend=backend):
+        if (vid is not None and device.idVendor != vid) or (pid is not None and device.idProduct != pid):
+            continue
+        if not _is_usbtmc(device):
+            continue
+        try:
+            serial = device.serial_number or ""
+        except (ValueError, usb.core.USBError, NotImplementedError):
+            serial = ""  # no WinUSB driver bound, or no permission
+        found.append((device.idVendor, device.idProduct, serial))
+    return found
+
+
+def libusb_backend():
+    """A libusb backend for pyusb, or None; prefers the library libusb-package ships."""
+    try:
+        import libusb_package
+
+        return libusb_package.get_libusb1_backend()
+    except ImportError:
+        import usb.backend.libusb1
+
+        return usb.backend.libusb1.get_backend()
+
+
+def _is_usbtmc(device) -> bool:
+    try:
+        return any(iface.bInterfaceClass == 0xFE and iface.bInterfaceSubClass == 0x03
+                   for cfg in device for iface in cfg)
+    except Exception:
+        return False
+
+
 def open_transport(resource: str, simulator: type[SimTransport] | None = None) -> Transport:
     """Create and open the transport a resource string describes."""
     scheme, target, options = parse_resource(resource)
@@ -436,6 +759,13 @@ def open_transport(resource: str, simulator: type[SimTransport] | None = None) -
             transport = TcpTransport(host, port, **options)
         elif scheme == "visa":
             transport = VisaTransport(target, **options)
+        elif scheme == "usb":
+            transport = UsbBulkTransport(target, **options)
+        elif scheme == "usbtmc":
+            transport = UsbTmcTransport(target, **options)
+        elif scheme == "usbgpib":
+            ids = f"{USBGPIB_IDS[0]:04X}:{USBGPIB_IDS[1]:04X}"
+            transport = UsbTmcTransport(f"{ids}/{target}" if target else ids, **options)
         else:
             raise TransportError(f"unknown connection type '{scheme}://'")
     except (TypeError, ValueError) as exc:

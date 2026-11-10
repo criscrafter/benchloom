@@ -34,8 +34,9 @@
 ## Open design questions
 
 - **Hantek DSO 5102P** uses a proprietary USB protocol and needs a WinUSB
-  driver swap on Windows; this conflicts with the fast-start goal and needs a
-  guided setup step.
+  driver swap on Windows (Zadig); this conflicts with the fast-start goal and
+  needs a guided setup step. The same goes for the UsbGpib adapter without a
+  VISA.
 
 ## Phases
 
@@ -54,21 +55,24 @@
    directions while a test runs, available as `panel.<name>` in Lua and as nodes.
    Still to do here: knobs, gauges and tables, multi-series charts, renaming a
    widget without breaking the nodes that use it, a full-window panel mode.
-5. **Device plugins**, each with a simulator. Done, untested on hardware:
-   Arduino line protocol (generic) · Kunkin KP184 (Modbus/serial) · HP 6655A ·
-   HP 3478A (pre-SCPI) · Chroma 6404. Still to do: HP 53131A, Hantek DSO 5102P.
-   See [INSTRUMENTS.md](INSTRUMENTS.md).
+5. **Device plugins**, each with a simulator. Done: Arduino line protocol
+   (generic) · Kunkin KP184 (Modbus/serial, RS-485) · HP 6655A · HP 3478A
+   (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB). GPIB through
+   the xyphro UsbGpib adapter (USBTMC) without a vendor VISA. Tried on hardware:
+   KP184, 6404 and DSO5102P. See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build, then Linux, then Mac. Plugin install
    from a folder or a registry.
 
 ## Not verified yet
 
 - The serial transport has been used with a real KP184 (CH340 adapter, Windows).
-  The TCP, Prologix and VISA transports have not been run against real hardware.
+  The USB transport has been used with a real DSO5102P. The TCP, Prologix, VISA
+  and USBTMC transports have not been run against real hardware.
 - The KP184 driver has been tried on a real load, up to 6 A and 130 W, and the
-  6404 driver on a real source with a 10 W lamp. The 6655A and 3478A drivers are
-  written from manuals and tested against simulators written from the same
-  sources, so a misread manual would not show up in the tests.
+  6404 driver on a real source with a 10 W lamp. The 6655A, 3478A and 53131A
+  drivers are written from manuals and are each tested against a simulator
+  written from the same sources, so a misread manual would not show up in the
+  tests.
 - The desktop app is tested on Windows only, and its dialogs (new project,
   add device) are covered only partly by automated tests.
 - The node editor is tested through its functions (add, wire, delete, run),

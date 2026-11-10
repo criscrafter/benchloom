@@ -282,6 +282,7 @@ class DeviceSpec:
     description: str = ""
     default_name: str = ""  # suggested name in a project, e.g. "psu"
     settings: tuple[SettingSpec, ...] = ()
+    default_resource: str = ""  # offered when adding the device, e.g. "usb://049F:505A"
 
     def load_driver(self) -> type[Device]:
         return self.plugin.load(self.driver)
@@ -325,6 +326,7 @@ def read_manifest(folder: Path) -> PluginInfo:
                     description=dev.get("description", ""),
                     default_name=dev.get("default_name", ""),
                     settings=tuple(_setting(entry) for entry in dev.get("setting", ())),
+                    default_resource=dev.get("default_resource", ""),
                 )
             )
     except (KeyError, tomllib.TOMLDecodeError) as exc:

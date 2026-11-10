@@ -18,6 +18,9 @@ dependencies = [
 # backend; vendor backends (NI-VISA, Keysight IO Libraries) are picked up
 # automatically when installed but are never required.
 visa = ["pyvisa>=1.13", "pyvisa-py>=0.7"]
+# USBTMC instruments and USB-GPIB adapters such as xyphro UsbGpib, without a
+# vendor VISA. libusb-package ships the libusb library for Windows and macOS.
+usb = ["python-usbtmc>=0.8", "pyusb>=1.2", "libusb-package>=1.0.26"]
 # The desktop app. Optional so the engine can run headless on small machines.
 gui = ["PySide6>=6.6", "pyqtgraph>=0.13"]
 dev = ["pytest>=7"]
