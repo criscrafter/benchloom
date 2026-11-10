@@ -1,0 +1,17 @@
+[plugin]
+id = "kunkin"
+name = "Kunkin"
+version = "0.1.0"
+description = "Kunkin electronic loads."
+
+[[device]]
+id = "kp184"
+name = "Kunkin KP184 electronic load"
+description = """150 V / 40 A / 400 W DC load, controlled over its RS-232/RS-485 port \
+(Modbus RTU, 9600 baud 8N1 by default). Set the load's address in the device entry \
+with `address = 1` if it is not 1. Switches the load input off when a test ends \
+unless `leave_output_on = true`."""
+driver = "driver:KP184"
+simulator = "simulator:KP184Sim"
+transports = ["serial", "tcp", "sim"]
+default_name = "eload"

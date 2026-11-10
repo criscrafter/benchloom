@@ -119,6 +119,23 @@ In a visual test the same widgets appear as nodes under **Front panel** in the
 right-click menu. The layout is saved in the project's `panel.json`. Run from
 the command line, controls have the values they had when last run in the app.
 
+## Instruments
+
+| Instrument | Device type | Connection |
+|---|---|---|
+| Kunkin KP184 electronic load | `kunkin.kp184` | serial (RS-232/RS-485) |
+| HP 6655A power supply | `hp.6655a` | GPIB |
+| HP 3478A multimeter | `hp.3478a` | GPIB |
+| Chroma 6404 AC source | `chroma.6404` | GPIB or serial |
+| Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA |
+| Arduino and other line-based serial devices | `generic.serial` | serial, network |
+
+Each comes with a simulator. The drivers have not been tried on real hardware
+yet; [docs/INSTRUMENTS.md](docs/INSTRUMENTS.md) has connection settings, options
+and the documentation each driver is based on. Sources and loads switch their
+output off when a test ends, unless the device entry says
+`leave_output_on = true`.
+
 ## A plugin
 
 A plugin is a folder with a `plugin.toml` and Python files. Put it in

@@ -172,7 +172,20 @@ class Device:
         """Called once after the transport is open."""
 
     def close(self) -> None:
-        """Called before the transport is closed."""
+        """Called before the transport is closed, after a test ends.
+
+        Drivers of sources and loads switch their output off here, unless the
+        project's device entry has ``leave_output_on = true``.
+        """
+
+    def identify(self) -> str:
+        """A short text proving the device answers; used by "Test connection"."""
+        if "idn" in type(self).commands():
+            return str(self.call("idn"))
+        return ""
+
+    def leave_output_on(self) -> bool:
+        return bool(self.settings.get("leave_output_on", False))
 
     @classmethod
     def commands(cls) -> dict[str, CommandInfo]:
@@ -246,6 +259,7 @@ class DeviceSpec:
     simulator: str | None = None
     transports: tuple[str, ...] = ()
     description: str = ""
+    default_name: str = ""  # suggested name in a project, e.g. "psu"
 
     def load_driver(self) -> type[Device]:
         return self.plugin.load(self.driver)
@@ -276,6 +290,7 @@ def read_manifest(folder: Path) -> PluginInfo:
                     simulator=dev.get("simulator"),
                     transports=tuple(dev.get("transports", ())),
                     description=dev.get("description", ""),
+                    default_name=dev.get("default_name", ""),
                 )
             )
     except (KeyError, tomllib.TOMLDecodeError) as exc:

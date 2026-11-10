@@ -1,0 +1,26 @@
+[plugin]
+id = "hp"
+name = "HP / Agilent"
+version = "0.1.0"
+description = "Hewlett-Packard and Agilent instruments."
+
+[[device]]
+id = "6655a"
+name = "HP 6655A power supply"
+description = """120 V / 4 A / 500 W single-output DC supply with GPIB and SCPI. \
+Works with the other 665xA models too, within their own ratings. Switches the \
+output off when a test ends unless `leave_output_on = true`."""
+driver = "hp6655a:HP6655A"
+simulator = "hp6655a:HP6655ASim"
+transports = ["prologix", "visa", "sim"]
+default_name = "psu"
+
+[[device]]
+id = "3478a"
+name = "HP 3478A multimeter"
+description = """5½-digit bench multimeter with GPIB (pre-SCPI command set): DC/AC \
+volts, DC/AC current, 2- and 4-wire resistance."""
+driver = "hp3478a:HP3478A"
+simulator = "hp3478a:HP3478ASim"
+transports = ["prologix", "visa", "sim"]
+default_name = "dmm"

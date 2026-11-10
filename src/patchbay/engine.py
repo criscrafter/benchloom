@@ -116,6 +116,7 @@ class LuaEngine:
         self._make_device = self.lua.eval(_BOOTSTRAP)(
             on_print, self.stop_event.is_set, self._panel_get, self._panel_set)
         g = self.lua.globals()
+        self._load = g.load  # kept, so a device or script redefining `load` cannot break runs
         g.sleep = self._sleep
         g.time = elapsed
         g.log = lambda table: log_row(self._to_python(table, as_dict=True))
@@ -167,7 +168,7 @@ class LuaEngine:
         self.lua.globals()[name] = self._make_device(name, names, call)
 
     def run(self, code: str, chunk_name: str = "script") -> None:
-        loaded = self.lua.globals().load(code, "@" + chunk_name)
+        loaded = self._load(code, "@" + chunk_name)
         if isinstance(loaded, tuple):  # (nil, message): syntax error
             raise ScriptError(str(loaded[1]))
         try:
@@ -274,11 +275,15 @@ def run_project(
         status, error = "error", str(exc)
         emit(f"Error: {error}")
     finally:
-        for device in devices.values():
+        for name, device in devices.items():
             try:
-                device.close()
-            finally:
+                device.close()  # sources and loads switch their output off here
+            except Exception as exc:
+                emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
+            try:
                 device.transport.close()
+            except Exception:
+                pass
         run.finish(status, error, {
             "patchbay": __version__,
             "project": project.name,

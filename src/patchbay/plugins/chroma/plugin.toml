@@ -1,0 +1,18 @@
+[plugin]
+id = "chroma"
+name = "Chroma"
+version = "0.1.0"
+description = "Chroma ATE instruments."
+
+[[device]]
+id = "6404"
+name = "Chroma 6404 AC source"
+description = """375 VA programmable AC source: 0-150/300 V, 45-500 Hz, with GPIB or \
+RS-232 (optional interface board). Over RS-232 use the baud rate and parity set on the \
+front panel (2400-19200 baud); the manual names RTS/CTS as signals in use, so add \
+`rtscts=1` to the resource if the cable carries them. Switches the output off when a \
+test ends unless `leave_output_on = true`."""
+driver = "chroma6404:Chroma6404"
+simulator = "chroma6404:Chroma6404Sim"
+transports = ["prologix", "visa", "serial", "sim"]
+default_name = "ac"

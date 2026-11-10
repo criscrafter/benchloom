@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..engine import open_device
 from ..plugin import CommandInfo, PluginError, PluginRegistry
-from ..project import DeviceConfig, Project
+from ..project import DeviceConfig, Project, device_name_problem
 from ..transports import TransportError, parse_resource
 
 BAUD_RATES = ["9600", "19200", "38400", "57600", "115200"]
@@ -190,11 +190,15 @@ class DeviceDialog(QDialog):
         self.connection_box.setCurrentIndex(max(index, 0))
         self.connection_box.blockSignals(False)
         self._show_page()
-        if spec and not self.name_edit.text():
-            self.name_edit.setText(self._free_name(spec.id.rsplit(".", 1)[-1]))
+        # follow the device type with the suggested name until the user types their own
+        if spec and self.name_edit.text() in ("", getattr(self, "_suggested", "")):
+            self._suggested = self._free_name(spec.default_name or spec.id.rsplit(".", 1)[-1])
+            self.name_edit.setText(self._suggested)
 
     def _free_name(self, base: str) -> str:
         base = re.sub(r"\W", "_", base)
+        if device_name_problem(base):
+            base = "dev_" + base
         name, n = base, 2
         while name in self.taken_names:
             name, n = f"{base}{n}", n + 1
@@ -266,9 +270,9 @@ class DeviceDialog(QDialog):
         try:
             device = open_device(self.registry, self.config())
             try:
-                reply = device.call("idn") if "idn" in type(device).commands() else ""
+                reply = device.identify()
             finally:
-                device.close()
+                # not device.close(): a connection test must not switch outputs off
                 device.transport.close()
             self.test_result.setText(f"Connected. {reply}".strip())
         except Exception as exc:
@@ -278,9 +282,9 @@ class DeviceDialog(QDialog):
 
     def accept(self) -> None:
         name = self.name_edit.text().strip()
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-            QMessageBox.warning(self, "Name", "The name must start with a letter and contain "
-                                "only letters, digits and underscores.")
+        problem = device_name_problem(name)
+        if problem:
+            QMessageBox.warning(self, "Name", f"The name '{name}' {problem}.")
             return
         if name in self.taken_names:
             QMessageBox.warning(self, "Name", f"There is already a device named '{name}'.")

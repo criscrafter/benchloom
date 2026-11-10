@@ -27,6 +27,8 @@
 | Simulation | Plugins ship wire-level simulators so driver code is exercised without hardware |
 | Data | Every run gets a folder: `data.csv`, console log, script copy, metadata. HDF5 to be added when waveform capture arrives. |
 | Front panel | Layout in `panel.json`; widgets addressed by name. Control changes are sent to the running test's process, indicator updates come back on the event queue. A button reads true once per click. |
+| Output safety | Drivers of sources and loads switch their output off when a test ends (`Device.close`), unless the device entry says `leave_output_on = true`. |
+| Device names | Must not shadow Lua keywords, Lua's standard globals or Patchbay's own (`print`, `load`, `panel`, …). |
 | Timing | No hard timing needs now. The engine stays separate from the UI so a tighter runner can replace it later. |
 
 ## Open design questions
@@ -52,9 +54,10 @@
    directions while a test runs, available as `panel.<name>` in Lua and as nodes.
    Still to do here: knobs, gauges and tables, multi-series charts, renaming a
    widget without breaking the nodes that use it, a full-window panel mode.
-5. **Device plugins**, each with a simulator:
-   Arduino line protocol (generic, done) · Kunkin KP184 (Modbus/serial) ·
-   HP 6655A · HP 53131A · HP 3478A (pre-SCPI) · Chroma 6404 · Hantek DSO 5102P
+5. **Device plugins**, each with a simulator. Done, untested on hardware:
+   Arduino line protocol (generic) · Kunkin KP184 (Modbus/serial) · HP 6655A ·
+   HP 3478A (pre-SCPI) · Chroma 6404. Still to do: HP 53131A, Hantek DSO 5102P.
+   See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build, then Linux, then Mac. Plugin install
    from a folder or a registry.
 
@@ -62,6 +65,9 @@
 
 - The serial, TCP, Prologix and VISA transports have not been run against
   real hardware. Only the simulator path is covered by tests.
+- The KP184, 6655A, 3478A and 6404 drivers are written from manuals and
+  community protocol notes and tested against simulators written from the same
+  sources, so a misread manual would not show up in the tests.
 - The desktop app is tested on Windows only, and its dialogs (new project,
   add device) are covered only partly by automated tests.
 - The node editor is tested through its functions (add, wire, delete, run),

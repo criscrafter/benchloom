@@ -25,6 +25,8 @@ class DemoPsuSim(SimTransport):
         name, _, arg = command.upper().partition(" ")
         if name == "*IDN?":
             return "Patchbay,Demo PSU,SIM0001,0.1"
+        if name == "SYST:ERR?":
+            return '0,"No error"'
         if name == "*RST":
             self.volts, self.limit, self.output = 0.0, 1.0, False
         elif name == "VOLT":

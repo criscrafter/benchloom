@@ -13,8 +13,28 @@ PROJECT_FILE = "patchbay.toml"
 MODES = ("lua", "visual")
 
 
+# Names a device must not take: Lua keywords, Lua's standard globals and Patchbay's own.
+RESERVED_NAMES = frozenset("""
+    and break do else elseif end false for function goto if in local nil not or repeat
+    return then true until while
+    assert collectgarbage dofile error getmetatable ipairs load loadfile next pairs pcall
+    print rawequal rawget rawlen rawset require select setmetatable tonumber tostring type
+    xpcall coroutine debug io math os package string table utf8
+    sleep log time panel python vars v
+""".split())
+
+
 class ProjectError(Exception):
     pass
+
+
+def device_name_problem(name: str) -> str | None:
+    """Why ``name`` cannot name a device, or None if it can."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        return "must start with a letter and contain only letters, digits and underscores"
+    if name in RESERVED_NAMES or name.startswith("_"):
+        return "is reserved by Lua or Patchbay; choose another name"
+    return None
 
 
 @dataclass
@@ -49,10 +69,9 @@ class Project:
             raise ProjectError(f"{file}: mode must be one of {', '.join(MODES)}")
         devices = {}
         for name, entry in data.get("devices", {}).items():
-            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-                raise ProjectError(
-                    f"{file}: device name '{name}' must be letters, digits and underscores"
-                )
+            problem = device_name_problem(name)
+            if problem:
+                raise ProjectError(f"{file}: device name '{name}' {problem}")
             entry = dict(entry)
             try:
                 devices[name] = DeviceConfig(

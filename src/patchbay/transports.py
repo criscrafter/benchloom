@@ -13,12 +13,13 @@ A device entry in a project names its connection with a resource string:
 
 Common options: ``timeout`` (seconds), ``term`` (line ending for both
 directions, e.g. ``term=\\r\\n``), ``write_term``, ``read_term``.
+Serial options: ``baud``, ``bytesize``, ``parity`` (N, E, O), ``stopbits``,
+``rtscts=1`` for hardware handshake.
 """
 
 from __future__ import annotations
 
 import socket
-from collections import deque
 from urllib.parse import parse_qsl
 
 
@@ -57,6 +58,19 @@ class Transport:
     def read_until(self, term: bytes) -> bytes:
         raise NotImplementedError
 
+    def read_some(self, size: int) -> bytes:
+        """Read up to ``size`` bytes; return what arrived before the timeout, maybe nothing."""
+        try:
+            return self.read_raw(size)
+        except TimeoutError:
+            return b""
+
+    def clear_input(self) -> None:
+        """Throw away anything received but not read yet."""
+
+    def set_timeout(self, seconds: float) -> None:
+        self.timeout = float(seconds)
+
     def write(self, text: str) -> None:
         self.write_raw((text + self.write_term).encode(self.encoding))
 
@@ -70,39 +84,78 @@ class Transport:
 
 
 class SimTransport(Transport):
-    """Base for simulators: implement :meth:`handle` to answer command lines."""
+    """Base for simulators of text instruments: implement :meth:`handle`.
+
+    ``handle`` gets one command line and returns the reply: a ``str`` (sent with the
+    read terminator), ``bytes`` (sent exactly as given) or ``None`` (no reply).
+    """
 
     scheme = "sim"
 
     def __init__(self, **options):
         super().__init__(**options)
-        self._replies: deque[str] = deque()
+        self._out = bytearray()
 
-    def handle(self, command: str) -> str | None:
+    def handle(self, command: str) -> str | bytes | None:
         raise NotImplementedError
+
+    def reply(self, data: str | bytes | None) -> None:
+        if data is None:
+            return
+        if isinstance(data, str):
+            data = data.encode(self.encoding) + self.read_term.encode(self.encoding)
+        self._out += data
 
     def write_raw(self, data: bytes) -> None:
         for line in data.decode(self.encoding).splitlines():
             if line.strip():
-                reply = self.handle(line.strip())
-                if reply is not None:
-                    self._replies.append(reply)
+                self.reply(self.handle(line.strip()))
+
+    def read_raw(self, size: int) -> bytes:
+        if len(self._out) < size:
+            raise TimeoutError("simulated device has nothing to send")
+        data = bytes(self._out[:size])
+        del self._out[:size]
+        return data
 
     def read_until(self, term: bytes) -> bytes:
-        if not self._replies:
+        end = self._out.find(term)
+        if end < 0:
             raise TimeoutError("simulated device has nothing to send")
-        return self._replies.popleft().encode(self.encoding) + term
+        return self.read_raw(end + len(term))
+
+    def read_some(self, size: int) -> bytes:
+        return self.read_raw(min(size, len(self._out)))
+
+    def clear_input(self) -> None:
+        self._out.clear()
+
+
+class RawSimTransport(SimTransport):
+    """Base for simulators of binary instruments: implement :meth:`handle_bytes`.
+
+    It gets everything written in one go (one frame) and returns the reply bytes or None.
+    """
+
+    def handle_bytes(self, data: bytes) -> bytes | None:
+        raise NotImplementedError
+
+    def write_raw(self, data: bytes) -> None:
+        self.reply(self.handle_bytes(bytes(data)))
 
 
 class SerialTransport(Transport):
     scheme = "serial"
 
-    def __init__(self, port: str, *, baud=9600, bytesize=8, parity="N", stopbits=1, **options):
+    def __init__(self, port: str, *, baud=9600, bytesize=8, parity="N", stopbits=1, rtscts=0,
+                 **options):
         super().__init__(**options)
         self.port = port
+        stopbits = float(stopbits)
         self.serial_options = dict(
-            baudrate=int(baud), bytesize=int(bytesize), parity=str(parity).upper(),
-            stopbits=float(stopbits),
+            baudrate=int(baud), bytesize=int(bytesize), parity=str(parity).upper()[:1],
+            stopbits=int(stopbits) if stopbits.is_integer() else stopbits,
+            rtscts=bool(int(rtscts)),
         )
         self._serial = None
 
@@ -127,6 +180,17 @@ class SerialTransport(Transport):
         if len(data) < size:
             raise TimeoutError(f"timeout reading from {self.port}")
         return data
+
+    def read_some(self, size: int) -> bytes:
+        return self._serial.read(size)
+
+    def clear_input(self) -> None:
+        self._serial.reset_input_buffer()
+
+    def set_timeout(self, seconds: float) -> None:
+        super().set_timeout(seconds)
+        if self._serial is not None:
+            self._serial.timeout = self.timeout
 
     def read_until(self, term: bytes) -> bytes:
         data = self._serial.read_until(term)
@@ -174,6 +238,15 @@ class PrologixTransport(SerialTransport):
         self._adapter("++read eoi")
         return super().read_until(term)
 
+    def read_raw(self, size: int) -> bytes:
+        """Read a binary reply of known length (the instrument ends it with EOI)."""
+        self._adapter("++read eoi")
+        return super().read_raw(size)
+
+    def read_some(self, size: int) -> bytes:
+        self._adapter("++read eoi")
+        return super().read_some(size)
+
 
 class TcpTransport(Transport):
     scheme = "tcp"
@@ -209,6 +282,31 @@ class TcpTransport(Transport):
             self._fill()
         data, self._buffer = self._buffer[:size], self._buffer[size:]
         return data
+
+    def read_some(self, size: int) -> bytes:
+        if not self._buffer:
+            try:
+                self._fill()
+            except TimeoutError:
+                return b""
+        data, self._buffer = self._buffer[:size], self._buffer[size:]
+        return data
+
+    def clear_input(self) -> None:
+        self._buffer = b""
+        self._socket.settimeout(0)
+        try:
+            while self._socket.recv(4096):
+                pass
+        except (BlockingIOError, OSError):
+            pass
+        finally:
+            self._socket.settimeout(self.timeout)
+
+    def set_timeout(self, seconds: float) -> None:
+        super().set_timeout(seconds)
+        if self._socket is not None:
+            self._socket.settimeout(self.timeout)
 
     def read_until(self, term: bytes) -> bytes:
         while term not in self._buffer:
@@ -260,6 +358,23 @@ class VisaTransport(Transport):
 
     def read_raw(self, size: int) -> bytes:
         return self._instrument.read_bytes(size)
+
+    def read_some(self, size: int) -> bytes:
+        try:
+            return self._instrument.read_bytes(size)
+        except Exception:  # pyvisa reports a timeout as VisaIOError
+            return b""
+
+    def clear_input(self) -> None:
+        try:
+            self._instrument.clear()
+        except Exception:
+            pass
+
+    def set_timeout(self, seconds: float) -> None:
+        super().set_timeout(seconds)
+        if self._instrument is not None:
+            self._instrument.timeout = self.timeout * 1000
 
     def read_until(self, term: bytes) -> bytes:
         return self._instrument.read_raw()
