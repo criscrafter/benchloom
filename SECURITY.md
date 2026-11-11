@@ -18,6 +18,10 @@ issue for them. You will get an answer within a week.
   report it as above. A script can still command every instrument the project
   lists, so it can switch outputs on: read a project from someone else before
   running it on real hardware. A project's own `plugins/` folder is Python and
-  is not sandboxed; treat it like any plugin.
+  is not sandboxed; treat it like any plugin. It is not loaded until you allow
+  it for that project (the app asks when the project is opened; `benchloom run
+  --trust-plugins` on the command line), and until then it cannot replace a
+  built-in plugin either. The permission is kept for the project folder, so
+  it also covers later changes to those plugins.
 - **Instruments** reached over the network (`tcp://`, `visa://` over LAN) are
   usually not protected at all. Keep them on a lab network.

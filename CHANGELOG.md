@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Plugins in a project need your consent:** a project's own `plugins/` folder
+  is Python code, and it used to be loaded as soon as the project was opened.
+  Now the app asks first, per project, and `benchloom run` needs
+  `--trust-plugins` once. Until then such a plugin does not replace a built-in
+  one either.
+- **Stopping switches outputs off more reliably:** when a script does not stop
+  within 3 s (a loop that never checks, a slow command), the run now shuts its
+  devices down without the script instead of being killed with the outputs on.
+  Shutting down is no longer cut short after 3 s, and closing the window
+  while a test runs waits for it too.
+- The app no longer shows the commands of another project's plugin after
+  switching between projects that carry a plugin with the same id.
+
 - **On PyPI:** `pip install "benchloom[gui,usb]"` installs Benchloom; every
   release is uploaded there automatically.
 

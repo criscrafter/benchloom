@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from .. import HOMEPAGE, NOTICE, __version__
+from ..config import AppConfig
 from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
 from ..panel import Panel, PanelError
+from ..plugin import PluginRegistry
 from ..project import Project, ProjectError, create_project, is_project, templates
 from .devices import DevicesPanel
 from .editor import CodeEditor, mono_font
@@ -125,6 +127,8 @@ class MainWindow(QMainWindow):
     def __init__(self, settings: QSettings | None = None):
         super().__init__()
         self.project: Project | None = None
+        self._close_when_stopped = False  # the window was closed while a test ran
+        self._closing = False
         self.settings = settings or app_settings()
         self.prefs = GuiSettings(self.settings)
         self.resize(1280, 800)
@@ -480,11 +484,48 @@ class MainWindow(QMainWindow):
         if not self._keep_changes():
             return False
         try:
-            self._set_project(Project.load(path))
+            project = Project.load(path)
+            self._ask_about_project_plugins(project)
+            self._set_project(project)
             return True
         except ProjectError as exc:
             QMessageBox.critical(self, "Open project", str(exc))
             return False
+
+    def _ask_about_project_plugins(self, project: Project) -> None:
+        """A project's own plugins are Python code: load them only if the user says so.
+
+        Asked each time the project is opened until the answer is yes; nothing of the
+        plugins has run when the question appears.
+        """
+        config = AppConfig.load()
+        blocked = PluginRegistry.default(project.path, config).blocked
+        if blocked and self.confirm_project_plugins(project, blocked):
+            config.set_trusted(project.path)
+            config.save()
+
+    def confirm_project_plugins(self, project: Project, plugins: list) -> bool:
+        known = PluginRegistry.default().plugins
+        items = "".join(
+            f"<li><b>{html.escape(p.name)}</b>"
+            + (" (replaces a plugin that Benchloom already has)"
+               if p.id in known else "") + "</li>" for p in plugins)
+        box = QMessageBox(self)
+        box.setWindowTitle("Plugins in this project")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<p>The project <b>{html.escape(project.name)}</b> brings its own "
+                    f"plugins:</p><ul>{items}</ul>")
+        box.setInformativeText(
+            "Plugins are Python code and run with your permissions, unlike the test itself. "
+            "Load them only if you trust where this project comes from.\n\n"
+            "Without them the project opens, but devices that need these plugins do not work.")
+        load = box.addButton("Load plugins", QMessageBox.ButtonRole.AcceptRole)
+        skip = box.addButton("Open without them", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(skip)
+        box.setEscapeButton(skip)
+        box.exec()
+        return box.clickedButton() is load
 
     def _modified(self) -> bool:
         if self.project is None:
@@ -613,6 +654,10 @@ class MainWindow(QMainWindow):
             parts.append(f"{len(self.waveforms.waveforms)} waveform(s) saved")
         self.statusBar().showMessage(" · ".join(parts))
         self._update_actions()
+        if self._close_when_stopped:
+            self._close_when_stopped = False
+            self._closing = True  # unsaved changes were asked about already
+            self.close()
 
     def show_report(self) -> None:
         if self._last_run and (self._last_run / "report.html").is_file():
@@ -630,10 +675,14 @@ class MainWindow(QMainWindow):
             self.graph.add_node({"type": "device", "device": device, "command": command})
 
     def closeEvent(self, event) -> None:
-        if not self._keep_changes():
+        if not self._closing and not self._keep_changes():
             event.ignore()
             return
         if self.runner.running:
-            self.runner.stop()
-            self.runner._force_stop()
+            # Not killed: the run switches its outputs off first, then the window closes.
+            self._close_when_stopped = True
+            self.stop()
+            self.statusBar().showMessage("Stopping the test and switching the devices off…")
+            event.ignore()
+            return
         event.accept()

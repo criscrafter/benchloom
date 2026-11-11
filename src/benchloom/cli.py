@@ -22,13 +22,15 @@ def _new(args) -> int:
 
 
 def _run(args) -> int:
-    result = run_project(args.path)
+    result = run_project(args.path, trust_plugins=args.trust_plugins)
     print(f"\n{len(result.rows)} row(s) logged. Run saved to {result.path}")
     return 0 if result.status == "ok" else 1
 
 
 def _devices(args) -> int:
-    registry = PluginRegistry.default(Path(args.project) if args.project else None)
+    # --project names the project on purpose, which is the permission to use its plugins
+    registry = PluginRegistry.default(Path(args.project) if args.project else None,
+                                      trust_project=True)
     for plugin in registry.plugins.values():
         print(f"{plugin.name} ({plugin.id} {plugin.version})")
         for device in plugin.devices:
@@ -45,7 +47,7 @@ def _plugins(args) -> int:
 
     project = Path(args.project) if args.project else None
     if args.action == "list":
-        registry = PluginRegistry.default(project)
+        registry = PluginRegistry.default(project, trust_project=True)
         for info in registry.found:
             status = registry.status(info)
             mark = {"enabled": "on ", "disabled": "off", "replaced": "---"}[status]
@@ -61,7 +63,7 @@ def _plugins(args) -> int:
         info = plugin_install.install(Path(args.target), replace=args.replace)
         print(f"Installed {info.name} {info.version} ({info.id}) in {info.path}")
         return 0
-    registry = PluginRegistry.default(project)
+    registry = PluginRegistry.default(project, trust_project=True)
     matches = [info for info in registry.found if info.id == args.target]
     if not matches:
         raise PluginError(f"no plugin with id '{args.target}' (see: benchloom plugins)")
@@ -80,7 +82,8 @@ def _plugins(args) -> int:
 
 
 def _describe(args) -> int:
-    registry = PluginRegistry.default(Path(args.project) if args.project else None)
+    registry = PluginRegistry.default(Path(args.project) if args.project else None,
+                                      trust_project=True)
     spec = registry.device(args.device)
     print(f"{spec.name} ({spec.id})")
     if spec.description:
@@ -155,6 +158,9 @@ def main(argv: list[str] | None = None) -> int:
 
     run = sub.add_parser("run", help="run a project's test")
     run.add_argument("path", nargs="?", default=".")
+    run.add_argument("--trust-plugins", action="store_true",
+                     help="allow the project's own plugins folder (Python code) to load, "
+                          "now and in later runs")
     run.set_defaults(func=_run)
 
     devices = sub.add_parser("devices", help="list the device types plugins provide")

@@ -22,8 +22,9 @@ without licence fees, accounts or a vendor runtime.
 > A wrong script can apply a wrong voltage or current to your circuit. Set
 > current limits on the instruments themselves, try new tests on the
 > simulators first, and stay near the bench the first time a test runs.
-> Drivers switch outputs off when a test ends or is stopped (not when a hung
-> driver has to be killed), but that cannot replace a hardware limit.
+> Drivers switch outputs off when a test ends or is stopped, also when its
+> script does not stop (only a run that hangs completely is killed as it is),
+> but that cannot replace a hardware limit.
 > Benchloom is provided without warranty; see [Disclaimer](#disclaimer).
 
 ## Try it
@@ -265,8 +266,12 @@ benchloom plugins disable hp              # enable, remove
 Plugins are loaded from, in order: the built-in ones, `~/.benchloom/plugins/`,
 the extra folders set in Settings, and the project's own `plugins/` folder. A
 later plugin with the same id replaces an earlier one, so a project can carry
-its own copy of a driver. Which plugins are off and the extra folders are kept
-in `~/.benchloom/config.json`; set `BENCHLOOM_HOME` to use another folder than
+its own copy of a driver. Because a project's `plugins/` folder is Python code
+that arrives with the project, it is loaded only after you allowed it for that
+project: the app asks when the project is opened, and on the command line
+`benchloom run my-test --trust-plugins` does it. Which plugins are off, the
+extra folders and the projects allowed to load their plugins are kept in
+`~/.benchloom/config.json`; set `BENCHLOOM_HOME` to use another folder than
 `~/.benchloom`.
 
 ```python

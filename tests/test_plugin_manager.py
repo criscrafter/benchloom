@@ -79,7 +79,7 @@ def test_later_plugins_replace_earlier_ones(tmp_path):
     make_plugin(user_plugin_dir() / "acme", version="1.0")
     project = create_project(tmp_path / "proj")
     make_plugin(project.path / "plugins" / "acme", version="2.0")
-    registry = PluginRegistry.default(project.path)
+    registry = PluginRegistry.default(project.path, trust_project=True)
     user, local = [info for info in registry.found if info.id == "acme"]
     assert (user.source, local.source) == ("user", "project")
     assert registry.status(user) == "replaced" and registry.status(local) == "enabled"

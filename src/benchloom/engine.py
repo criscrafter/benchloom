@@ -43,16 +43,20 @@ except ImportError:  # pragma: no cover - platforms without the 5.4 build
     import lupa
 
 from . import __version__
+from .config import AppConfig
 from .datalog import Check, RunLog, evaluate
 from .graph import Catalog, GraphError, compile_graph
 from .panel import Panel, PanelError, PanelState
-from .plugin import Device, PluginRegistry
+from .plugin import PROJECT_PLUGIN_HINT, Device, PluginRegistry
 from .project import DeviceConfig, Project, ProjectError
 from .transports import Transport, TransportError, open_transport, parse_resource
 
 _STOP = "__benchloom_stop__"
 MAX_SCRIPT_MEMORY_MB = 1024  # a runaway script fails instead of filling the computer's RAM
 GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
+# How long a device command in progress may take to finish before the devices are shut
+# down around it, when the script does not stop (see run_project's stop_timeout).
+STOP_COMMAND_WAIT_S = 8.0
 
 _BOOTSTRAP = """
 function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
@@ -192,6 +196,9 @@ class LuaEngine:
             self._check, self._save_waveform)
         g = self.lua.globals()
         self._load = g.load  # kept, so a device or script redefining `load` cannot break runs
+        # Held while a device command runs, so whoever shuts the devices down for a
+        # script that does not stop can wait for the command in progress to end.
+        self.device_lock = threading.Lock()
         g.sleep = guard(self._sleep)
         g.time = elapsed
         g.log = guard(lambda table: log_row(self._to_python(table, as_dict=True)))
@@ -282,7 +289,10 @@ class LuaEngine:
     def add_device(self, name: str, device: Device) -> None:
         def call(command, *args):
             try:
-                result = device.call(command, *[self._to_python(a) for a in args])
+                with self.device_lock:
+                    if self.stop_event.is_set():  # stopped while waiting for the lock
+                        return False, _STOP
+                    result = device.call(command, *[self._to_python(a) for a in args])
             except Exception as exc:
                 return False, f"{name}:{command}: {exc}"
             return True, self._to_lua(result)
@@ -379,24 +389,48 @@ def run_project(
     on_panel: Callable[[str, Any], None] | None = None,
     on_check: Callable[[dict[str, Any]], None] | None = None,
     on_waveform: Callable[[str, dict], None] | None = None,
+    trust_plugins: bool = False,
+    stop_timeout: float | None = None,
+    on_shutdown: Callable[[], None] | None = None,
+    on_abandoned: Callable[[RunResult], None] | None = None,
 ) -> RunResult:
     """Run a project's test.
 
     ``panel_values`` holds the current values of the front panel controls; whoever
     shows the panel may keep updating that dict while the test runs. Without it the
     controls have their saved values. ``on_panel`` receives what the test sets.
+
+    ``trust_plugins`` allows the project's own plugins folder to load, and remembers
+    that for the project.
+
+    ``stop_timeout``: when the script has not ended this many seconds after
+    ``stop_event`` was set (a loop that never checks, a hung driver), the devices are
+    shut down anyway, from another thread, so that outputs do not stay on; the run is
+    finished as "stopped" and ``on_abandoned`` gets its result. The script itself may
+    still be running then: the caller has to end the process. ``on_shutdown`` is
+    called when the devices start to be shut down, on either way.
     """
     project = Project.load(project_dir)
     script = project.path / project.script
     if not script.is_file():
         raise ProjectError(f"script not found: {script}")
+    if trust_plugins:
+        config = AppConfig.load()
+        if not config.trusts(project.path):
+            config.set_trusted(project.path)
+            config.save()
     registry = PluginRegistry.default(project.path)
 
     run = RunLog(project.path / "runs")
     shutil.copy2(script, run.path / script.name)
+    closing = threading.Lock()  # shutting the devices down and finishing the run, once
+    closed = False
 
     def emit(text: str) -> None:
-        run.console(text)
+        try:
+            run.console(text)
+        except ValueError:  # the run was finished without the script (see stop_timeout)
+            return
         on_print(text)
 
     def log_row(values: dict[str, Any]) -> None:
@@ -418,7 +452,65 @@ def run_project(
     devices: dict[str, Device] = {}
     ports = SharedPorts()
     status, error = "ok", None
+
+    def shut_down(status: str, error: str | None) -> bool:
+        """Switch the devices off and write the run's files. False: already done."""
+        nonlocal closed
+        with closing:
+            if closed:
+                return False
+            closed = True
+            if on_shutdown is not None:
+                on_shutdown()
+            for name, device in list(devices.items()):
+                try:
+                    device.close()  # sources and loads switch their output off here
+                except Exception as exc:
+                    emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
+            for transport in {id(d.transport): d.transport for d in devices.values()}.values():
+                try:
+                    transport.close()  # once, also when devices share it
+                except Exception:
+                    pass
+            run.finish(status, error, {
+                "benchloom": __version__,
+                "project": project.name,
+                "script": script.name,
+                "devices": {n: {"device": c.device, "resource": c.resource}
+                            for n, c in project.devices.items()},
+            }, project.plot)
+            return True
+
+    def result() -> RunResult:
+        meta = json.loads((run.path / "run.json").read_text(encoding="utf-8"))
+        return RunResult(meta["status"], meta["error"], run.path, run.rows, run.verdict(),
+                         run.check_records())
+
+    script_ended = threading.Event()
+
+    def watch_stop(engine: LuaEngine) -> None:
+        """Shut the devices down for a script that does not stop when told to."""
+        while not stop_event.wait(0.2):
+            if script_ended.is_set():
+                return
+        if script_ended.wait(stop_timeout):
+            return
+        emit(f"The test did not stop within {stop_timeout:g} s; shutting the devices down.")
+        # A command in progress may finish first; a hung one must not keep outputs on.
+        waited = engine.device_lock.acquire(timeout=STOP_COMMAND_WAIT_S)
+        try:
+            if script_ended.is_set() or not shut_down("stopped", None):
+                return
+        finally:
+            if waited:
+                engine.device_lock.release()
+        if on_abandoned is not None:
+            on_abandoned(result())
+
     try:
+        for blocked in registry.blocked:
+            emit(f"Note: this project's own plugin '{blocked.name}' was not loaded. "
+                 f"{PROJECT_PLUGIN_HINT}")
         for name, config in project.devices.items():
             try:
                 devices[name] = open_device(registry, config, ports)
@@ -447,6 +539,8 @@ def run_project(
                 raise ScriptError(f"graph: {exc}") from exc
             chunk_name = GRAPH_CHUNK
             (run.path / GRAPH_CHUNK).write_text(code, encoding="utf-8")
+        if stop_event is not None and stop_timeout is not None:
+            threading.Thread(target=watch_stop, args=(engine,), daemon=True).start()
         engine.run(code, chunk_name)
     except (ScriptStopped, KeyboardInterrupt):
         status = "stopped"
@@ -455,21 +549,6 @@ def run_project(
         status, error = "error", str(exc)
         emit(f"Error: {error}")
     finally:
-        for name, device in devices.items():
-            try:
-                device.close()  # sources and loads switch their output off here
-            except Exception as exc:
-                emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
-        for transport in {id(d.transport): d.transport for d in devices.values()}.values():
-            try:
-                transport.close()  # once, also when devices share it
-            except Exception:
-                pass
-        run.finish(status, error, {
-            "benchloom": __version__,
-            "project": project.name,
-            "script": script.name,
-            "devices": {n: {"device": c.device, "resource": c.resource}
-                        for n, c in project.devices.items()},
-        }, project.plot)
-    return RunResult(status, error, run.path, run.rows, run.verdict(), run.check_records())
+        script_ended.set()
+        shut_down(status, error)  # waits, if the other thread is already doing it
+    return result()

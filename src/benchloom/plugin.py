@@ -241,6 +241,13 @@ class PluginInfo:
         return "benchloom_plugin_" + re.sub(r"\W", "_", self.id)
 
     def _ensure_package(self) -> None:
+        loaded = sys.modules.get(self.package)
+        if loaded is not None and list(loaded.__path__) != [str(self.path)]:
+            # code of a plugin with the same id from another folder (another project's
+            # copy, say): drop it, or this plugin would run that one's drivers
+            for name in [n for n in sys.modules
+                         if n == self.package or n.startswith(self.package + ".")]:
+                del sys.modules[name]
         if self.package not in sys.modules:
             spec = importlib.machinery.ModuleSpec(self.package, None, is_package=True)
             module = importlib.util.module_from_spec(spec)
@@ -358,6 +365,8 @@ class PluginRegistry:
         self.disabled = set(disabled)
         self.errors: list[str] = []
         self.broken: list[tuple[Path, str]] = []  # plugin folders that failed to load
+        # the project's own plugins, when the user has not allowed them: read, never loaded
+        self.blocked: list[PluginInfo] = []
         for entry in search_paths:
             root, source = entry if isinstance(entry, tuple) else (entry, "")
             root = Path(root)
@@ -377,16 +386,29 @@ class PluginRegistry:
                         self.plugins[info.id] = info
 
     @classmethod
-    def default(cls, project_dir: Path | None = None,
-                config: AppConfig | None = None) -> "PluginRegistry":
+    def default(cls, project_dir: Path | None = None, config: AppConfig | None = None,
+                trust_project: bool | None = None) -> "PluginRegistry":
         """Built-in plugins, installed ones, extra folders from the app config and
-        the project's own ``plugins`` folder, minus the plugins switched off."""
+        the project's own ``plugins`` folder, minus the plugins switched off.
+
+        A project's plugins are Python code that came with the project, so they are
+        used only when the user allowed it for that project (``AppConfig.trusts``;
+        ``trust_project`` overrides that). Otherwise they are listed in ``blocked``.
+        """
         config = config or AppConfig.load()
         paths = [(BUILTIN_PLUGIN_DIR, "built-in"), (user_plugin_dir(), "user")]
         paths += [(Path(p), "folder") for p in config.plugin_paths]
+        blocked = []
         if project_dir is not None:
-            paths.append((Path(project_dir) / "plugins", "project"))
-        return cls(paths, config.disabled_plugins)
+            if trust_project is None:
+                trust_project = config.trusts(project_dir)
+            if trust_project:
+                paths.append((Path(project_dir) / "plugins", "project"))
+            else:
+                blocked = project_plugins(project_dir)
+        registry = cls(paths, config.disabled_plugins)
+        registry.blocked = blocked
+        return registry
 
     def status(self, info: PluginInfo) -> str:
         """'enabled', 'disabled', or 'replaced' (a later plugin has the same id)."""
@@ -407,6 +429,34 @@ class PluginRegistry:
                     raise PluginError(f"device type '{device_id}' comes from the plugin "
                                       f"'{info.name}', which is switched off in the plugin "
                                       "manager")
+            for info in self.blocked:
+                if any(d.id == device_id for d in info.devices):
+                    raise PluginError(f"device type '{device_id}' comes from this project's "
+                                      f"own plugin '{info.name}', which was not allowed to "
+                                      f"load. {PROJECT_PLUGIN_HINT}")
             known = ", ".join(sorted(devices)) or "none"
             raise PluginError(f"unknown device type '{device_id}' (available: {known})")
         return devices[device_id]
+
+
+PROJECT_PLUGIN_HINT = ("Plugins are Python code and run with your permissions: allow them "
+                       "when opening the project in the app, or with "
+                       "'benchloom run --trust-plugins', if you trust where the project "
+                       "comes from.")
+
+
+def project_plugins(project_dir: str | Path) -> list[PluginInfo]:
+    """The plugins in a project's own ``plugins`` folder, from their manifests alone:
+    nothing in them is run."""
+    root = Path(project_dir) / "plugins"
+    found = []
+    for folder in sorted(root.iterdir()) if root.is_dir() else []:
+        if (folder / "plugin.toml").is_file():
+            try:
+                info = read_manifest(folder)
+            except PluginError:
+                # unreadable, but still something the project would have loaded
+                info = PluginInfo(folder.name, folder.name, "?", folder)
+            info.source = "project"
+            found.append(info)
+    return found

@@ -4,6 +4,13 @@
 
 A separate process keeps the window responsive and means a hung driver can
 always be stopped.
+
+Stopping has three steps, each a fallback for the one before:
+
+1. The script is asked to stop; it ends and the run shuts its devices down.
+2. A script that has not ended after ``STOP_TIMEOUT_S`` is left behind: the run's
+   process shuts the devices down without it and then ends itself.
+3. A process that does neither is killed. Only then may outputs stay on.
 """
 
 from __future__ import annotations
@@ -15,7 +22,9 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..worker import run_worker
 
-FORCE_STOP_AFTER_MS = 3000
+STOP_TIMEOUT_S = 3.0  # what a script gets to stop, before the devices are shut down anyway
+FORCE_STOP_AFTER_MS = 5000  # no shutdown has begun by then: the process is hung, kill it
+SHUTDOWN_TIMEOUT_MS = 30000  # what shutting the devices down may take, before the kill
 
 
 class RunController(QObject):
@@ -34,6 +43,7 @@ class RunController(QObject):
         self._controls = None
         self._stop = None
         self._dead_polls = 0
+        self._shutting_down = False
         self._poll_timer = QTimer(self, interval=30)
         self._poll_timer.timeout.connect(self._poll)
         self._kill_timer = QTimer(self, singleShot=True, interval=FORCE_STOP_AFTER_MS)
@@ -50,9 +60,11 @@ class RunController(QObject):
         self._controls = self._context.Queue()
         self._stop = self._context.Event()
         self._dead_polls = 0
+        self._shutting_down = False
         self._process = self._context.Process(
             target=run_worker,
-            args=(str(project_path), self._queue, self._stop, self._controls, panel_values),
+            args=(str(project_path), self._queue, self._stop, self._controls, panel_values,
+                  STOP_TIMEOUT_S),
             daemon=True,
         )
         self._process.start()
@@ -64,10 +76,12 @@ class RunController(QObject):
             self._controls.put((name, value))
 
     def stop(self) -> None:
-        """Ask the script to stop; force it if it has not stopped after a few seconds."""
+        """Ask the script to stop. The run shuts its devices down, with or without the
+        script; only a process that does not even do that is killed."""
         if self.running and not self._kill_timer.isActive():
             self._stop.set()
-            self._kill_timer.start()
+            self._kill_timer.start(SHUTDOWN_TIMEOUT_MS if self._shutting_down
+                                   else FORCE_STOP_AFTER_MS)
 
     def _poll(self) -> None:
         for _ in range(500):
@@ -85,6 +99,11 @@ class RunController(QObject):
                 self.check.emit(message[1])
             elif message[0] == "waveform":
                 self.waveform.emit(message[1], message[2])
+            elif message[0] == "shutdown":
+                # the devices are being switched off: give that time, do not kill it
+                self._shutting_down = True
+                if self._kill_timer.isActive():
+                    self._kill_timer.start(SHUTDOWN_TIMEOUT_MS)
             elif message[0] == "done":
                 self._end(*message[1:])
                 return
@@ -105,6 +124,8 @@ class RunController(QObject):
         self._poll_timer.stop()
         self._kill_timer.stop()
         self._process.join(1)
+        if self._process.is_alive():  # reported its end but did not go
+            self._process.terminate()
         self._process = None
         self._controls.cancel_join_thread()  # unsent control changes no longer matter
         self._controls.close()
