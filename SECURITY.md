@@ -12,10 +12,12 @@ issue for them. You will get an answer within a week.
   desktop app and in test runs. Install plugins only from people you trust;
   the plugin manager says so before installing. Nothing in a plugin runs while
   it is being installed.
-- **Projects are programs.** Their Lua scripts can read and write files and
-  start programs (Lua's `io` and `os` libraries), and they can command every
-  instrument the project lists, so they can switch outputs on. Open and run a
-  project from someone else only if you trust it, and read its script before
-  running it on real hardware.
+- **Projects** contain Lua scripts. Since 0.1.2 they run in a sandbox: no
+  files, no other programs, no loading of other code or Lua bytecode, and at
+  most 1 GB of memory. A way out of that sandbox is a security problem; please
+  report it as above. A script can still command every instrument the project
+  lists, so it can switch outputs on: read a project from someone else before
+  running it on real hardware. A project's own `plugins/` folder is Python and
+  is not sandboxed; treat it like any plugin.
 - **Instruments** reached over the network (`tcp://`, `visa://` over LAN) are
   usually not protected at all. Keep them on a lab network.

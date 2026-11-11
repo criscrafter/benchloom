@@ -28,7 +28,7 @@ is needed; the desktop app is tested offscreen.
 
 ```
 .venv\Scripts\pip install -e ".[gui,usb]" pyinstaller
-.venv\Scripts\python packaginguild_windows.py
+.venv\Scripts\python packaging\build_windows.py
 ```
 
 This makes `build/Benchloom-<version>-windows-x64.zip` and runs a self-test of

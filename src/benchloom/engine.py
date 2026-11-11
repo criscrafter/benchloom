@@ -10,6 +10,11 @@ What a script sees:
     time()                  seconds since the run started
     print(...)              write to the console (and the run's console.log)
     panel.<name>            read a front panel control, or set an indicator
+
+Scripts run in a sandbox: Lua's math, string, table, utf8 and coroutine
+libraries, os.time/clock/date/difftime, and load for text only. There is no io,
+os.execute and the like, require, dofile, loadfile, package, debug or
+string.dump, and a script may use at most MAX_SCRIPT_MEMORY_MB of memory.
     check(name, value, low, high, unit)
                             a pass/fail check: value within low..high (either may
                             be nil), or true when no limits are given; returns
@@ -46,6 +51,7 @@ from .project import DeviceConfig, Project, ProjectError
 from .transports import Transport, TransportError, open_transport, parse_resource
 
 _STOP = "__benchloom_stop__"
+MAX_SCRIPT_MEMORY_MB = 1024  # a runaway script fails instead of filling the computer's RAM
 GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
 
 _BOOTSTRAP = """
@@ -121,6 +127,20 @@ function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
         return device
     end
 
+    -- The sandbox: a script from someone else must not reach files, programs or
+    -- other code on this computer. What a test needs stays: math, string, table,
+    -- utf8, coroutine, time and dates, Benchloom's own functions and the devices.
+    local raw_load = load
+    load = function(chunk, chunkname, mode, ...)
+        -- text only: crafted bytecode can crash Lua or escape it. An explicit env
+        -- argument (even nil) is passed on only when the script gave one.
+        if select("#", ...) > 0 then return raw_load(chunk, chunkname, "t", ...) end
+        return raw_load(chunk, chunkname, "t")
+    end
+    os = { time = os.time, clock = os.clock, date = os.date, difftime = os.difftime }
+    io, require, dofile, loadfile, package, debug, collectgarbage = nil
+    string.dump = nil
+
     return make_device, guard
 end
 """ % _STOP
@@ -165,7 +185,7 @@ class LuaEngine:
         self._on_waveform = on_waveform
         self.lua = lupa.LuaRuntime(
             unpack_returned_tuples=True, register_eval=False, register_builtins=False,
-            attribute_filter=_no_attributes,
+            attribute_filter=_no_attributes, max_memory=MAX_SCRIPT_MEMORY_MB * 1024 * 1024,
         )
         self._make_device, guard = self.lua.eval(_BOOTSTRAP)(
             on_print, self.stop_event.is_set, self._panel_get, self._panel_set,
@@ -276,6 +296,9 @@ class LuaEngine:
             raise ScriptError(str(loaded[1]))
         try:
             loaded()
+        except lupa.LuaMemoryError:
+            raise ScriptError(f"{chunk_name}: the script used more than "
+                              f"{MAX_SCRIPT_MEMORY_MB} MB of memory") from None
         except lupa.LuaError as exc:
             if _STOP in str(exc):
                 raise ScriptStopped() from None

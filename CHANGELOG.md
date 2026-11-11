@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Lua sandbox:** scripts no longer reach files, other programs or other code
+  on the computer (`io`, `os.execute` and the rest of `os` except `time`,
+  `clock`, `date` and `difftime`, `require`, `dofile`, `loadfile`, `package`,
+  `debug`, `collectgarbage`, `string.dump`; `load` takes text only), and use at
+  most 1 GB of memory. Scripts that read or wrote files themselves need
+  changing.
+- CONTRIBUTING: the build command for the Windows download was garbled.
+
 ## 0.1.1 – Windows download
 
 - **Windows download:** `Benchloom-0.1.1-windows-x64.zip` on the releases page.

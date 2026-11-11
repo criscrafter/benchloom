@@ -175,8 +175,12 @@ go on a second scale under **Right axis**, **Columns** hides curves, and
 **Log X** puts the X axis on a log scale. A project's `[plot]` section sets
 how the plot starts out; changes made in the plot are kept per project.
 
-Lua scripts have Lua's whole standard library, including file access, so treat
-a project from someone else like a program: read it before running it.
+Scripts run in a sandbox. They have Lua's math, string, table, utf8 and
+coroutine libraries, `os.time`, `os.clock` and `os.date`, but no access to
+files, other programs or other code on the computer (no `io`, `os.execute`,
+`require` and the like), and at most 1 GB of memory. A script can still command
+every instrument in its project, so read a project from someone else before
+running it on real hardware.
 
 **Theme** in the toolbar switches between light, dark and the system setting.
 **Settings** (Ctrl+,) also holds the projects folder, editor and console font
