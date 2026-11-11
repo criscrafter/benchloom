@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1 – Windows download
+
+- **Windows download:** `Benchloom-0.1.1-windows-x64.zip` on the releases page.
+  Unzip and start `Benchloom.exe`; no Python needed. `benchloom-cli.exe` is the
+  command line.
+- The app has an About dialog and `benchloom --version` with the licence and
+  warranty notices.
+- Waveform PNGs also work in the packaged app, and show text when Qt runs
+  offscreen on Windows.
+- CI runs on Windows and Linux; the Linux test run no longer fails after the
+  tests have passed (a PySide6 shutdown fault).
+
 ## 0.1.0 – first public release
 
 Benchloom was developed as "Patchbay" until this release. Projects with a

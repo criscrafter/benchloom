@@ -25,6 +25,9 @@ from typing import Any, Sequence
 
 from .svgplot import waveform_svg
 
+# The packaged app's programs start the PNG helper when given this first argument.
+SVGPNG_ARG = "--benchloom-svgpng"
+
 
 @dataclass
 class Check:
@@ -160,12 +163,15 @@ class RunLog:
     def _render_pngs(self) -> None:
         """PNG copies of the waveform images, drawn by Qt in a helper process, when the
         desktop app is installed. The run itself never loads Qt."""
-        if not self.waveforms or importlib.util.find_spec("PySide6") is None:
+        frozen = getattr(sys, "frozen", False)  # the packaged app: no python -m there
+        if not self.waveforms or (not frozen and importlib.util.find_spec("PySide6") is None):
             return
         files = [str(self.path / f"{w.file}.svg") for w in self.waveforms]
+        helper = [sys.executable, SVGPNG_ARG] if frozen else [sys.executable, "-m",
+                                                              "benchloom.svgpng"]
         try:
-            subprocess.run([sys.executable, "-m", "benchloom.svgpng", *files],
-                           timeout=60 + 2 * len(files), capture_output=True, check=False)
+            subprocess.run(helper + files, timeout=60 + 2 * len(files), capture_output=True,
+                           check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.SubprocessError):
             pass  # the SVG images stay
 

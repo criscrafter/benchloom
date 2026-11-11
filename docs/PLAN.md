@@ -69,7 +69,8 @@
    (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB) · Feeltech
    FY6900. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
    VISA. Tried on hardware: KP184, 6404, DSO5102P and FY6900. See [INSTRUMENTS.md](INSTRUMENTS.md).
-6. **Packaging**: portable Windows build, then Linux, then Mac. Plugin install
+6. **Packaging**: portable Windows build (done: a zip built with PyInstaller,
+   self-tested and attached to each release by CI), then Linux, then Mac. Plugin install
    from a registry (install from a folder or .zip is done).
 
 ## Not verified yet

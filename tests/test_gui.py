@@ -379,4 +379,6 @@ def test_command_line_version_shows_the_notice(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
     out = " ".join(capsys.readouterr().out.split())
-    assert out.startswith("Benchloom 0.1.0") and "WITHOUT ANY WARRANTY" in out
+    from benchloom import __version__
+
+    assert out.startswith(f"Benchloom {__version__}") and "WITHOUT ANY WARRANTY" in out

@@ -28,7 +28,14 @@ without licence fees, accounts or a vendor runtime.
 
 ## Try it
 
-You need Python 3.11 or newer.
+**Windows:** download `Benchloom-…-windows-x64.zip` from the
+[latest release](https://github.com/criscrafter/benchloom/releases/latest), unzip
+it and start `Benchloom.exe`. No installation and no Python needed. Windows may
+warn about an unknown publisher because the program is not signed: choose
+"More info" and "Run anyway".
+
+**From source** (Windows, Linux; needed for development), with Python 3.11 or
+newer:
 
 ```
 git clone https://github.com/criscrafter/benchloom

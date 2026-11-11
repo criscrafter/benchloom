@@ -6,3 +6,4 @@ dist/
 build/
 .pytest_cache/
 runs/
+packaging/version_info.txt

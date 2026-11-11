@@ -24,6 +24,17 @@ python -m venv .venv
 Python 3.11 or newer. The tests use the instruments' simulators, so no hardware
 is needed; the desktop app is tested offscreen.
 
+## Building the Windows download
+
+```
+.venv\Scripts\pip install -e ".[gui,usb]" pyinstaller
+.venv\Scripts\python packaginguild_windows.py
+```
+
+This makes `build/Benchloom-<version>-windows-x64.zip` and runs a self-test of
+the packaged app first. Pushing a version tag (`v1.2.3`) builds it on GitHub and
+attaches it to the release.
+
 ## Writing an instrument plugin
 
 A plugin is a folder with a `plugin.toml` and a Python driver. The README

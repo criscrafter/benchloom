@@ -153,3 +153,21 @@ def test_format_value():
     assert format_value(1.5e-6) == "1.5e-06" and format_value(12345678.0) == "1.235e+07"
     assert format_value(-0.0004, 2) == "0.00" and format_value(3, 2, ",") == "3,00"
     assert format_value(-89.2581, point=",") == "-89,26"
+
+
+def test_the_packaged_app_starts_its_own_png_helper(tmp_path, monkeypatch):
+    """A packaged app has no `python -m`: it calls its own program with an argument."""
+    import subprocess
+    import sys
+
+    from benchloom import datalog
+
+    calls = []
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "C:/Benchloom/Benchloom.exe")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: calls.append(args))
+    run = datalog.RunLog(tmp_path / "runs")
+    run.save_waveform("w", {"CH1": ([0, 1], [0, 1])})
+    run._render_pngs()
+    assert calls[0][:2] == ["C:/Benchloom/Benchloom.exe", datalog.SVGPNG_ARG]
+    assert calls[0][2].endswith("001_w.svg")

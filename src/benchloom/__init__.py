@@ -6,7 +6,7 @@ from .plugin import CommandError, Device, Param, command
 from .scpi import ScpiDevice
 from .transports import RawSimTransport, SimTransport, Transport
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 HOMEPAGE = "https://github.com/criscrafter/benchloom"
 
 # The notices an interactive program under the AGPL shows: copyright, no warranty,

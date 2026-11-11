@@ -13,6 +13,12 @@ from pathlib import Path
 
 
 def main(paths: list[str]) -> int:
+    import os
+
+    windows_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and windows_fonts.is_dir():
+        # Qt's offscreen mode has no fonts of its own on Windows: text became boxes
+        os.environ.setdefault("QT_QPA_FONTDIR", str(windows_fonts))
     from PySide6.QtCore import QByteArray
     from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter
     from PySide6.QtSvg import QSvgRenderer
