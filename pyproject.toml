@@ -1,12 +1,11 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-fancy-pypi-readme>=24.1"]
 build-backend = "hatchling.build"
 
 [project]
 name = "benchloom"
-dynamic = ["version"]  # from src/benchloom/__init__.py
+dynamic = ["version", "readme"]  # from __init__.py and README.md, see below
 description = "Open lab automation: wire up instruments visually or script them in Lua."
-readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/benchloom/templates/LICENSE.txt"]
@@ -64,6 +63,22 @@ benchloom-gui = "benchloom.gui:main"
 
 [tool.hatch.version]
 path = "src/benchloom/__init__.py"
+
+# PyPI shows the README too, but not the files next to it: there its relative
+# links and images point to GitHub instead.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(!\[[^\]]*\])\((docs/images/[^)]+)\)'
+replacement = '\1(https://raw.githubusercontent.com/criscrafter/benchloom/main/\2)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?!https?://|#)([^)]+)\)'
+replacement = '](https://github.com/criscrafter/benchloom/blob/main/\1)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/benchloom"]

@@ -37,7 +37,9 @@ the packaged app first.
 To release a version: add its section to CHANGELOG.md (`## 1.2.3 – title`),
 set `__version__` in `src/benchloom/__init__.py`, and push the tag `v1.2.3`.
 GitHub then builds and self-tests the download and publishes the release with
-that changelog section as its notes; nothing needs editing by hand.
+that changelog section as its notes, then uploads the package to PyPI;
+nothing needs editing by hand. PyPI accepts it through trusted publishing
+(the `pypi` environment of this repository), so no token is stored anywhere.
 
 ## Writing an instrument plugin
 

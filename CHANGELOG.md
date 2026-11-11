@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **On PyPI:** `pip install "benchloom[gui,usb]"` installs Benchloom; every
+  release is uploaded there automatically.
+
 ## 0.1.2 – Lua sandbox
 
 - **Lua sandbox:** scripts no longer reach files, other programs or other code

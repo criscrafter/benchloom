@@ -34,8 +34,14 @@ it and start `Benchloom.exe`. No installation and no Python needed. Windows may
 warn about an unknown publisher because the program is not signed: choose
 "More info" and "Run anyway".
 
-**From source** (Windows, Linux; needed for development), with Python 3.11 or
-newer:
+**With pip** (Windows, Linux), with Python 3.11 or newer:
+
+```
+pip install "benchloom[gui,usb]"
+benchloom gui
+```
+
+**From source** (needed for development):
 
 ```
 git clone https://github.com/criscrafter/benchloom
@@ -45,8 +51,8 @@ python -m venv .venv
 .venv\Scripts\benchloom gui
 ```
 
-Add `usb` (`".[gui,usb]"`) for USB instruments such as the Hantek scope, and
-`visa` for VISA instruments.
+`usb` adds USB instruments such as the Hantek scope (`".[gui,usb]"` from
+source), `visa` adds VISA instruments.
 
 Choose **New project**, pick **Visual** or **Lua script**, then press **Run**
 (F5). The project starts with a simulated power supply and a voltage sweep, so

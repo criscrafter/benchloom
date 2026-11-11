@@ -1,10 +1,10 @@
-name: Windows download
+name: Release
 
 # Builds Benchloom-<version>-windows-x64.zip, runs its self-test and publishes it.
 # For a pushed version tag (v1.2.3) it creates the release itself, with notes from
-# the version's section in CHANGELOG.md, so nothing needs editing by hand. Run by
-# hand (Actions -> Windows download -> Run workflow), it re-attaches the zip to an
-# existing release.
+# the version's section in CHANGELOG.md, so nothing needs editing by hand, and then
+# uploads the Python package to PyPI. Run by hand (Actions -> Release ->
+# Run workflow), it only re-attaches the zip to an existing release.
 on:
   push:
     tags: ["v*"]
@@ -51,3 +51,33 @@ jobs:
             gh release create "$TAG" build/Benchloom-*-windows-x64.zip \
               --title "Benchloom ${TAG#v}" --notes-file notes.md --verify-tag --latest
           fi
+
+  pypi:
+    # PyPI trusts this workflow ("trusted publishing"), so no password or token is
+    # stored anywhere. Only after the Windows build passed its self-test.
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/benchloom/
+    permissions:
+      id-token: write  # proves to PyPI that this is criscrafter/benchloom's workflow
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build the package
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+          test "$(ls dist/*.whl)" = "dist/benchloom-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
