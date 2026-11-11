@@ -1,8 +1,10 @@
 name: Windows download
 
-# Builds Benchloom-<version>-windows-x64.zip, runs its self-test and attaches it to
-# the GitHub release of the tag. Runs for every pushed version tag (v1.2.3), or by
-# hand for an existing release: Actions -> Windows download -> Run workflow.
+# Builds Benchloom-<version>-windows-x64.zip, runs its self-test and publishes it.
+# For a pushed version tag (v1.2.3) it creates the release itself, with notes from
+# the version's section in CHANGELOG.md, so nothing needs editing by hand. Run by
+# hand (Actions -> Windows download -> Run workflow), it re-attaches the zip to an
+# existing release.
 on:
   push:
     tags: ["v*"]
@@ -37,13 +39,15 @@ jobs:
       - name: Build and self-test
         run: python packaging/build_windows.py
 
-      - name: Attach to the release
+      - name: Publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "Benchloom ${TAG#v}" --draft \
-              --notes "See CHANGELOG.md for what changed."
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" build/Benchloom-*-windows-x64.zip --clobber
+          else
+            python packaging/release_notes.py "$TAG" > notes.md
+            gh release create "$TAG" build/Benchloom-*-windows-x64.zip \
+              --title "Benchloom ${TAG#v}" --notes-file notes.md --verify-tag --latest
           fi
-          gh release upload "$TAG" build/Benchloom-*-windows-x64.zip --clobber

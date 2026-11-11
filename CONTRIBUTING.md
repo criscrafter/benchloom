@@ -32,8 +32,12 @@ is needed; the desktop app is tested offscreen.
 ```
 
 This makes `build/Benchloom-<version>-windows-x64.zip` and runs a self-test of
-the packaged app first. Pushing a version tag (`v1.2.3`) builds it on GitHub and
-attaches it to the release.
+the packaged app first.
+
+To release a version: add its section to CHANGELOG.md (`## 1.2.3 – title`),
+set `__version__` in `src/benchloom/__init__.py`, and push the tag `v1.2.3`.
+GitHub then builds and self-tests the download and publishes the release with
+that changelog section as its notes; nothing needs editing by hand.
 
 ## Writing an instrument plugin
 

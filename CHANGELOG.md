@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 – Lua sandbox
 
 - **Lua sandbox:** scripts no longer reach files, other programs or other code
   on the computer (`io`, `os.execute` and the rest of `os` except `time`,

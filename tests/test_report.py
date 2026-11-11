@@ -171,3 +171,21 @@ def test_the_packaged_app_starts_its_own_png_helper(tmp_path, monkeypatch):
     run._render_pngs()
     assert calls[0][:2] == ["C:/Benchloom/Benchloom.exe", datalog.SVGPNG_ARG]
     assert calls[0][2].endswith("001_w.svg")
+
+
+def test_release_notes_come_from_the_changelog():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "packaging" / "release_notes.py"
+    spec = importlib.util.spec_from_file_location("release_notes", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    changelog = ("# Changelog\n\n## 1.2.3 – something\n\nIntro that is\nwrapped.\n\n"
+                 "- **A:** first point,\n  wrapped once.\n- B\n\n## 1.2.2\n\n- old\n")
+    text = module.notes("v1.2.3", changelog)
+    assert "`Benchloom-1.2.3-windows-x64.zip`" in text
+    assert "Intro that is wrapped.\n\n- **A:** first point, wrapped once.\n- B\n" in text
+    assert "old" not in text and "WITHOUT" not in text and "without warranty" in text
+    assert module.section(module.ROOT.joinpath("CHANGELOG.md").read_text(encoding="utf-8"),
+                          "0.1.1").startswith("- **Windows download:**")
