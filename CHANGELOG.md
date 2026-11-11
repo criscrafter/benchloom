@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 – Safer stops, plugin consent and PyPI
 
 - **Plugins in a project need your consent:** a project's own `plugins/` folder
   is Python code, and it used to be loaded as soon as the project was opened.
@@ -14,7 +14,6 @@
   while a test runs waits for it too.
 - The app no longer shows the commands of another project's plugin after
   switching between projects that carry a plugin with the same id.
-
 - **On PyPI:** `pip install "benchloom[gui,usb]"` installs Benchloom; every
   release is uploaded there automatically.
 
