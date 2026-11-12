@@ -24,7 +24,15 @@ def _new(args) -> int:
 def _run(args) -> int:
     result = run_project(args.path, trust_plugins=args.trust_plugins)
     print(f"\n{len(result.rows)} row(s) logged. Run saved to {result.path}")
-    return 0 if result.status == "ok" else 1
+    if result.status == "ok" and result.verdict != "none":
+        passed = sum(1 for c in result.checks or [] if c.get("passed"))
+        print(f"{result.verdict.upper()}: {passed} of {len(result.checks or [])} checks passed")
+    failed = result.shutdown_failed
+    if failed:
+        print(f"WARNING: shutting down {', '.join(failed)} failed; outputs may still be on.")
+    # for scripts and CI: 1 when a check failed, as when the test failed or was stopped,
+    # or a device could not be shut down
+    return 0 if result.status == "ok" and result.verdict != "fail" and not failed else 1
 
 
 def _devices(args) -> int:
@@ -133,8 +141,17 @@ def _plugins(args) -> int:
 
 
 def _describe(args) -> int:
-    registry = PluginRegistry.default(Path(args.project) if args.project else None,
-                                      trust_project=True)
+    # Describing a device type imports its driver, so a project's own plugins load only
+    # with the same consent as for a run: allowed before, or --trust-plugins now.
+    project = Path(args.project) if args.project else None
+    if project is not None and args.trust_plugins:
+        from .config import AppConfig
+
+        config = AppConfig.load()
+        if not config.trusts(project):
+            config.set_trusted(project)
+            config.save()
+    registry = PluginRegistry.default(project)
     spec = registry.device(args.device)
     print(f"{spec.name} ({spec.id})")
     if spec.description:
@@ -220,7 +237,11 @@ def main(argv: list[str] | None = None) -> int:
 
     describe = sub.add_parser("describe", help="show the commands of a device type")
     describe.add_argument("device", help="device type, e.g. demo.psu")
-    describe.add_argument("--project", help="also include this project's plugins folder")
+    describe.add_argument("--project", help="also include this project's plugins folder, "
+                                            "if it was allowed to load")
+    describe.add_argument("--trust-plugins", action="store_true",
+                          help="allow the project's own plugins folder (Python code) to "
+                               "load, now and in later runs")
     describe.set_defaults(func=_describe)
 
     plugins = sub.add_parser(

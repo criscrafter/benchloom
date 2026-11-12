@@ -150,6 +150,48 @@ def test_log_columns(app, window):
     assert wire_count(graph) == 11
 
 
+def test_a_wire_to_a_pin_that_is_gone_stops_the_run_until_its_node_is_deleted(app, window):
+    from benchloom.graph import GraphError, compile_graph
+
+    graph = example_graph()
+    orphan = {"kind": "data", "from": ["n4", "index"], "to": ["n5", "old_volts"]}
+    graph["wires"].append(orphan)
+    catalog = Catalog(window.project)
+    window.graph.load(graph, catalog)
+    assert orphan in window.graph.to_graph()["wires"]  # kept, in case the pin comes back
+    with pytest.raises(GraphError) as error:
+        compile_graph(window.graph.to_graph(), catalog)
+    assert "old_volts" in str(error.value) and error.value.node_id == "n5"
+    window.graph.remove_node(window.graph.nodes["n5"])
+    assert orphan not in window.graph.to_graph()["wires"]  # gone with its node
+
+
+def painted_pixels(wire) -> int:
+    from PySide6.QtGui import QImage, QPainter
+
+    rect = wire.boundingRect()
+    image = QImage(int(rect.width()) + 1, int(rect.height()) + 1, QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    painter.translate(-rect.topLeft())
+    wire.paint(painter, None)
+    painter.end()
+    return sum(image.pixelColor(x, y).alpha() > 0
+               for x in range(image.width()) for y in range(image.height()))
+
+
+@pytest.mark.parametrize("kind", ["exec", "data"])
+def test_a_selected_wire_stands_out_also_when_it_is_thin(app, window, kind):
+    # A data wire is blue like the usual highlight colour, so a selected one needs more
+    # than a change of colour to be seen.
+    wire = next(w for w in window.graph.scene().items()
+                if isinstance(w, WireItem) and w.kind == kind)
+    wire.setSelected(False)
+    plain = painted_pixels(wire)
+    wire.setSelected(True)
+    assert painted_pixels(wire) > 2 * plain  # the halo; a colour change alone gives 1x
+
+
 def test_removed_device_flags_nodes_but_keeps_them(app, window):
     project = window.project
     project.devices["supply"] = project.devices.pop("psu")

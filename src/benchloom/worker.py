@@ -5,7 +5,9 @@
 Kept free of Qt imports so the process starts quickly. Messages on the queue:
 ``("print", text)``, ``("row", dict)``, ``("panel", name, value)``,
 ``("check", dict)``, ``("waveform", name, traces)``, ``("node", id)`` for the node of
-a visual test that is running now (a few times a second at most), ``("shutdown",)``
+a visual test that is running now and ``("line", number)`` for the script line (each a
+few times a second at most), ``("stopping",)`` as soon as the run has seen the
+stop (it then shuts its devices down by itself), ``("shutdown",)``
 when the devices start to be shut down, and ``("done", status, error, run_path)``.
 The app sends ``(name, value)`` pairs on ``control_queue`` whenever the user changes
 a front panel control.
@@ -17,6 +19,9 @@ import os
 import threading
 
 NODE_REPORT_S = 0.05  # how often the running node is reported, when it changed
+# Never set: the main thread waits on it (with a timeout) while the other thread that
+# may report a run's end does so and then ends the process.
+REPORT_FLUSH_WAIT = threading.Event()
 
 from .engine import run_project
 
@@ -31,24 +36,24 @@ def _follow_controls(control_queue, values: dict) -> None:
 
 
 class _NodeReporter:
-    """Reports the running node now and then: a loop may start thousands of nodes a
-    second, and the window only needs to show the latest."""
+    """Reports the running node (or script line) now and then: a loop may start
+    thousands of nodes a second, and the window only needs to show the latest."""
 
-    def __init__(self, queue):
-        self.queue = queue
+    def __init__(self, queue, kind: str = "node"):
+        self.queue, self.kind = queue, kind
         self.current: str | None = None
         self.done = threading.Event()
         threading.Thread(target=self._report, daemon=True).start()
 
-    def __call__(self, node_id: str) -> None:
-        self.current = node_id
+    def __call__(self, current) -> None:
+        self.current = current
 
     def _report(self) -> None:
         sent = None
         while not self.done.wait(NODE_REPORT_S):
             current = self.current
             if current != sent:
-                self.queue.put(("node", current))
+                self.queue.put((self.kind, current))
                 sent = current
 
 
@@ -66,6 +71,13 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
         queue.put(("done", status, error, path))
         return True
 
+    def report_and_wait(status: str, error: str, path: str) -> None:
+        """Report from the main thread. If the run was finished without the script
+        and that thread reports, wait for it: it ends the process once "done" is on
+        its way, and leaving first would end the process before that."""
+        if not report(status, error, path):
+            REPORT_FLUSH_WAIT.wait(30)
+
     def abandoned(result) -> None:
         if report(result.status, result.error or "", str(result.path)):
             queue.close()
@@ -76,6 +88,7 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
         threading.Thread(target=_follow_controls, args=(control_queue, values),
                          daemon=True).start()
     nodes = _NodeReporter(queue)
+    lines = _NodeReporter(queue, "line")
     try:
         result = run_project(
             project_path,
@@ -88,11 +101,15 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
             on_waveform=lambda name, traces: queue.put(("waveform", name, traces)),
             stop_timeout=stop_timeout,
             on_shutdown=lambda: queue.put(("shutdown",)),
+            on_stopping=lambda: queue.put(("stopping",)),
             on_abandoned=abandoned,
             on_node=nodes,
+            on_line=lines,
         )
-        nodes.done.set()  # nothing about nodes after "done"
-        report(result.status, result.error or "", str(result.path))
+        nodes.done.set()  # nothing about nodes or lines after "done"
+        lines.done.set()
+        report_and_wait(result.status, result.error or "", str(result.path))
     except Exception as exc:  # failed before the run started
         nodes.done.set()
-        report("error", str(exc), "")
+        lines.done.set()
+        report_and_wait("error", str(exc), "")

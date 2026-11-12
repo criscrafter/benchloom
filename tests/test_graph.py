@@ -5,7 +5,8 @@ import json
 import pytest
 
 from benchloom.engine import run_project
-from benchloom.graph import Catalog, GraphError, compile_graph, example_graph, lua_literal
+from benchloom.graph import (GRAPH_VERSION, Catalog, GraphError, compile_graph, example_graph,
+                             lua_literal)
 from benchloom.project import create_project
 
 
@@ -121,6 +122,22 @@ def test_fail_node_and_runtime_error_line(tmp_path):
      "value wires form a circle", "m"),
     ([node("x", "device", device="nope", command="idn")], [], "no device named", "x"),
     ([node("x", "device", device="psu", command="nope")], [], "no command", "x"),
+    # wires that end at pins the node does not have: never skipped without a word
+    ([node("p", "core.print"), node("m", "core.math")],
+     chain("start", "p") + [wire("data", "m", "nope", "p", "text")], "does not have", "m"),
+    ([node("p", "core.print"), node("m", "core.math")],
+     chain("start", "p") + [wire("data", "m", "result", "p", "nope")], "does not have", "p"),
+    ([node("p", "core.print"), node("q", "core.print")],
+     chain("start", "p") + [wire("exec", "p", "later", "q", "in")], "does not have", "p"),
+    ([node("m", "core.math")], [wire("exec", "start", "next", "m", "in")], "does not have", "m"),
+    ([node("p", "core.print")], [wire("power", "start", "next", "p", "in")],
+     "unknown kind 'power'", "p"),
+    ([node("p", "core.print"), node("m", "core.math"), node("n", "core.math")],
+     chain("start", "p") + [wire("data", "m", "result", "p", "text"),
+                            wire("data", "n", "result", "p", "text")], "Two wires lead into", "p"),
+    ([node("a", "core.wait"), node("b", "core.wait")],
+     chain("start", "a") + [wire("exec", "start", "next", "b", "in")],
+     "Two run-order wires", "start"),
 ])
 def test_compile_errors_name_the_node(tmp_path, nodes, wires, message, where):
     project = create_project(tmp_path / "proj", "visual")
@@ -129,6 +146,21 @@ def test_compile_errors_name_the_node(tmp_path, nodes, wires, message, where):
         compile_graph(graph, Catalog(project))
     assert message in str(error.value)
     assert error.value.node_id == where
+
+
+@pytest.mark.parametrize("version", [GRAPH_VERSION + 1, "2", None])
+def test_a_graph_from_a_newer_benchloom_is_refused(tmp_path, version):
+    project = create_project(tmp_path / "proj", "visual")
+    graph = {"version": version, "nodes": [node("start", "core.start")], "wires": []}
+    with pytest.raises(GraphError, match="saved by a newer Benchloom"):
+        compile_graph(graph, Catalog(project))
+
+
+def test_a_wire_of_a_deleted_node_is_ignored(tmp_path):
+    result, lines = run_graph(tmp_path, [node("p", "core.print", values={"text": "typed"})],
+                              chain("start", "p") + [wire("data", "gone", "result", "p", "text")])
+    assert result.status == "ok", result.error
+    assert lines == ["typed"]
 
 
 def test_lua_literals():

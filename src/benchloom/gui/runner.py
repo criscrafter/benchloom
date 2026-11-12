@@ -11,6 +11,10 @@ Stopping has three steps, each a fallback for the one before:
 2. A script that has not ended after ``STOP_TIMEOUT_S`` is left behind: the run's
    process shuts the devices down without it and then ends itself.
 3. A process that does neither is killed. Only then may outputs stay on.
+
+The run answers a stop at once ("stopping"); from then on it is given
+``SHUTDOWN_TIMEOUT_MS`` for steps 1 and 2. Only a process that does not answer
+within ``FORCE_STOP_AFTER_MS`` is taken for hung and killed straight away.
 """
 
 from __future__ import annotations
@@ -23,8 +27,11 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from ..worker import run_worker
 
 STOP_TIMEOUT_S = 3.0  # what a script gets to stop, before the devices are shut down anyway
-FORCE_STOP_AFTER_MS = 5000  # no shutdown has begun by then: the process is hung, kill it
-SHUTDOWN_TIMEOUT_MS = 30000  # what shutting the devices down may take, before the kill
+FORCE_STOP_AFTER_MS = 5000  # the run has not answered the stop by then: it is hung, kill it
+# What stopping may take once the run answered, before the kill: the script's
+# STOP_TIMEOUT_S, the wait for a device command in progress (engine.STOP_COMMAND_WAIT_S)
+# and the drivers' shutdown.
+SHUTDOWN_TIMEOUT_MS = 30000
 
 
 class RunController(QObject):
@@ -34,6 +41,7 @@ class RunController(QObject):
     check = Signal(object)  # a pass/fail check, as a dict
     waveform = Signal(str, object)  # a saved waveform: name, {trace: (times, volts)}
     node = Signal(str)  # the node of a visual test that is running now
+    line = Signal(int)  # the script line a Lua test is at
     finished = Signal(str, str, str)  # status, error, run folder
 
     def __init__(self, parent=None):
@@ -102,8 +110,11 @@ class RunController(QObject):
                 self.waveform.emit(message[1], message[2])
             elif message[0] == "node":
                 self.node.emit(message[1] or "")
-            elif message[0] == "shutdown":
-                # the devices are being switched off: give that time, do not kill it
+            elif message[0] == "line":
+                self.line.emit(int(message[1] or 0))
+            elif message[0] in ("stopping", "shutdown"):
+                # the run is stopping or switching the devices off: give that time,
+                # do not kill it
                 self._shutting_down = True
                 if self._kill_timer.isActive():
                     self._kill_timer.start(SHUTDOWN_TIMEOUT_MS)

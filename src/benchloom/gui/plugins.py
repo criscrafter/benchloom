@@ -419,7 +419,9 @@ class PluginManagerDialog(QDialog):
     def browse_online(self) -> None:
         dialog = BrowseDialog(self.registry.found, parent=self)
         dialog.exec()
-        if dialog.changed:
+        changed = dialog.changed
+        dialog.deleteLater()
+        if changed:
             self.changed = True
             self.reload()
 

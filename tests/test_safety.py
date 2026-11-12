@@ -121,6 +121,90 @@ def test_run_on_the_command_line_needs_the_flag(tmp_path, capsys):
     capsys.readouterr()
 
 
+def test_describe_on_the_command_line_needs_the_flag_too(tmp_path, capsys):
+    project, folder = make_project(tmp_path)
+    args = ["describe", "bench.supply", "--project", str(project.path)]
+    assert cli(args) == 2  # refused: describing imports the driver
+    assert not (folder / "loaded.txt").exists()
+    assert "was not allowed to load" in capsys.readouterr().err
+    assert cli(["devices", "--project", str(project.path)]) == 0  # manifests only
+    assert "bench.supply" in capsys.readouterr().out and not (folder / "loaded.txt").exists()
+    assert cli(args + ["--trust-plugins"]) == 0
+    assert "on()" in capsys.readouterr().out and (folder / "loaded.txt").exists()
+    assert AppConfig.load().trusts(project.path)
+    assert cli(args) == 0  # remembered
+
+
+# --- shutting down ----------------------------------------------------------------------
+def with_driver(folder, old, new):
+    path = folder / "supply.py"
+    path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+
+def test_a_failed_shutdown_is_recorded_and_not_hidden_by_a_pass(tmp_path, capsys):
+    project, folder = make_project(tmp_path, "psu:on() check('fine', true)")
+    with_driver(folder, '        (HERE / "switched_off.txt").write_text("x")',
+                '        raise RuntimeError("no answer from the supply")')
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.status == "ok" and result.verdict == "pass"  # the measurements did pass
+    assert result.shutdown == {"psu": "failed: no answer from the supply"}
+    assert result.shutdown_failed == ["psu"]
+    meta = json.loads((result.path / "run.json").read_text(encoding="utf-8"))
+    assert meta["shutdown"] == {"psu": "failed: no answer from the supply"}
+    report = (result.path / "report.html").read_text(encoding="utf-8")
+    assert "Not every device could be shut down" in report and "no answer" in report
+    assert cli(["run", str(project.path)]) == 1  # trusted by now
+    assert "outputs may still be on" in capsys.readouterr().out
+
+
+def test_a_clean_shutdown_is_recorded_too(tmp_path):
+    project, folder = make_project(tmp_path)
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.shutdown == {"psu": "done"} and not result.shutdown_failed
+    report = (result.path / "report.html").read_text(encoding="utf-8")
+    assert "Not every device could be shut down" not in report
+
+
+def test_a_device_whose_connect_fails_is_still_shut_down(tmp_path):
+    project, folder = make_project(tmp_path)
+    with_driver(folder, "    @command\n    def on(self)",
+                "    def connect(self) -> None:\n"
+                "        raise RuntimeError('half way')\n\n"
+                "    @command\n    def on(self)")
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.status == "error" and "half way" in result.error
+    assert (folder / "switched_off.txt").exists()
+
+
+def test_a_failing_on_shutdown_does_not_keep_the_devices_on(tmp_path):
+    project, folder = make_project(tmp_path)
+
+    def on_shutdown():
+        raise RuntimeError("the window went away")
+
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True,
+                         on_shutdown=on_shutdown)
+    assert result.status == "ok"
+    assert (folder / "switched_off.txt").exists()
+
+
+def test_a_fault_in_benchloom_itself_is_never_recorded_as_a_clean_run(tmp_path, monkeypatch):
+    import benchloom.engine as engine
+
+    project, folder = make_project(tmp_path)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(engine, "LuaEngine", broken)
+    with pytest.raises(RuntimeError):
+        run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert (folder / "switched_off.txt").exists()
+    (run_folder,) = (project.path / "runs").iterdir()
+    meta = json.loads((run_folder / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "error" and "a bug" in meta["error"]
+
+
 # --- stopping -------------------------------------------------------------------------
 def run_in_worker(project, stop_after, stop_timeout):
     """Run the project as the app does, in its own process; returns the messages and
@@ -166,6 +250,8 @@ def test_a_script_that_does_not_stop_still_gets_its_devices_switched_off(tmp_pat
     seen, ended = run_in_worker(project, stop_after=0.2, stop_timeout=0.5)
     assert ended, "the run's process did not end by itself"
     assert ("shutdown",) in seen
+    # the stop is answered at once, before the devices are shut down
+    assert seen.index(("stopping",)) < seen.index(("shutdown",))
     done = seen[-1]
     assert done[:2] == ("done", "stopped") and done[3], seen
     assert (folder / "switched_off.txt").exists()
@@ -251,3 +337,42 @@ def test_closing_the_window_lets_the_run_switch_its_devices_off(app, tmp_path):
     assert "forced" not in window.console.toPlainText()
     assert (folder / "switched_off.txt").exists()
     assert not window.isVisible()  # and then the window closed
+
+
+SLOW_DRIVER = DRIVER.replace(
+    "    def close(self) -> None:",
+    "    @command\n"
+    "    def slow(self) -> None:\n"
+    "        import time\n"
+    "        time.sleep(7)\n"
+    "\n"
+    "    def close(self) -> None:")
+
+
+def test_stop_during_a_slow_device_command_still_switches_the_devices_off(app, tmp_path):
+    # The command outlasts the app's first deadline (FORCE_STOP_AFTER_MS) but ends within
+    # the run's wait for it (STOP_COMMAND_WAIT_S): the app must wait, not kill the run.
+    from benchloom.gui.runner import RunController
+
+    project, folder = make_project(tmp_path, "psu:on() print('started') psu:slow()")
+    (folder / "supply.py").write_text(SLOW_DRIVER, encoding="utf-8")
+    config = AppConfig.load()
+    config.set_trusted(project.path)
+    config.save()
+    runner = RunController()
+    printed, done = [], []
+    runner.printed.connect(printed.append)
+    runner.finished.connect(lambda *args: done.append(args))
+    runner.start(project.path)
+    deadline = time.monotonic() + 60
+    while "started" not in printed and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    time.sleep(0.3)  # inside psu:slow() now
+    runner.stop()
+    while not done and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert done and done[0][0] == "stopped" and done[0][2], (done, printed)
+    assert not any("forced" in text for text in printed), printed
+    assert (folder / "switched_off.txt").exists()

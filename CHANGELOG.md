@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+- **Stop during a slow device command** switches the devices off again. A
+  command still running more than about 2 s after the stop timeout made the app
+  end the run before the devices were shut down, leaving outputs on. The run
+  now answers Stop at once, and the app ends only a run that does not; and a
+  run whose script ended just as it was finished without it no longer gets
+  reported as "ended unexpectedly".
+- **A failed shutdown is no longer hidden:** `run.json` records for each device
+  whether it was shut down (`"shutdown": {"psu": "done"}`) or not
+  (`"failed: …"`). The report shows a warning above the verdict, the app
+  repeats it after the verdict in the console and the status bar, and
+  `benchloom run` exits with 1.
+- **Safer ends of a run:** a device whose `connect()` fails gets its `close()`
+  called before its port is closed; a failing `on_shutdown` callback no longer
+  keeps the devices from being shut down; and a run ended by a fault in
+  Benchloom itself is recorded as `error`, never as `ok`.
+- **No nan or infinity to a device:** a command argument that is `nan` (from
+  `0/0`) or infinite stops the test with an error instead of being sent. A
+  check never passes with such a value, also with one limit only.
+- **`list` arguments are checked:** `list[float]` checks each item, with the
+  `Param`'s limits applying to every item.
+- **`benchloom describe --project`** loads a project's own plugins only when
+  the project was allowed already, or with `--trust-plugins`, as for
+  `benchloom run`. Before, it imported their Python code without asking.
+- **Visual tests check their wires:** a wire that ends at a pin its node no
+  longer has (for example after a plugin renamed a command's argument) stops
+  the run with an error at that node, instead of being skipped: the input took
+  its typed-in value, or the run silently ended there. Delete the node and add
+  it again; the hidden wire goes with it. Two wires into one input, two
+  run-order wires out of one pin and wires of unknown kind are errors too, and
+  a test saved by a newer Benchloom is refused with a clear message.
+- **Selected wires are easy to see:** a selected wire gets a wide halo. A
+  selected value wire used to change only from blue to the (also blue)
+  highlight colour, so there was no telling it was selected.
+- `log{ time_s = ... }` stops the test with an error: `time_s` is the time
+  Benchloom logs itself, and a script's own value used to replace it.
+- **`benchloom run` exits with 1 when a check failed**, so scripts and CI
+  see a FAIL; it also prints the verdict. Before, only errors and stops gave 1.
+- Dialogs (devices, settings, plugins, new project, About) are deleted after
+  use instead of staying in memory until the window closes.
+- **Column order:** `columns = [...]` under `[plot]` in benchloom.toml sets the
+  order of the logged columns in data.csv, the plot, the Data tab and the
+  report. A visual test keeps the order of its Log row node by itself.
+- **Run history:** a Runs tab next to the console lists the project's runs with
+  their verdict, rows, checks and duration. Open a run's report, show its data
+  and console again, compare it with the current run (its curves are drawn
+  dashed, also while the next run is measured), or move it to the recycle bin.
+- **Lua editor:** autocomplete for the project's devices, their commands (with
+  arguments and units after `psu:`), the front panel's widgets (after `panel.`)
+  and Benchloom's functions; Ctrl+Space opens it. While a test runs, the line it
+  is at is marked green.
+
 ## 0.1.4 – Data table, panel widgets, plugin registry and docs
 
 - **Data table:** a Data tab next to the plot lists every logged row as it

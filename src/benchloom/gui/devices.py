@@ -44,6 +44,15 @@ def signature(info: CommandInfo) -> str:
     return f"{info.name}({', '.join(p.name for p in info.params)})"
 
 
+def labelled_signature(info: CommandInfo) -> str:
+    """set_voltage(volts [V]) -> number [V]: for the editor's autocomplete list."""
+    params = ", ".join(f"{p.name} [{p.unit}]" if p.unit else p.name for p in info.params)
+    text = f"{info.name}({params})"
+    if info.returns not in ("nil", "any"):
+        text += f"  → {info.returns}" + (f" [{info.unit}]" if info.unit else "")
+    return text
+
+
 def describe(info: CommandInfo) -> str:
     lines = [info.doc] if info.doc else []
     for p in info.params:
@@ -415,6 +424,7 @@ class DevicesPanel(QWidget):
         super().__init__(parent)
         self.project: Project | None = None
         self.registry: PluginRegistry | None = None
+        self.commands: dict[str, list[CommandInfo]] = {}  # device name -> its commands
 
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
@@ -447,6 +457,7 @@ class DevicesPanel(QWidget):
 
     def refresh(self) -> None:
         self.tree.clear()
+        self.commands = {}
         self.add_button.setEnabled(self.project is not None)
         if self.project:
             for config in self.project.devices.values():
@@ -458,7 +469,9 @@ class DevicesPanel(QWidget):
                 try:
                     spec = self.registry.device(config.device)
                     item.setToolTip(0, f"{spec.name} ({spec.id})")
-                    for info in spec.load_driver().commands().values():
+                    infos = list(spec.load_driver().commands().values())
+                    self.commands[config.name] = infos
+                    for info in infos:
                         child = QTreeWidgetItem([signature(info)])
                         child.setToolTip(0, describe(info))
                         child.setData(0, Qt.ItemDataRole.UserRole + 1,
@@ -498,8 +511,10 @@ class DevicesPanel(QWidget):
 
     def add_device(self) -> None:
         dialog = DeviceDialog(self.registry, set(self.project.devices), parent=self)
-        if dialog.exec():
-            config = dialog.config()
+        accepted = dialog.exec()
+        config = dialog.config() if accepted else None
+        dialog.deleteLater()  # a child of this panel otherwise, one more per use
+        if config is not None:
             self.project.devices[config.name] = config
             self._commit()
 
@@ -509,8 +524,10 @@ class DevicesPanel(QWidget):
             return
         others = set(self.project.devices) - {name}
         dialog = DeviceDialog(self.registry, others, self.project.devices[name], parent=self)
-        if dialog.exec():
-            config = dialog.config()
+        accepted = dialog.exec()
+        config = dialog.config() if accepted else None
+        dialog.deleteLater()
+        if config is not None:
             # keep the device's position in the list even if it was renamed
             self.project.devices = {
                 (config.name if key == name else key): (config if key == name else value)

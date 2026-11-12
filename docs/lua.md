@@ -12,6 +12,16 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 check("Output voltage", psu:measure_voltage(), 4.9, 5.1, "V")
 ```
 
+## The editor
+
+The editor offers what you can type: start a name for the project's devices and
+Benchloom's functions, type `psu:` for that device's commands with their
+arguments and units, or `panel.` for the front panel's widgets. Enter or Tab
+takes a choice, Esc closes the list, and Ctrl+Space opens it anywhere.
+
+While a test runs, the line it is at is marked green, and a line where it
+failed is marked red.
+
 ## Instruments
 
 Each instrument of the project is a variable named like its entry in the
@@ -63,8 +73,9 @@ log { set_V = volts, V = psu:measure_voltage(), I = psu:measure_current() }
 
 Each call adds a row to `data.csv`, the plot and the **Data** tab. Values are
 numbers, texts or booleans. A `time_s` column with the seconds since the start
-is added to each row. A row may bring new columns; earlier rows have them
-empty.
+is added to each row; a script cannot log a `time_s` of its own. A row may bring new columns; earlier rows have them
+empty. Lua tables have no order, so the columns are sorted by name unless the
+project's [`[plot] columns`](projects.md#the-plot) says otherwise.
 
 ### Pass/fail checks
 

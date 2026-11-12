@@ -243,6 +243,11 @@ NODE_MARKER = "__node"  # called with a node's id as each node starts, when trac
 class _Compiler:
     def __init__(self, graph: dict, catalog: Catalog, trace: bool = False):
         self.trace = trace
+        version = graph.get("version", GRAPH_VERSION)
+        if isinstance(version, bool) or not isinstance(version, int) or version > GRAPH_VERSION:
+            raise GraphError(f"This test was saved by a newer Benchloom (graph version "
+                             f"{version!r}); this one reads up to version {GRAPH_VERSION}. "
+                             "Update Benchloom to run it.")
         self.nodes: dict[str, dict] = {}
         for node in graph.get("nodes", []):
             node_id = node.get("id", "")
@@ -254,13 +259,38 @@ class _Compiler:
         self.data_source: dict[tuple[str, str], tuple[str, str]] = {}
         for wire in graph.get("wires", []):
             (src, src_pin), (dst, dst_pin) = wire["from"], wire["to"]
+            kind = wire.get("kind")
+            if kind not in ("exec", "data"):
+                raise GraphError(f"A wire of unknown kind {kind!r} (from '{src}' to '{dst}').",
+                                 dst if dst in self.nodes else None)
             if src not in self.nodes or dst not in self.nodes:
-                continue
-            if wire.get("kind") == "exec":
+                continue  # a wire of a deleted node carries nothing; the input has its value
+            self._check_wire(kind, src, src_pin, dst, dst_pin)
+            if kind == "exec":
+                if (src, src_pin) in self.exec_next:
+                    raise GraphError(f"Two run-order wires leave '{src_pin}'.", src)
                 self.exec_next[(src, src_pin)] = dst
             else:
+                if (dst, dst_pin) in self.data_source:
+                    raise GraphError(f"Two wires lead into '{dst_pin}'.", dst)
                 self.data_source[(dst, dst_pin)] = (src, src_pin)
         self.lines: list[tuple[str, str | None]] = []
+
+    def _check_wire(self, kind: str, src: str, src_pin: str, dst: str, dst_pin: str) -> None:
+        """A wire between two nodes of the graph must end at pins those nodes have. One
+        that does not (the node's device commands changed, say) would be skipped without
+        a word: its input would take its typed-in value, or the run would stop there."""
+        source, target = self.specs[src], self.specs[dst]
+        if kind == "exec":
+            ends = ((src, src_pin, [name for name, _ in source.exec_outs]),
+                    (dst, dst_pin, ["in"] if target.exec_in else []))
+        else:
+            ends = ((src, src_pin, [p.name for p in source.outputs]),
+                    (dst, dst_pin, [p.name for p in target.inputs]))
+        for node_id, pin, pins in ends:
+            if pin not in pins:
+                raise GraphError(f"A wire ends at '{pin}', which this node does not have "
+                                 "(any more). Delete the node and add it again.", node_id)
 
     def emit(self, text: str, depth: int, node_id: str | None, starts: bool = False) -> None:
         """One line of Lua. ``starts``: the line where the node begins to run; traced

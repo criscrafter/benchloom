@@ -14,11 +14,12 @@ import importlib
 import importlib.machinery
 import importlib.util
 import inspect
+import math
 import re
 import sys
 import tomllib
 import typing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,7 @@ class ParamInfo:
     doc: str = ""
     required: bool = True
     default: Any = None
+    items: str = ""  # for an array: the type of its items ("number", ..., or "any")
 
 
 @dataclass(frozen=True)
@@ -118,10 +120,16 @@ def _describe(name: str, fn) -> CommandInfo:
     for p in list(inspect.signature(fn).parameters.values())[1:]:
         extra = meta["params"].get(p.name, Param())
         required = p.default is inspect.Parameter.empty
+        type_name = _type_name(hints[p.name]) if p.name in hints else "any"
+        items = ""
+        if type_name == "array":  # list[float] -> "number"; a bare list -> "any"
+            args = typing.get_args(hints[p.name])
+            items = _type_name(args[0]) if args else "any"
         params.append(
             ParamInfo(
                 name=p.name,
-                type=_type_name(hints[p.name]) if p.name in hints else "any",
+                type=type_name,
+                items=items,
                 unit=extra.unit,
                 min=extra.min,
                 max=extra.max,
@@ -139,6 +147,9 @@ def _describe(name: str, fn) -> CommandInfo:
 def _coerce(cmd: str, p: ParamInfo, value: Any) -> Any:
     where = f"{cmd}(): argument '{p.name}'"
     is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if p.type in ("number", "integer") and is_number and not math.isfinite(value):
+        # nan passes every min/max test and would reach the instrument (VOLT nan)
+        raise CommandError(f"{where} must be a finite number, got {value!r}")
     if p.type == "number":
         if not is_number:
             raise CommandError(f"{where} must be a number, got {value!r}")
@@ -147,6 +158,12 @@ def _coerce(cmd: str, p: ParamInfo, value: Any) -> Any:
         if not is_number or float(value) != int(value):
             raise CommandError(f"{where} must be a whole number, got {value!r}")
         value = int(value)
+    elif p.type == "array":
+        if not isinstance(value, list):
+            raise CommandError(f"{where} must be a list, got {value!r}")
+        # each item is checked as a value of its own, with the parameter's limits
+        return [_coerce(cmd, replace(p, name=f"{p.name}[{i}]", type=p.items or "any", items=""),
+                        item) for i, item in enumerate(value, start=1)]
     elif p.type == "boolean":
         if not isinstance(value, bool):
             raise CommandError(f"{where} must be true or false, got {value!r}")
@@ -440,9 +457,9 @@ class PluginRegistry:
 
 
 PROJECT_PLUGIN_HINT = ("Plugins are Python code and run with your permissions: allow them "
-                       "when opening the project in the app, or with "
-                       "'benchloom run --trust-plugins', if you trust where the project "
-                       "comes from.")
+                       "when opening the project in the app, or with --trust-plugins "
+                       "('benchloom run' or 'benchloom describe'), if you trust where the "
+                       "project comes from.")
 
 
 def project_plugins(project_dir: str | Path) -> list[PluginInfo]:

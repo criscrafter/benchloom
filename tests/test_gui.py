@@ -412,3 +412,22 @@ def test_data_table_grows_columns_follows_and_copies(app):
                                  "		tab here	true"]
     table.clear()
     assert model.rowCount() == 0 and model.columnCount() == 0 and "show here" in table.status.text()
+
+
+def test_dialogs_do_not_stay_behind(app, tmp_path, monkeypatch):
+    """Dialogs made with the window as parent are deleted after use; left behind, they
+    pile up and crash Qt when Python exits on Windows."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QDialog
+
+    from benchloom.gui import main_window as main_window_module
+
+    window = make_window(tmp_path)
+    for name in ("SettingsDialog", "PluginManagerDialog", "NewProjectDialog"):
+        monkeypatch.setattr(getattr(main_window_module, name), "exec", lambda self: 0)
+    window.open_settings()
+    window.open_plugin_manager()
+    window.new_project()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert window.findChildren(QDialog) == []
+    window.close()

@@ -33,7 +33,7 @@ import json
 import shutil
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -59,7 +59,7 @@ GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
 STOP_COMMAND_WAIT_S = 8.0
 
 _BOOTSTRAP = """
-function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
+function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform, report_line)
     python = nil  -- scripts talk to Python only through the functions below
 
     panel = setmetatable({}, {
@@ -82,7 +82,26 @@ function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
         emit(table.concat(parts, "\\t"))
     end
 
+    -- The line of the script that runs now, for the editor. Only the script is loaded
+    -- with a chunk name starting with "@"; Benchloom's own functions are not.
+    local getinfo = debug.getinfo  -- kept here: scripts get no debug library
+    local last_line = nil
+    local function report_current_line()
+        for level = 2, 50 do
+            local info = getinfo(level, "Sl")
+            if not info then return end
+            if info.source:sub(1, 1) == "@" then
+                if info.currentline ~= last_line and info.currentline > 0 then
+                    last_line = info.currentline
+                    report_line(last_line)
+                end
+                return
+            end
+        end
+    end
+
     local function check_stop()
+        if report_line then report_current_line() end
         if should_stop() then error("%s", 0) end
     end
     -- The count hook catches busy loops. Most scripts spend their time in sleep()
@@ -182,6 +201,7 @@ class LuaEngine:
         on_check: Callable[..., Check] | None = None,
         on_waveform: Callable[[str, dict], Any] | None = None,
         on_node: Callable[[str], None] | None = None,
+        on_line: Callable[[int], None] | None = None,
     ):
         self.stop_event = stop_event or threading.Event()
         self.panel = panel or PanelState(Panel())
@@ -194,7 +214,7 @@ class LuaEngine:
         )
         self._make_device, guard = self.lua.eval(_BOOTSTRAP)(
             on_print, self.stop_event.is_set, self._panel_get, self._panel_set,
-            self._check, self._save_waveform)
+            self._check, self._save_waveform, on_line)
         g = self.lua.globals()
         self._load = g.load  # kept, so a device or script redefining `load` cannot break runs
         # Held while a device command runs, so whoever shuts the devices down for a
@@ -329,6 +349,13 @@ class RunResult:
     rows: list[dict[str, Any]]
     verdict: str = "none"  # "pass", "fail" or "none" (no checks)
     checks: list[dict[str, Any]] | None = None
+    # device name -> "done" or "failed: <why>", for the devices that were opened
+    shutdown: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def shutdown_failed(self) -> list[str]:
+        """The devices whose shutdown raised an error: their outputs may still be on."""
+        return [name for name, how in self.shutdown.items() if how != "done"]
 
 
 SHARED_SCHEMES = ("serial", "tcp")  # buses: several devices on one port (RS-485, gateways)
@@ -369,16 +396,41 @@ def open_device(registry: PluginRegistry, config: DeviceConfig,
     new = transport is None
     if new:
         transport = open_transport(config.resource, spec.load_simulator())
+    device = None
     try:
         device = spec.load_driver()(transport, config.settings)
         device.connect()
     except Exception:
+        # connect() may have got as far as switching something on: let the driver
+        # shut down what it can before the port is closed.
+        if device is not None:
+            try:
+                device.close()
+            except Exception:
+                pass  # the error from connect() is the one to report
         if new:
             transport.close()
         raise
     if new and ports:
         ports.add(config.resource, transport, config.name)
     return device
+
+
+def _column_order(project: Project, script: Path) -> list[str]:
+    """The order of the logged columns: the project's ``[plot] columns``, or in a
+    visual test the order of the Log row nodes' columns."""
+    columns = project.plot.get("columns") if isinstance(project.plot, dict) else None
+    if isinstance(columns, list):
+        return [str(c) for c in columns]
+    if project.mode != "visual":
+        return []
+    try:
+        graph = json.loads(script.read_text(encoding="utf-8"))
+        return list(dict.fromkeys(str(c) for node in graph.get("nodes", [])
+                                  if node.get("type") == "core.log"
+                                  for c in node.get("columns", [])))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return []  # the run reports a broken graph itself
 
 
 def run_project(
@@ -394,8 +446,10 @@ def run_project(
     trust_plugins: bool = False,
     stop_timeout: float | None = None,
     on_shutdown: Callable[[], None] | None = None,
+    on_stopping: Callable[[], None] | None = None,
     on_abandoned: Callable[[RunResult], None] | None = None,
     on_node: Callable[[str], None] | None = None,
+    on_line: Callable[[int], None] | None = None,
 ) -> RunResult:
     """Run a project's test.
 
@@ -411,10 +465,15 @@ def run_project(
     shut down anyway, from another thread, so that outputs do not stay on; the run is
     finished as "stopped" and ``on_abandoned`` gets its result. The script itself may
     still be running then: the caller has to end the process. ``on_shutdown`` is
-    called when the devices start to be shut down, on either way.
+    called when the devices start to be shut down, on either way. ``on_stopping``
+    is called as soon as the stop is seen (with ``stop_timeout`` only): from then
+    on the run shuts its devices down by itself, within ``stop_timeout`` plus
+    ``STOP_COMMAND_WAIT_S`` and the time the drivers take to close.
 
     ``on_node`` gets the id of each node of a visual test as it starts to run. It is
-    called very often; keep it short.
+    called very often; keep it short. ``on_line`` gets the script line the test is at,
+    when it changed, at each device command, sleep, log or check and now and then in
+    between.
     """
     project = Project.load(project_dir)
     script = project.path / project.script
@@ -427,10 +486,23 @@ def run_project(
             config.save()
     registry = PluginRegistry.default(project.path)
 
-    run = RunLog(project.path / "runs")
+    run = RunLog(project.path / "runs", _column_order(project, script))
     shutil.copy2(script, run.path / script.name)
     closing = threading.Lock()  # shutting the devices down and finishing the run, once
     closed = False
+    announced = threading.Event()  # on_shutdown was called
+
+    def announce_shutdown() -> None:
+        """Tell the caller, once, that the devices are about to be shut down, so that
+        it gives that time instead of ending the process."""
+        if announced.is_set():
+            return
+        announced.set()
+        if on_shutdown is not None:
+            try:
+                on_shutdown()
+            except Exception:
+                pass  # telling the caller must never keep the devices from shutting down
 
     def emit(text: str) -> None:
         try:
@@ -457,7 +529,9 @@ def run_project(
 
     devices: dict[str, Device] = {}
     ports = SharedPorts()
-    status, error = "ok", None
+    # "ok" only once the script has ended by itself: a run that ends any other way
+    # must never be recorded as a clean one.
+    status, error = "error", "The run ended unexpectedly."
 
     def shut_down(status: str, error: str | None) -> bool:
         """Switch the devices off and write the run's files. False: already done."""
@@ -466,12 +540,17 @@ def run_project(
             if closed:
                 return False
             closed = True
-            if on_shutdown is not None:
-                on_shutdown()
+            announce_shutdown()
+            # How each device's shutdown went: "done" when its driver's close() returned,
+            # "failed: <why>" when it raised. "done" means the commands were sent without
+            # an error, not that the output was seen to be off.
+            shutdown: dict[str, str] = {}
             for name, device in list(devices.items()):
                 try:
                     device.close()  # sources and loads switch their output off here
+                    shutdown[name] = "done"
                 except Exception as exc:
+                    shutdown[name] = f"failed: {exc}"
                     emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
             for transport in {id(d.transport): d.transport for d in devices.values()}.values():
                 try:
@@ -484,13 +563,14 @@ def run_project(
                 "script": script.name,
                 "devices": {n: {"device": c.device, "resource": c.resource}
                             for n, c in project.devices.items()},
+                "shutdown": shutdown,
             }, project.plot)
             return True
 
     def result() -> RunResult:
         meta = json.loads((run.path / "run.json").read_text(encoding="utf-8"))
         return RunResult(meta["status"], meta["error"], run.path, run.rows, run.verdict(),
-                         run.check_records())
+                         run.check_records(), meta.get("shutdown", {}))
 
     script_ended = threading.Event()
 
@@ -499,9 +579,17 @@ def run_project(
         while not stop_event.wait(0.2):
             if script_ended.is_set():
                 return
+        if on_stopping is not None:
+            try:
+                on_stopping()  # this process answers: the caller need not end it
+            except Exception:
+                pass
         if script_ended.wait(stop_timeout):
             return
         emit(f"The test did not stop within {stop_timeout:g} s; shutting the devices down.")
+        # Announced before waiting for the command in progress: the caller must not end
+        # this process while it waits, or the devices are never shut down.
+        announce_shutdown()
         # A command in progress may finish first; a hung one must not keep outputs on.
         waited = engine.device_lock.acquire(timeout=STOP_COMMAND_WAIT_S)
         try:
@@ -533,6 +621,7 @@ def run_project(
         engine = LuaEngine(
             on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event,
             panel=panel, on_check=check, on_waveform=save_waveform, on_node=on_node,
+            on_line=on_line,
         )
         for name, device in devices.items():
             engine.add_device(name, device)
@@ -548,12 +637,16 @@ def run_project(
         if stop_event is not None and stop_timeout is not None:
             threading.Thread(target=watch_stop, args=(engine,), daemon=True).start()
         engine.run(code, chunk_name)
+        status, error = "ok", None
     except (ScriptStopped, KeyboardInterrupt):
         status = "stopped"
         emit("Stopped.")
     except ScriptError as exc:
         status, error = "error", str(exc)
         emit(f"Error: {error}")
+    except Exception as exc:  # a fault in Benchloom itself: recorded, then raised on
+        error = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
         script_ended.set()
         shut_down(status, error)  # waits, if the other thread is already doing it

@@ -28,6 +28,8 @@ def test_evaluate():
     assert evaluate(9e9, 0, None) and evaluate(-9e9, None, 0)
     assert evaluate(True, None, None) and not evaluate(False, None, None)
     assert not evaluate(None, None, None) and not evaluate(math.nan, 0, 1)
+    assert not evaluate(math.inf, 0, None) and not evaluate(-math.inf, None, 0)
+    assert not evaluate(math.nan, None, 1) and not evaluate(math.inf, None, None)
     assert not evaluate("1.0", 0, 2) and not evaluate(True, 0, 2)
 
 
@@ -189,3 +191,52 @@ def test_release_notes_come_from_the_changelog():
     assert "old" not in text and "WITHOUT" not in text and "without warranty" in text
     assert module.section(module.ROOT.joinpath("CHANGELOG.md").read_text(encoding="utf-8"),
                           "0.1.1").startswith("- **Windows download:**")
+
+
+def test_command_line_exit_code_follows_the_verdict(tmp_path, capsys):
+    from benchloom.cli import main as cli
+
+    project = create_project(tmp_path / "proj")
+    script = project.path / "main.lua"
+    for code, expected, verdict in [('check("ok", 5, 0, 10)', 0, "PASS: 1 of 1"),
+                                    ('check("ok", 5, 0, 10) check("bad", 11, 0, 10)', 1,
+                                     "FAIL: 1 of 2"),
+                                    ('print("no checks")', 0, None),
+                                    ('error("boom")', 1, None)]:
+        script.write_text(code, encoding="utf-8")
+        assert cli(["run", str(project.path)]) == expected, code
+        out = capsys.readouterr().out
+        assert (verdict in out) if verdict else ("checks passed" not in out)
+
+
+def test_columns_keep_the_order_the_project_asks_for(tmp_path):
+    project = create_project(tmp_path / "proj")
+    (project.path / "main.lua").write_text(
+        'log { z = 1, V = 2, set_V = 3, I = 4 } log { extra = 5, I = 6 }', encoding="utf-8")
+    result = run_project(project.path, on_print=lambda _: None)
+    header = (result.path / "data.csv").read_text().splitlines()[0]
+    assert header == "time_s,I,V,set_V,z,extra"  # without an order: by name, new ones after
+
+    project.plot = {"columns": ["set_V", "V", "I"]}
+    project.save()
+    rows = []
+    result = run_project(project.path, on_print=lambda _: None, on_row=rows.append)
+    header = (result.path / "data.csv").read_text().splitlines()[0]
+    assert header == "time_s,set_V,V,I,z,extra"
+    assert list(rows[0]) == ["time_s", "set_V", "V", "I", "z"]  # what the plot and table get
+    page = (result.path / "report.html").read_text(encoding="utf-8")
+    assert page.index("<th>set_V</th>") < page.index("<th>V</th>") < page.index("<th>I</th>")
+
+
+def test_a_visual_test_keeps_the_order_of_its_log_node(tmp_path):
+    import json as _json
+
+    from benchloom.graph import example_graph
+
+    project = create_project(tmp_path / "proj", "visual")
+    graph = example_graph()
+    log_node = next(n for n in graph["nodes"] if n["type"] == "core.log")
+    assert log_node["columns"] == ["set_V", "V", "I"]
+    (project.path / project.script).write_text(_json.dumps(graph), encoding="utf-8")
+    result = run_project(project.path, on_print=lambda _: None)
+    assert (result.path / "data.csv").read_text().splitlines()[0] == "time_s,set_V,V,I"

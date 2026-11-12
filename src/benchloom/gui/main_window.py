@@ -30,6 +30,7 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .runs import RunsPanel
 from .table import DataTable
 from .waveforms import WaveformPanel
 from .plugins import PluginManagerDialog
@@ -40,6 +41,15 @@ from .settings import (  # noqa: F401
 from .theme import THEMES, apply_theme
 
 MAX_RECENT = 8
+
+
+def _shutdown_failed(run_path: Path) -> list[str]:
+    """The devices of a finished run whose shutdown failed, from its run.json."""
+    try:
+        meta = json.loads((run_path / "run.json").read_text(encoding="utf-8"))
+        return [name for name, how in (meta.get("shutdown") or {}).items() if how != "done"]
+    except (OSError, ValueError, AttributeError):
+        return []
 
 
 class NewProjectDialog(QDialog):
@@ -149,6 +159,7 @@ class MainWindow(QMainWindow):
         self.devices = DevicesPanel()
         self.devices.command_activated.connect(self._command_activated)
         self.devices.changed.connect(self._devices_changed)
+        self.devices.changed.connect(self.update_completions)
         self.console = QPlainTextEdit(readOnly=True)
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
@@ -157,6 +168,10 @@ class MainWindow(QMainWindow):
         self.panel_view = PanelView()
         self.waveforms = WaveformPanel()
         self.table = DataTable()
+        self.runs = RunsPanel()
+        self.runs.show_requested.connect(self.show_run)
+        self.runs.compare_requested.connect(self.compare_run)
+        self.runs.compare_cleared.connect(self.clear_comparison)
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
@@ -164,11 +179,14 @@ class MainWindow(QMainWindow):
             self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Waveforms", self.waveforms, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Data", self.table, Qt.DockWidgetArea.RightDockWidgetArea),
+            self._dock("Runs", self.runs, Qt.DockWidgetArea.BottomDockWidgetArea),
         ]
+        self.tabifyDockWidget(self._docks[2], self._docks[6])
         self.tabifyDockWidget(self._docks[1], self._docks[5])
         self.tabifyDockWidget(self._docks[5], self._docks[3])
         self.tabifyDockWidget(self._docks[3], self._docks[4])
         self._docks[1].raise_()
+        self._docks[2].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
         self.resizeDocks(self._docks[2:3], [200], Qt.Orientation.Vertical)
 
@@ -179,10 +197,12 @@ class MainWindow(QMainWindow):
         self.runner.panel.connect(self.panel_view.show_value)
         self.runner.waveform.connect(self.waveforms.add)
         self.runner.node.connect(lambda node_id: self.graph.mark_running(node_id or None))
+        self.runner.line.connect(self._line_running)
         self.runner.check.connect(self._check_done)
         self._failed_checks = self._checks = 0
         self.panel_view.control_changed.connect(self.runner.send_control)
         self.panel_view.renamed.connect(self._widget_renamed)
+        self.panel_view.edited.connect(self.update_completions)
         self.runner.finished.connect(self._run_finished)
         self._last_run: Path | None = None
 
@@ -330,21 +350,27 @@ class MainWindow(QMainWindow):
             .replace("\n", " ").replace(HOMEPAGE, f'<a href="{HOMEPAGE}">{HOMEPAGE}</a>'))
         box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         box.exec()
+        box.deleteLater()  # dialogs made with a parent stay until deleted
 
     def open_settings(self) -> bool:
         dialog = SettingsDialog(self.prefs, self)
-        if not dialog.exec():
+        accepted = dialog.exec()
+        folders_changed = accepted and dialog.plugin_folders_changed  # set by OK
+        dialog.deleteLater()
+        if not accepted:
             return False
         self.set_theme(self.theme())
         self.apply_preferences()
-        if dialog.plugin_folders_changed:
+        if folders_changed:
             self.reload_plugins()
         return True
 
     def open_plugin_manager(self) -> None:
         dialog = PluginManagerDialog(self.project.path if self.project else None, self)
         dialog.exec()
-        if dialog.changed:
+        changed = dialog.changed
+        dialog.deleteLater()
+        if changed:
             self.reload_plugins()
 
     def reload_plugins(self) -> None:
@@ -352,6 +378,7 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             self.devices.set_project(self.project)
             self._devices_changed()
+            self.update_completions()
 
     def _system_theme_changed(self, *_) -> None:
         if self.theme() == "system":
@@ -412,10 +439,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Open project", f"Could not read the front panel: {exc}")
                 panel = Panel(project.path / "panel.json")
         self.panel_view.set_panel(panel)
+        self.update_completions()
         self.console.clear()
         self.plot.clear()
         self.table.clear()
         self.waveforms.clear()
+        self.clear_comparison()
+        self.runs.set_project(project.path if project is not None else None)
         self._apply_plot_settings(project)
         self.editor.mark_error(None)
         self._last_run = None
@@ -475,10 +505,12 @@ class MainWindow(QMainWindow):
 
     def new_project(self) -> None:
         dialog = NewProjectDialog(self, self.prefs.projects_dir())
-        if dialog.exec() and self._keep_changes():
+        accepted = dialog.exec()
+        chosen = (dialog.path(), dialog.mode(), dialog.template()) if accepted else None
+        dialog.deleteLater()
+        if chosen and self._keep_changes():
             try:
-                self._set_project(create_project(dialog.path(), dialog.mode(),
-                                                 dialog.template()))
+                self._set_project(create_project(*chosen))
             except (ProjectError, OSError) as exc:
                 QMessageBox.critical(self, "New project", str(exc))
 
@@ -533,7 +565,9 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(skip)
         box.setEscapeButton(skip)
         box.exec()
-        return box.clickedButton() is load
+        allowed = box.clickedButton() is load
+        box.deleteLater()
+        return allowed
 
     def _modified(self) -> bool:
         if self.project is None:
@@ -572,6 +606,24 @@ class MainWindow(QMainWindow):
             modified = self.graph.modified
             self.graph.load(self.graph.to_graph(), self._catalog())
             self.graph.modified = modified
+
+    def _line_running(self, line: int) -> None:
+        if self.project is not None and self.project.mode == "lua":
+            self.editor.mark_running(line or None)
+
+    def update_completions(self, *_) -> None:
+        """Tell the editor's autocomplete the devices, their commands and the panel."""
+        from .devices import describe, labelled_signature
+        from .editor import Completion
+
+        devices = {
+            name: [Completion(f"{info.name}(" + ("" if info.params else ")"),
+                              labelled_signature(info), describe(info))
+                   for info in infos]
+            for name, infos in self.devices.commands.items()}
+        panel = self.panel_view.panel
+        names = [w.name for w in panel.widgets if w.has_value] if panel else []
+        self.editor.set_names(devices, names)
 
     def _widget_renamed(self, old: str, new: str) -> None:
         """Keep the test working when a front panel widget gets another name."""
@@ -622,6 +674,7 @@ class MainWindow(QMainWindow):
         view.setReadOnly(True)
         QVBoxLayout(dialog).addWidget(view)
         dialog.exec()
+        dialog.deleteLater()
 
     # --- running ----------------------------------------------------------
     def run(self) -> None:
@@ -664,8 +717,10 @@ class MainWindow(QMainWindow):
         self._failed_checks += not record.get("passed")
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
+        self.runs.refresh(select=Path(path) if path else None)
         self.table.flush()
         self.graph.mark_running(None)
+        self.editor.mark_running(None)
         self._last_run = Path(path) if path else None
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)
@@ -688,12 +743,65 @@ class MainWindow(QMainWindow):
                         "checks passed", error=bool(self._failed_checks))
         if self.waveforms.waveforms:
             parts.append(f"{len(self.waveforms.waveforms)} waveform(s) saved")
+        failed = _shutdown_failed(Path(path)) if path else []
+        if failed:  # last, so a PASS above does not hide it
+            self._print(f"WARNING: shutting down {', '.join(failed)} failed; check that "
+                        "their outputs are off.", error=True)
+            parts.append(f"shutdown failed: {', '.join(failed)}")
         self.statusBar().showMessage(" · ".join(parts))
         self._update_actions()
         if self._close_when_stopped:
             self._close_when_stopped = False
             self._closing = True  # unsaved changes were asked about already
             self.close()
+
+    # --- past runs ------------------------------------------------------------
+    def _run_label(self, run_dir: Path) -> str:
+        from ..history import read_run
+
+        run = read_run(run_dir)
+        return run.started.strftime("%Y-%m-%d %H:%M:%S") if run.started else run_dir.name
+
+    def show_run(self, run_dir) -> None:
+        """Show a past run's data in the plot and the Data tab, and its console."""
+        if self.runner.running:
+            self.statusBar().showMessage("A test is running; show past runs after it.", 5000)
+            return
+        from ..history import read_rows
+
+        run_dir = Path(run_dir)
+        self.plot.clear()
+        self.table.clear()
+        self.waveforms.clear()
+        for row in read_rows(run_dir):
+            self.plot.add_row(row)
+            self.table.add_row(row)
+        self.table.flush()
+        self.console.clear()
+        try:
+            self.console.setPlainText((run_dir / "console.log").read_text(encoding="utf-8"))
+        except OSError:
+            pass
+        self._last_run = run_dir
+        self._update_actions()
+        self._docks[1].raise_()
+        self.statusBar().showMessage(f"Showing the run of {self._run_label(run_dir)}")
+
+    def compare_run(self, run_dir) -> None:
+        """Draw a past run's curves dashed next to the current ones."""
+        from ..history import read_rows
+
+        run_dir = Path(run_dir)
+        label = self._run_label(run_dir)
+        self.plot.set_reference(read_rows(run_dir), label)
+        self.runs.set_comparing(True)
+        self._docks[1].raise_()
+        self.statusBar().showMessage(f"Comparing with the run of {label} (dashed). Compare "
+                                     "again with another run, or Clear comparison.", 8000)
+
+    def clear_comparison(self) -> None:
+        self.plot.set_reference([])
+        self.runs.set_comparing(False)
 
     def show_report(self) -> None:
         if self._last_run and (self._last_run / "report.html").is_file():

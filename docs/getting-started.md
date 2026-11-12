@@ -123,13 +123,23 @@ Each run gets a folder under the project's `runs/`, named by date and time:
 |---|---|
 | `data.csv` | the rows the test logged, with `time_s` (seconds since the start) |
 | `console.log` | everything the test printed, and errors |
-| `run.json` | status, verdict, check counts, Benchloom version, devices |
+| `run.json` | status, verdict, check counts, Benchloom version, devices and how each one's shutdown went |
 | `checks.csv` | each pass/fail check: name, value, limits, unit, result |
 | `waveforms/` | saved waveforms as CSV, SVG and PNG |
 | `report.html` | one page with the verdict, checks, a chart, the waveforms, the devices, the data and the console |
 | `main.lua`, or `main.graph.json` and `graph.lua` | the test exactly as it ran; a visual test also as the Lua it became |
 
 **Show run folder** in the toolbar opens the folder of the last run.
+
+## Past runs
+
+The **Runs** tab, next to the console, lists the project's runs, newest first,
+with their verdict, row and check counts and duration. Double-click one for its
+report. **Show** loads its data into the plot and the Data tab, and its console.
+**Compare** draws its curves dashed next to the current ones, also while the
+next run is being measured, so a change to the circuit or the test shows
+right away; **Clear comparison** removes them. **Delete** moves a run to the
+recycle bin.
 
 ## Next
 

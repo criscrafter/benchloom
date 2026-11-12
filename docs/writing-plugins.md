@@ -152,8 +152,12 @@ def set_input(self, source: str = "front") -> None: ...   # optional, with a def
 - **Types** come from the annotations: `float` (a number), `int`, `bool`,
   `str`, `list`. Benchloom checks and converts every argument before the method
   runs, so a script passing text for a number, or 40 V to a 30 V supply, stops
-  with a clear error at its own line, and nothing is sent.
-- **`Param`** adds `unit`, `min`, `max`, `choices` and `doc` to an argument.
+  with a clear error at its own line, and nothing is sent. Numbers must be
+  finite: `nan` (from `0/0`) and `math.huge` are refused. `list[float]` (or
+  `list[int]`, `list[str]`, ...) checks each item as well; a bare `list` takes
+  items of any type.
+- **`Param`** adds `unit`, `min`, `max`, `choices` and `doc` to an argument. On
+  a `list` argument, `min`, `max` and `choices` apply to each item.
 - **Results** can be numbers, texts, booleans, lists and dicts; lists and dicts
   become Lua tables. A scope's waveform is a dict
   `{"time": [...], "volts": [...]}`, which `save_waveform` understands.

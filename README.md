@@ -82,6 +82,8 @@ Each run gets a folder under the project's `runs/` holding `data.csv`,
 when the test made checks or saved waveforms, and `report.html`: one page with
 the PASS/FAIL verdict, the checks, a chart of the data, the waveform images, the
 devices, the data table and the console. **Report** in the toolbar opens it.
+The **Runs** tab lists past runs; **Compare** draws one dashed next to the
+current curves.
 
 The same works without the app:
 
@@ -113,6 +115,7 @@ x = "set_V"           # the column for the X axis
 log_x = false         # a log scale for X, for frequency sweeps
 right = ["I"]         # columns on the right-hand scale
 hide = ["time_s"]     # columns not drawn
+columns = ["set_V", "V", "I"]  # the order of the logged columns
 ```
 
 | Resource | Connection |

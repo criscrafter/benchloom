@@ -62,13 +62,22 @@ def evaluate(value: Any, low: float | None, high: float | None) -> bool:
     if low is None and high is None:
         return value is True or (isinstance(value, (int, float)) and not isinstance(value, bool)
                                  and math.isfinite(value) and value != 0)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
+    # nan and ±inf are no measurement: they never pass, also with one limit only
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return False
     return (low is None or value >= low) and (high is None or value <= high)
 
 
 class RunLog:
-    def __init__(self, runs_dir: Path):
+    """One run's folder and files.
+
+    ``columns`` lists logged columns in the order to keep them: in data.csv, the
+    rows handed on (so the plot and the Data tab), and the report. Other columns
+    follow, in alphabetical order. A Lua table has no order of its own.
+    """
+
+    def __init__(self, runs_dir: Path, columns: list[str] | None = None):
+        self.order = [str(c) for c in columns or [] if str(c) != "time_s"]
         self.started = datetime.now()
         self._t0 = time.monotonic()
         stamp = self.started.strftime("%Y-%m-%d_%H%M%S")
@@ -84,6 +93,10 @@ class RunLog:
         self._columns = ["time_s"]
         self._console = open(self.path / "console.log", "w", encoding="utf-8")
 
+    def _rank(self, key: str) -> tuple:
+        """Sort key: the columns asked for, in their order, then the others by name."""
+        return (self.order.index(key), "") if key in self.order else (len(self.order), key)
+
     def elapsed(self) -> float:
         return time.monotonic() - self._t0
 
@@ -93,12 +106,16 @@ class RunLog:
 
     def log(self, values: dict[str, Any]) -> dict[str, Any]:
         """Append one row to data.csv; new keys become new columns. Returns the row."""
-        row = {"time_s": round(self.elapsed(), 3), **values}
+        if "time_s" in values:
+            raise ValueError("log: time_s is the time Benchloom logs by itself; "
+                             "give your value another name")
+        row = {"time_s": round(self.elapsed(), 3),
+               **{k: values[k] for k in sorted(values, key=self._rank)}}
         self.rows.append(row)
         new = [key for key in row if key not in self._columns]
         file = self.path / "data.csv"
         if new or len(self.rows) == 1:
-            self._columns += sorted(new)
+            self._columns += sorted(new, key=self._rank)
             with open(file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, self._columns, restval="")
                 writer.writeheader()
