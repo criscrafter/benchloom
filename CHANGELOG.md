@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 – Data table, panel widgets, plugin registry and docs
 
 - **Data table:** a Data tab next to the plot lists every logged row as it
   arrives. It follows the newest row unless you scroll up, and Ctrl+C copies
@@ -20,6 +20,8 @@
   from `docs/`: getting started, projects and resources, the Lua reference,
   visual tests, the front panel, the command line, instruments, writing and
   sharing plugins, and safety.
+- The front panel's widget settings dialog no longer stays behind in memory
+  after each edit.
 
 ## 0.1.3 – Safer stops, plugin consent and PyPI
 
