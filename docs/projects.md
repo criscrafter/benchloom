@@ -36,6 +36,7 @@ x = "set_V"           # the column for the X axis
 log_x = false         # a log scale for X, for frequency sweeps
 right = ["I"]         # columns on the right-hand scale
 hide = ["time_s"]     # columns not drawn
+columns = ["set_V", "V", "I"]  # the order of the logged columns
 ```
 
 The app writes this file; editing it by hand works too. A device name must be a
@@ -100,6 +101,12 @@ second scale, such as 230 V and 10 W; **Columns** hides curves; **Log X** puts
 the X axis on a log scale. The `[plot]` section sets how the plot starts out
 when the project is opened; changes made in the plot are remembered per
 project on this computer. The report's chart follows the `[plot]` section.
+
+`columns` sets the order of the logged columns in `data.csv`, the plot, the
+**Data** tab and the report: the ones listed first, in that order, then any
+others by name. A Lua table has no order of its own, so without it the columns
+are sorted by name. A visual test keeps the order of its **Log row** columns
+by itself.
 
 ## Plugins in a project
 

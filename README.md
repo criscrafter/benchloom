@@ -113,6 +113,7 @@ x = "set_V"           # the column for the X axis
 log_x = false         # a log scale for X, for frequency sweeps
 right = ["I"]         # columns on the right-hand scale
 hide = ["time_s"]     # columns not drawn
+columns = ["set_V", "V", "I"]  # the order of the logged columns
 ```
 
 | Resource | Connection |

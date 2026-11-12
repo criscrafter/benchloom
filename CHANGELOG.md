@@ -6,6 +6,9 @@
   see a FAIL; it also prints the verdict. Before, only errors and stops gave 1.
 - Dialogs (devices, settings, plugins, new project, About) are deleted after
   use instead of staying in memory until the window closes.
+- **Column order:** `columns = [...]` under `[plot]` in benchloom.toml sets the
+  order of the logged columns in data.csv, the plot, the Data tab and the
+  report. A visual test keeps the order of its Log row node by itself.
 
 ## 0.1.4 – Data table, panel widgets, plugin registry and docs
 

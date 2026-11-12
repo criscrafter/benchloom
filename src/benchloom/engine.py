@@ -381,6 +381,23 @@ def open_device(registry: PluginRegistry, config: DeviceConfig,
     return device
 
 
+def _column_order(project: Project, script: Path) -> list[str]:
+    """The order of the logged columns: the project's ``[plot] columns``, or in a
+    visual test the order of the Log row nodes' columns."""
+    columns = project.plot.get("columns") if isinstance(project.plot, dict) else None
+    if isinstance(columns, list):
+        return [str(c) for c in columns]
+    if project.mode != "visual":
+        return []
+    try:
+        graph = json.loads(script.read_text(encoding="utf-8"))
+        return list(dict.fromkeys(str(c) for node in graph.get("nodes", [])
+                                  if node.get("type") == "core.log"
+                                  for c in node.get("columns", [])))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return []  # the run reports a broken graph itself
+
+
 def run_project(
     project_dir: str | Path,
     *,
@@ -427,7 +444,7 @@ def run_project(
             config.save()
     registry = PluginRegistry.default(project.path)
 
-    run = RunLog(project.path / "runs")
+    run = RunLog(project.path / "runs", _column_order(project, script))
     shutil.copy2(script, run.path / script.name)
     closing = threading.Lock()  # shutting the devices down and finishing the run, once
     closed = False
