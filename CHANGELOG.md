@@ -22,6 +22,9 @@
   check never passes with such a value, also with one limit only.
 - **`list` arguments are checked:** `list[float]` checks each item, with the
   `Param`'s limits applying to every item.
+- **`benchloom describe --project`** loads a project's own plugins only when
+  the project was allowed already, or with `--trust-plugins`, as for
+  `benchloom run`. Before, it imported their Python code without asking.
 - `log{ time_s = ... }` stops the test with an error: `time_s` is the time
   Benchloom logs itself, and a script's own value used to replace it.
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI

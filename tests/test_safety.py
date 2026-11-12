@@ -121,6 +121,20 @@ def test_run_on_the_command_line_needs_the_flag(tmp_path, capsys):
     capsys.readouterr()
 
 
+def test_describe_on_the_command_line_needs_the_flag_too(tmp_path, capsys):
+    project, folder = make_project(tmp_path)
+    args = ["describe", "bench.supply", "--project", str(project.path)]
+    assert cli(args) == 2  # refused: describing imports the driver
+    assert not (folder / "loaded.txt").exists()
+    assert "was not allowed to load" in capsys.readouterr().err
+    assert cli(["devices", "--project", str(project.path)]) == 0  # manifests only
+    assert "bench.supply" in capsys.readouterr().out and not (folder / "loaded.txt").exists()
+    assert cli(args + ["--trust-plugins"]) == 0
+    assert "on()" in capsys.readouterr().out and (folder / "loaded.txt").exists()
+    assert AppConfig.load().trusts(project.path)
+    assert cli(args) == 0  # remembered
+
+
 # --- shutting down ----------------------------------------------------------------------
 def with_driver(folder, old, new):
     path = folder / "supply.py"

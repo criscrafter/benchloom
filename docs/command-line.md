@@ -44,7 +44,9 @@ benchloom usbgpib "!ver?"            # a command to the adapter itself
 ```
 
 `--project <folder>` on `devices` and `describe` includes that project's own
-plugins.
+plugins. `devices` only reads their manifests. `describe` loads the driver's
+Python code, so, as for a run, it needs the project to be allowed already (in
+the app, or by an earlier `--trust-plugins`), or `--trust-plugins` now.
 
 ## Plugins
 

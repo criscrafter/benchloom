@@ -457,9 +457,9 @@ class PluginRegistry:
 
 
 PROJECT_PLUGIN_HINT = ("Plugins are Python code and run with your permissions: allow them "
-                       "when opening the project in the app, or with "
-                       "'benchloom run --trust-plugins', if you trust where the project "
-                       "comes from.")
+                       "when opening the project in the app, or with --trust-plugins "
+                       "('benchloom run' or 'benchloom describe'), if you trust where the "
+                       "project comes from.")
 
 
 def project_plugins(project_dir: str | Path) -> list[PluginInfo]:
