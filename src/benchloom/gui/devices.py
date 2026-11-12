@@ -498,8 +498,10 @@ class DevicesPanel(QWidget):
 
     def add_device(self) -> None:
         dialog = DeviceDialog(self.registry, set(self.project.devices), parent=self)
-        if dialog.exec():
-            config = dialog.config()
+        accepted = dialog.exec()
+        config = dialog.config() if accepted else None
+        dialog.deleteLater()  # a child of this panel otherwise, one more per use
+        if config is not None:
             self.project.devices[config.name] = config
             self._commit()
 
@@ -509,8 +511,10 @@ class DevicesPanel(QWidget):
             return
         others = set(self.project.devices) - {name}
         dialog = DeviceDialog(self.registry, others, self.project.devices[name], parent=self)
-        if dialog.exec():
-            config = dialog.config()
+        accepted = dialog.exec()
+        config = dialog.config() if accepted else None
+        dialog.deleteLater()
+        if config is not None:
             # keep the device's position in the list even if it was renamed
             self.project.devices = {
                 (config.name if key == name else key): (config if key == name else value)

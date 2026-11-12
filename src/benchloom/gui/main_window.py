@@ -330,21 +330,27 @@ class MainWindow(QMainWindow):
             .replace("\n", " ").replace(HOMEPAGE, f'<a href="{HOMEPAGE}">{HOMEPAGE}</a>'))
         box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         box.exec()
+        box.deleteLater()  # dialogs made with a parent stay until deleted
 
     def open_settings(self) -> bool:
         dialog = SettingsDialog(self.prefs, self)
-        if not dialog.exec():
+        accepted = dialog.exec()
+        folders_changed = accepted and dialog.plugin_folders_changed  # set by OK
+        dialog.deleteLater()
+        if not accepted:
             return False
         self.set_theme(self.theme())
         self.apply_preferences()
-        if dialog.plugin_folders_changed:
+        if folders_changed:
             self.reload_plugins()
         return True
 
     def open_plugin_manager(self) -> None:
         dialog = PluginManagerDialog(self.project.path if self.project else None, self)
         dialog.exec()
-        if dialog.changed:
+        changed = dialog.changed
+        dialog.deleteLater()
+        if changed:
             self.reload_plugins()
 
     def reload_plugins(self) -> None:
@@ -475,10 +481,12 @@ class MainWindow(QMainWindow):
 
     def new_project(self) -> None:
         dialog = NewProjectDialog(self, self.prefs.projects_dir())
-        if dialog.exec() and self._keep_changes():
+        accepted = dialog.exec()
+        chosen = (dialog.path(), dialog.mode(), dialog.template()) if accepted else None
+        dialog.deleteLater()
+        if chosen and self._keep_changes():
             try:
-                self._set_project(create_project(dialog.path(), dialog.mode(),
-                                                 dialog.template()))
+                self._set_project(create_project(*chosen))
             except (ProjectError, OSError) as exc:
                 QMessageBox.critical(self, "New project", str(exc))
 
@@ -533,7 +541,9 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(skip)
         box.setEscapeButton(skip)
         box.exec()
-        return box.clickedButton() is load
+        allowed = box.clickedButton() is load
+        box.deleteLater()
+        return allowed
 
     def _modified(self) -> bool:
         if self.project is None:
@@ -622,6 +632,7 @@ class MainWindow(QMainWindow):
         view.setReadOnly(True)
         QVBoxLayout(dialog).addWidget(view)
         dialog.exec()
+        dialog.deleteLater()
 
     # --- running ----------------------------------------------------------
     def run(self) -> None:

@@ -4,6 +4,8 @@
 
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI
   see a FAIL; it also prints the verdict. Before, only errors and stops gave 1.
+- Dialogs (devices, settings, plugins, new project, About) are deleted after
+  use instead of staying in memory until the window closes.
 
 ## 0.1.4 – Data table, panel widgets, plugin registry and docs
 
