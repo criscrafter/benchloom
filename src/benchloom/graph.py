@@ -237,8 +237,12 @@ class Catalog:
         return groups
 
 
+NODE_MARKER = "__node"  # called with a node's id as each node starts, when traced
+
+
 class _Compiler:
-    def __init__(self, graph: dict, catalog: Catalog):
+    def __init__(self, graph: dict, catalog: Catalog, trace: bool = False):
+        self.trace = trace
         self.nodes: dict[str, dict] = {}
         for node in graph.get("nodes", []):
             node_id = node.get("id", "")
@@ -258,7 +262,11 @@ class _Compiler:
                 self.data_source[(dst, dst_pin)] = (src, src_pin)
         self.lines: list[tuple[str, str | None]] = []
 
-    def emit(self, text: str, depth: int, node_id: str | None) -> None:
+    def emit(self, text: str, depth: int, node_id: str | None, starts: bool = False) -> None:
+        """One line of Lua. ``starts``: the line where the node begins to run; traced
+        code reports the node there, on the same line, so line numbers stay put."""
+        if starts and self.trace and node_id is not None:
+            text = f"{NODE_MARKER}({lua_literal(node_id)}); {text}"
         self.lines.append(("    " * depth + text, node_id))
 
     # --- values -------------------------------------------------------------
@@ -322,18 +330,19 @@ class _Compiler:
         value = lambda name: self.input(node_id, next(p for p in spec.inputs if p.name == name))
         follow = lambda pin: self.exec_next.get((node_id, pin))
         if kind == "core.for":
-            self.emit(f"for i = {value('from')}, {value('to')}, {value('step')} do", depth, node_id)
+            self.emit(f"for i = {value('from')}, {value('to')}, {value('step')} do", depth, node_id,
+                      True)
             self.emit(f"v.{node_id}_index = i", depth + 1, node_id)
             self.chain(follow("body"), depth + 1, path)
             self.emit("end", depth, node_id)
             return follow("done")
         if kind == "core.while":
-            self.emit(f"while {value('condition')} do", depth, node_id)
+            self.emit(f"while {value('condition')} do", depth, node_id, True)
             self.chain(follow("body"), depth + 1, path)
             self.emit("end", depth, node_id)
             return follow("done")
         if kind == "core.if":
-            self.emit(f"if {value('condition')} then", depth, node_id)
+            self.emit(f"if {value('condition')} then", depth, node_id, True)
             self.chain(follow("then"), depth + 1, path)
             if follow("else"):
                 self.emit("else", depth, node_id)
@@ -341,33 +350,35 @@ class _Compiler:
             self.emit("end", depth, node_id)
             return follow("done")
         if kind == "core.wait":
-            self.emit(f"sleep({value('seconds')})", depth, node_id)
+            self.emit(f"sleep({value('seconds')})", depth, node_id, True)
         elif kind == "core.print":
-            self.emit(f"print({value('text')})", depth, node_id)
+            self.emit(f"print({value('text')})", depth, node_id, True)
         elif kind == "core.fail":
-            self.emit(f"error({value('message')}, 0)", depth, node_id)
+            self.emit(f"error({value('message')}, 0)", depth, node_id, True)
         elif kind == "core.set_var":
             name = lua_literal(self.option(node_id, "name"))
-            self.emit(f"vars[{name}] = {value('value')}", depth, node_id)
+            self.emit(f"vars[{name}] = {value('value')}", depth, node_id, True)
         elif kind == "core.check":
             name = lua_literal(self.option(node_id, "name"))
             unit = lua_literal(self.option(node_id, "unit"))
             self.emit(f"v.{node_id}_passed = check({name}, {value('value')}, {value('low')}, "
-                      f"{value('high')}, {unit})", depth, node_id)
+                      f"{value('high')}, {unit})", depth, node_id, True)
         elif kind == "core.save_waveform":
             name = lua_literal(self.option(node_id, "name"))
-            self.emit(f"save_waveform({name}, {value('traces')})", depth, node_id)
+            self.emit(f"save_waveform({name}, {value('traces')})", depth, node_id, True)
         elif kind == "panel.set":
-            self.emit(f"panel[{lua_literal(node['widget'])}] = {value('value')}", depth, node_id)
+            self.emit(f"panel[{lua_literal(node['widget'])}] = {value('value')}", depth, node_id,
+                      True)
         elif kind == "core.log":
             if not spec.inputs:
                 raise GraphError("Add at least one column to log.", node_id)
             cells = ", ".join(f"[{lua_literal(p.name)}] = {self.input(node_id, p)}"
                               for p in spec.inputs)
-            self.emit(f"log {{ {cells} }}", depth, node_id)
+            self.emit(f"log {{ {cells} }}", depth, node_id, True)
         elif kind == "device":
             call = f"{node['device']}:{node['command']}({self.arguments(node_id)})"
-            self.emit(f"v.{node_id}_result = {call}" if spec.outputs else call, depth, node_id)
+            self.emit(f"v.{node_id}_result = {call}" if spec.outputs else call, depth, node_id,
+                      True)
         return follow("next")
 
     def compile(self) -> tuple[str, list[str | None]]:
@@ -379,9 +390,13 @@ class _Compiler:
         return "\n".join(text for text, _ in self.lines) + "\n", [n for _, n in self.lines]
 
 
-def compile_graph(graph: dict, catalog: Catalog) -> tuple[str, list[str | None]]:
-    """Compile a graph to Lua. Returns the code and, per line, the node it came from."""
-    return _Compiler(graph, catalog).compile()
+def compile_graph(graph: dict, catalog: Catalog,
+                  trace: bool = False) -> tuple[str, list[str | None]]:
+    """Compile a graph to Lua. Returns the code and, per line, the node it came from.
+
+    ``trace`` adds a call to ``__node(id)`` where each node starts, so whoever runs the
+    code can show which node is running. It does not change the line numbers."""
+    return _Compiler(graph, catalog, trace).compile()
 
 
 def example_graph() -> dict:

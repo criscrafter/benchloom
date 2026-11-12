@@ -33,6 +33,7 @@ class RunController(QObject):
     panel = Signal(str, object)  # the test set a front panel widget
     check = Signal(object)  # a pass/fail check, as a dict
     waveform = Signal(str, object)  # a saved waveform: name, {trace: (times, volts)}
+    node = Signal(str)  # the node of a visual test that is running now
     finished = Signal(str, str, str)  # status, error, run folder
 
     def __init__(self, parent=None):
@@ -99,6 +100,8 @@ class RunController(QObject):
                 self.check.emit(message[1])
             elif message[0] == "waveform":
                 self.waveform.emit(message[1], message[2])
+            elif message[0] == "node":
+                self.node.emit(message[1] or "")
             elif message[0] == "shutdown":
                 # the devices are being switched off: give that time, do not kill it
                 self._shutting_down = True

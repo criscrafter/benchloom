@@ -140,8 +140,9 @@ that uses their value runs. To measure at a fixed point instead and keep the
 value, right-click the node and choose **Run in sequence**.
 
 A visual test is compiled to Lua and run by the same engine as a script.
-**View as Lua** shows the generated code; each run folder keeps it as
-`graph.lua`.
+While it runs, a green outline marks the node it is at, and a node that
+fails is outlined in red. **View as Lua** shows the generated code; each run
+folder keeps it as `graph.lua`.
 
 ## A script
 

@@ -178,6 +178,7 @@ class MainWindow(QMainWindow):
         self.runner.row.connect(self.table.add_row)
         self.runner.panel.connect(self.panel_view.show_value)
         self.runner.waveform.connect(self.waveforms.add)
+        self.runner.node.connect(lambda node_id: self.graph.mark_running(node_id or None))
         self.runner.check.connect(self._check_done)
         self._failed_checks = self._checks = 0
         self.panel_view.control_changed.connect(self.runner.send_control)
@@ -638,6 +639,7 @@ class MainWindow(QMainWindow):
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
         self.table.flush()
+        self.graph.mark_running(None)
         self._last_run = Path(path) if path else None
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)

@@ -40,6 +40,7 @@ CLIPBOARD_TYPE = "application/x-benchloom-nodes"
 MAX_UNDO = 200
 PASTE_OFFSET = 2 * GRID
 ERROR_COLOR = QColor("#d9453c")
+RUNNING_COLOR = QColor("#16a34a")  # the node a running test is at
 HEADER_COLORS = {"start": "#6b7280", "flow": "#b45309", "action": "#6d28d9", "value": "#0f766e"}
 
 
@@ -150,6 +151,7 @@ class NodeItem(QGraphicsItem):
         self.editor, self.data, self.spec, self.broken = editor, data, spec, broken
         self.data.setdefault("values", {})
         self.error = bool(broken)
+        self.running = False
         self.pins: dict[tuple[str, str, bool], PinItem] = {}
         self.proxies: dict[str, QGraphicsProxyWidget] = {}
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -302,6 +304,8 @@ class NodeItem(QGraphicsItem):
 
         if self.error:
             pen = QPen(ERROR_COLOR, 2.5)
+        elif self.running:
+            pen = QPen(RUNNING_COLOR, 3)
         elif self.isSelected():
             pen = QPen(editor.highlight_color, 2)
         else:
@@ -630,6 +634,14 @@ class GraphEditor(QGraphicsView):
             self._connect_by_name(wire)
         self.notify_changed()
         return new
+
+    def mark_running(self, node_id: str | None) -> None:
+        """Outline the node a running test is at; None when no test runs."""
+        for item in self.nodes.values():
+            running = item.id == node_id
+            if item.running != running:
+                item.running = running
+                item.update()
 
     def mark_error(self, node_id: str | None) -> None:
         for item in self.nodes.values():

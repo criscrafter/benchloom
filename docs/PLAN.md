@@ -56,8 +56,7 @@
 3. **Node editor** (done): nodes generated from plugin commands, flow nodes
    (for, while, if), values (math, compare, logic, variables), logging, graph
    to Lua compiler, errors marked on the node, undo/redo, copy/paste and
-   duplicate. Still to do here: highlighting the running node, comments,
-   sub-graphs.
+   duplicate, the running node outlined. Still to do here: comments, sub-graphs.
 4. **Front panel** (done): controls (number, switch, button, text) and
    indicators (value, light, bar, chart) laid out by drag and drop, live in both
    directions while a test runs, available as `panel.<name>` in Lua and as nodes.
