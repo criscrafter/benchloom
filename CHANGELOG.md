@@ -25,6 +25,13 @@
 - **`benchloom describe --project`** loads a project's own plugins only when
   the project was allowed already, or with `--trust-plugins`, as for
   `benchloom run`. Before, it imported their Python code without asking.
+- **Visual tests check their wires:** a wire that ends at a pin its node no
+  longer has (for example after a plugin renamed a command's argument) stops
+  the run with an error at that node, instead of being skipped: the input took
+  its typed-in value, or the run silently ended there. Delete the node and add
+  it again; the hidden wire goes with it. Two wires into one input, two
+  run-order wires out of one pin and wires of unknown kind are errors too, and
+  a test saved by a newer Benchloom is refused with a clear message.
 - `log{ time_s = ... }` stops the test with an error: `time_s` is the time
   Benchloom logs itself, and a script's own value used to replace it.
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI

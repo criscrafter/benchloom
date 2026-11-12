@@ -150,6 +150,22 @@ def test_log_columns(app, window):
     assert wire_count(graph) == 11
 
 
+def test_a_wire_to_a_pin_that_is_gone_stops_the_run_until_its_node_is_deleted(app, window):
+    from benchloom.graph import GraphError, compile_graph
+
+    graph = example_graph()
+    orphan = {"kind": "data", "from": ["n4", "index"], "to": ["n5", "old_volts"]}
+    graph["wires"].append(orphan)
+    catalog = Catalog(window.project)
+    window.graph.load(graph, catalog)
+    assert orphan in window.graph.to_graph()["wires"]  # kept, in case the pin comes back
+    with pytest.raises(GraphError) as error:
+        compile_graph(window.graph.to_graph(), catalog)
+    assert "old_volts" in str(error.value) and error.value.node_id == "n5"
+    window.graph.remove_node(window.graph.nodes["n5"])
+    assert orphan not in window.graph.to_graph()["wires"]  # gone with its node
+
+
 def test_removed_device_flags_nodes_but_keeps_them(app, window):
     project = window.project
     project.devices["supply"] = project.devices.pop("psu")

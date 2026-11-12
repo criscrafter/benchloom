@@ -607,6 +607,9 @@ class GraphEditor(QGraphicsView):
             return
         for wire in item.wires():
             self.remove_wire(wire)
+        # and the wires kept for pins it no longer has: they go with the node
+        self._orphan_wires = [w for w in self._orphan_wires
+                              if item.id not in (w.get("from", [None])[0], w.get("to", [None])[0])]
         self.scene().removeItem(item)
         del self.nodes[item.id]
         self.notify_changed()
