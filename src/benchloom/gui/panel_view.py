@@ -553,7 +553,10 @@ class PanelView(QWidget):
 
     def edit_properties(self, item: PanelItem) -> None:
         old = item.model.name
-        if WidgetDialog(self.panel, item.model, self).exec():
+        dialog = WidgetDialog(self.panel, item.model, self)
+        accepted = dialog.exec()
+        dialog.deleteLater()  # a child of the panel otherwise, one more per edit
+        if accepted:
             self.rebuild(item)
             if item.model.name != old:
                 self.renamed.emit(old, item.model.name)

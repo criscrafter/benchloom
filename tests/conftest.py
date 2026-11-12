@@ -14,7 +14,10 @@ def benchloom_home(tmp_path_factory, monkeypatch):
 
 # PySide6 can crash while Python shuts down after the tests ("none_dealloc", seen on
 # Linux with Python 3.11), turning a passed run into exit code 134. Once pytest has
-# reported its result, end the process straight away, keeping the exit status.
+# reported its result, end the process straight away, keeping the exit status. On
+# Windows os._exit still unloads Qt's DLLs, which crash on the windows and widgets
+# the tests leave behind (an access violation, -1073741819), so the process is
+# ended there without unloading anything.
 _exit_status = None
 
 
@@ -31,4 +34,12 @@ def pytest_unconfigure(config):
     if _exit_status is not None and "PySide6" in sys.modules:
         sys.stdout.flush()
         sys.stderr.flush()
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32")
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel32.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
+            kernel32.TerminateProcess(kernel32.GetCurrentProcess(), _exit_status)
         os._exit(_exit_status)
