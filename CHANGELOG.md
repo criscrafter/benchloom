@@ -32,6 +32,9 @@
   it again; the hidden wire goes with it. Two wires into one input, two
   run-order wires out of one pin and wires of unknown kind are errors too, and
   a test saved by a newer Benchloom is refused with a clear message.
+- **Selected wires are easy to see:** a selected wire gets a wide halo. A
+  selected value wire used to change only from blue to the (also blue)
+  highlight colour, so there was no telling it was selected.
 - `log{ time_s = ... }` stops the test with an error: `time_s` is the time
   Benchloom logs itself, and a script's own value used to replace it.
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI

@@ -36,6 +36,7 @@ TEXT_EDIT_W = 130
 PAD = 12
 GRID = 24
 DATA_COLOR = QColor("#3b82f6")
+SELECTED_HALO_WIDTH = 8  # px; drawn under a selected wire
 CLIPBOARD_TYPE = "application/x-benchloom-nodes"
 MAX_UNDO = 200
 PASTE_OFFSET = 2 * GRID
@@ -114,7 +115,8 @@ class WireItem(QGraphicsPathItem):
         super().__init__()
         self.editor, self.kind, self.source, self.target = editor, kind, source, target
         self.setZValue(-1)
-        self.setPen(QPen(Qt.GlobalColor.black, 4))  # only sizes the bounding box
+        # only sizes the bounding box: wide enough for the halo of a selected wire
+        self.setPen(QPen(Qt.GlobalColor.black, SELECTED_HALO_WIDTH + 2))
         if source and target:
             self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
             self.update_path()
@@ -133,14 +135,23 @@ class WireItem(QGraphicsPathItem):
         return stroker.createStroke(self.path())
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        if self.isSelected():
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        selected = self.isSelected()
+        if selected:
+            # A halo under the wire: changing the colour alone does not show on a data
+            # wire, which is blue like most highlight colours, and thin and dashed.
+            halo = QColor(self.editor.highlight_color)
+            halo.setAlpha(110)
+            halo_pen = QPen(halo, SELECTED_HALO_WIDTH)
+            halo_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(halo_pen)
+            painter.drawPath(self.path())
             color = self.editor.highlight_color
         else:
             color = self.editor.text_color if self.kind == "exec" else DATA_COLOR
         pen = QPen(color, 3 if self.kind == "exec" else 2)
         if self.kind == "data":
             pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(pen)
         painter.drawPath(self.path())
 
