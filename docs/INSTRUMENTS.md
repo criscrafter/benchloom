@@ -318,6 +318,52 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   there. At connect the driver reads the scope's own copy and falls back to this
   one.
 
+## Digitek DT-4000ZC multimeter (`fs9721.dt4000zc`)
+
+- **Connection:** the meter's optical RS-232 cable, `resource =
+  "serial://COM13?baud=2400"`. The meter sends 2400 baud, 8N1; the driver sets
+  this itself. The receiver in the cable is powered from the serial port with
+  DTR high and RTS low, which the driver also sets. Press the meter's **RS232**
+  button so it sends (an "RS232" symbol shows on its display).
+- **No commands:** the meter only sends a copy of its display, about twice a
+  second. Choose the function on its dial; the driver reads what is shown.
+- **Commands:**
+    - `read()`: the display as a number in the base unit (V, A, Ω, F, Hz, % or
+      °C), with the prefix applied (12.34 kΩ gives 12340). OL gives ±infinity.
+    - `read_display()`: the display as text, e.g. `5.003 V DC` or
+      `0L MΩ`; `read_mode()`: `DC V`, `AC V`, `DC A`, `AC A`, `Ω`, `F`,
+      `Hz`, `%`, `°C`, `diode` or `continuity`.
+    - `measure_voltage`, `measure_current`, `measure_resistance`,
+      `measure_capacitance`, `measure_frequency`, `measure_duty_cycle`,
+      `measure_temperature`: like `read()` with a unit, but fail when the dial
+      is set to something else.
+- **Garbled data:** if bytes arrive but none forms a valid packet, reading
+  fails with "garbled" instead of returning a wrong number.
+- **Cable fix for USB serial adapters:** the cable's phototransistor drives the
+  line up quickly, but only the adapter's input (a few kΩ) pulls it back down,
+  so the line falls too slowly: every 1 bit right after a 0 arrives as 0. A
+  higher DTR voltage does not help. A **3.3 kΩ resistor from the data line
+  (pin 2 at the PC side) to RTS (pin 7)**, which the driver holds at about
+  −5 V, pulls it down fast enough. A PC's own serial port may not need it.
+- **Other meters:** the plugin decodes the Fortune Semiconductor FS9721 display
+  chip, used in many cheap meters (Tenma, Uni-T, Voltcraft and others). Those
+  can be added as further device entries once their bytes are checked.
+- **Temperature:** the °C symbol is in byte E, whose symbols differ between
+  meters; bit 2 is the DT-4000ZC's.
+- **Source:** the FS9721_LP3 layout as documented by sigrok.
+- **Byte E:** besides °C, the DT-4000ZC sets its top bit (`e8`) in every
+  function except temperature, in auto and manual ranges alike. What it means
+  is not known; it is ignored.
+- **REL** shows `-00.00` at zero; `read()` gives 0.0 for it, not -0.0.
+- **Tried on hardware:** a DT-4000ZC with its cable on a CH340 USB-RS-232
+  adapter (DTR about 5.2 V), on Windows 10, with the 3.3 kΩ resistor above.
+  Read correctly: DC volts on a 10 V reference (9.97 V, as on the meter's
+  display) and on the mV range, AC volts, DC current (A and mA), ohms in auto
+  and manual ranges (including OL), continuity, diode, capacitance (nF),
+  frequency, duty cycle, temperature, HOLD and REL; `measure_resistance`
+  refused while the dial was on volts. AC current was not tried. Without the
+  resistor every packet was garbled.
+
 ## Feeltech FY6900 function generator (`feeltech.fy6900`)
 
 - **Connection:** the generator's USB port is a serial port:

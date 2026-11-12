@@ -1,0 +1,19 @@
+[plugin]
+id = "fs9721"
+name = "FS9721 multimeters"
+version = "0.1.0"
+description = "Handheld multimeters with a Fortune Semiconductor FS9721 chip that send their display over an optical serial cable."
+
+[[device]]
+id = "dt4000zc"
+name = "Digitek DT-4000ZC multimeter"
+description = """Handheld multimeter with an optical RS-232 cable. It takes no \
+commands: it sends its display twice a second, and the function is set on its dial. \
+Reads volts, amps, ohms, capacitance, frequency and duty cycle as numbers in the base \
+unit. Press the meter's RS232 button so it sends. The cable's receiver is powered from \
+the serial port (DTR high, RTS low); the driver sets this and the 2400 baud itself."""
+driver = "meter:FS9721Meter"
+simulator = "meter:FS9721Sim"
+transports = ["serial", "sim"]
+default_name = "dmm"
+default_resource = "serial://COM1?baud=2400"
