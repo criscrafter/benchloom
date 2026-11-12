@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5 – Safer stops, run history and Lua autocomplete
 
 - **Stop during a slow device command** switches the devices off again. A
   command still running more than about 2 s after the stop timeout made the app
