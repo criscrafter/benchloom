@@ -24,7 +24,12 @@ from ..worker import run_worker
 
 STOP_TIMEOUT_S = 3.0  # what a script gets to stop, before the devices are shut down anyway
 FORCE_STOP_AFTER_MS = 5000  # no shutdown has begun by then: the process is hung, kill it
-SHUTDOWN_TIMEOUT_MS = 30000  # what shutting the devices down may take, before the kill
+# What shutting the devices down may take, before the kill. The run announces the
+# shutdown (the "shutdown" message) before it waits for a device command in progress,
+# so this covers that wait (engine.STOP_COMMAND_WAIT_S) as well.
+SHUTDOWN_TIMEOUT_MS = 30000
+# The run announces its shutdown STOP_TIMEOUT_S after Stop; the kill must come later.
+assert FORCE_STOP_AFTER_MS > STOP_TIMEOUT_S * 1000
 
 
 class RunController(QObject):

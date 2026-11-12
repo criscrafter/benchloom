@@ -251,3 +251,42 @@ def test_closing_the_window_lets_the_run_switch_its_devices_off(app, tmp_path):
     assert "forced" not in window.console.toPlainText()
     assert (folder / "switched_off.txt").exists()
     assert not window.isVisible()  # and then the window closed
+
+
+SLOW_DRIVER = DRIVER.replace(
+    "    def close(self) -> None:",
+    "    @command\n"
+    "    def slow(self) -> None:\n"
+    "        import time\n"
+    "        time.sleep(7)\n"
+    "\n"
+    "    def close(self) -> None:")
+
+
+def test_stop_during_a_slow_device_command_still_switches_the_devices_off(app, tmp_path):
+    # The command outlasts the app's first deadline (FORCE_STOP_AFTER_MS) but ends within
+    # the run's wait for it (STOP_COMMAND_WAIT_S): the app must wait, not kill the run.
+    from benchloom.gui.runner import RunController
+
+    project, folder = make_project(tmp_path, "psu:on() print('started') psu:slow()")
+    (folder / "supply.py").write_text(SLOW_DRIVER, encoding="utf-8")
+    config = AppConfig.load()
+    config.set_trusted(project.path)
+    config.save()
+    runner = RunController()
+    printed, done = [], []
+    runner.printed.connect(printed.append)
+    runner.finished.connect(lambda *args: done.append(args))
+    runner.start(project.path)
+    deadline = time.monotonic() + 60
+    while "started" not in printed and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    time.sleep(0.3)  # inside psu:slow() now
+    runner.stop()
+    while not done and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert done and done[0][0] == "stopped" and done[0][2], (done, printed)
+    assert not any("forced" in text for text in printed), printed
+    assert (folder / "switched_off.txt").exists()

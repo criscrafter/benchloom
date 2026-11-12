@@ -471,6 +471,16 @@ def run_project(
     shutil.copy2(script, run.path / script.name)
     closing = threading.Lock()  # shutting the devices down and finishing the run, once
     closed = False
+    announced = threading.Event()  # on_shutdown was called
+
+    def announce_shutdown() -> None:
+        """Tell the caller, once, that the devices are about to be shut down, so that
+        it gives that time instead of ending the process."""
+        if announced.is_set():
+            return
+        announced.set()
+        if on_shutdown is not None:
+            on_shutdown()
 
     def emit(text: str) -> None:
         try:
@@ -506,8 +516,7 @@ def run_project(
             if closed:
                 return False
             closed = True
-            if on_shutdown is not None:
-                on_shutdown()
+            announce_shutdown()
             for name, device in list(devices.items()):
                 try:
                     device.close()  # sources and loads switch their output off here
@@ -542,6 +551,9 @@ def run_project(
         if script_ended.wait(stop_timeout):
             return
         emit(f"The test did not stop within {stop_timeout:g} s; shutting the devices down.")
+        # Announced before waiting for the command in progress: the caller must not end
+        # this process while it waits, or the devices are never shut down.
+        announce_shutdown()
         # A command in progress may finish first; a hung one must not keep outputs on.
         waited = engine.device_lock.acquire(timeout=STOP_COMMAND_WAIT_S)
         try:
