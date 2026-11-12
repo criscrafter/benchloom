@@ -6,13 +6,14 @@ Columns are drawn against the column chosen as X axis, on the left value scale
 or, when ticked under "Right axis", on a second scale on the right. That keeps
 columns of very different size readable together, such as 230 V and 10 W.
 "Columns" hides curves, and "Log X" puts the X axis on a log scale, for
-frequency sweeps.
+frequency sweeps. Another run can be drawn next to the current one, dashed, for
+comparison (see :meth:`PlotPanel.set_reference`).
 """
 
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget,
@@ -51,6 +52,9 @@ class PlotPanel(QWidget):
         self._curve_side: dict[str, str] = {}
         self.preferred_x: str | None = None  # chosen as X axis as soon as it is logged
         self.hidden: set[str] = set()  # columns not drawn (the project's [plot] hide)
+        self.reference: list[dict] = []  # rows of another run, drawn dashed
+        self.reference_label = ""
+        self._ref_curves: dict[str, tuple[pg.PlotDataItem, str]] = {}
 
         self.x_axis = QComboBox()
         self.x_axis.setMinimumWidth(120)
@@ -132,7 +136,7 @@ class PlotPanel(QWidget):
         on = self.log_x.isChecked()
         # Curves live in our own view boxes, so each is told, not only the axis.
         self.plot.getPlotItem().setLogMode(x=on, y=False)
-        for curve in self._curves.values():
+        for curve in [*self._curves.values(), *(c for c, _ in self._ref_curves.values())]:
             curve.setLogMode(on, False)
         self.plot.getPlotItem().vb.enableAutoRange()
         self.right_view.enableAutoRange()
@@ -199,33 +203,81 @@ class PlotPanel(QWidget):
 
     # --- data -------------------------------------------------------------
     def clear(self) -> None:
-        """Forget the rows; the right-axis choice stays, for the next run."""
+        """Forget the rows; the right-axis choice and a run to compare with stay, for
+        the next run."""
         self.rows.clear()
         for key in list(self._curves):
             self._remove_curve(key)
         self.x_axis.blockSignals(True)
         self.x_axis.clear()
         self.x_axis.blockSignals(False)
+        self._add_columns(self.reference[:1])
         self._rebuild_right_menu()
         self._update_right_axis()
+        self._redraw()
+
+    def set_reference(self, rows: list[dict], label: str = "") -> None:
+        """Draw another run's rows dashed, in the colours of the current curves.
+        Empty rows remove it."""
+        for key in list(self._ref_curves):
+            self._remove_ref_curve(key)
+        self.reference, self.reference_label = list(rows), label
+        if self._add_columns(self.reference[:1]):
+            self._rebuild_right_menu()
+        self._redraw()
+
+    def _add_columns(self, rows: list[dict]) -> bool:
+        """Offer the numeric columns of these rows as X axis. True if any were new."""
+        added = False
+        for row in rows:
+            for key, value in row.items():
+                if _is_number(value) and self.x_axis.findText(key) < 0:
+                    self.x_axis.blockSignals(True)
+                    self.x_axis.addItem(key)
+                    self.x_axis.blockSignals(False)
+                    added = True
+        if added and self.preferred_x and self.x_axis.findText(self.preferred_x) >= 0 \
+                and self.x_axis.currentText() != self.preferred_x:
+            self.x_axis.blockSignals(True)
+            self.x_axis.setCurrentText(self.preferred_x)
+            self.x_axis.blockSignals(False)
+        return added
+
+    def _remove_ref_curve(self, key: str) -> None:
+        curve, side = self._ref_curves.pop(key)
+        self.legend.removeItem(curve)
+        self._view(side).removeItem(curve)
 
     def add_row(self, row: dict) -> None:
         self.rows.append(row)
-        added = False
-        for key, value in row.items():
-            if _is_number(value) and self.x_axis.findText(key) < 0:
-                self.x_axis.blockSignals(True)
-                self.x_axis.addItem(key)
-                self.x_axis.blockSignals(False)
-                added = True
-        if added:
-            if self.preferred_x and self.x_axis.findText(self.preferred_x) >= 0                     and self.x_axis.currentText() != self.preferred_x:
-                self.x_axis.blockSignals(True)
-                self.x_axis.setCurrentText(self.preferred_x)
-                self.x_axis.blockSignals(False)
+        if self._add_columns([row]):
             self._rebuild_right_menu()
         if not self._timer.isActive():
             self._timer.start()
+
+    def _ref_legend_last(self) -> None:
+        """Keep the dashed curves of the other run below the current ones in the legend."""
+        for curve, _ in self._ref_curves.values():
+            label = curve.opts.get("name") or ""
+            self.legend.removeItem(curve)
+            self.legend.addItem(curve, label)
+
+    def _draw_reference(self, key: str, x_key: str, side: str, color: str) -> None:
+        points = [(r[x_key], r[key]) for r in self.reference
+                  if _is_number(r.get(x_key)) and _is_number(r.get(key))]
+        if not points:
+            if key in self._ref_curves:
+                self._remove_ref_curve(key)
+            return
+        if key not in self._ref_curves:
+            label = f"{key} ({self.reference_label or 'other run'})"
+            curve = pg.PlotDataItem(name=label,
+                                    pen=pg.mkPen(color, width=1.5, style=Qt.PenStyle.DashLine))
+            curve.setLogMode(self.log_x.isChecked(), False)
+            self._view(side).addItem(curve)
+            self.legend.addItem(curve, label)
+            self._ref_curves[key] = (curve, side)
+        self._ref_curves[key][0].setData([p[0] for p in points], [p[1] for p in points])
 
     def _view(self, side: str) -> pg.ViewBox:
         return self.right_view if side == "right" else self.plot.getPlotItem().vb
@@ -245,14 +297,20 @@ class PlotPanel(QWidget):
             side = "right" if key in self.right_columns else "left"
             if key in self._curves and (key == x_key or self._curve_side[key] != side):
                 self._remove_curve(key)
+            if key in self._ref_curves and (key == x_key or key in self.hidden
+                                            or self._ref_curves[key][1] != side):
+                self._remove_ref_curve(key)
             if key == x_key or key in self.hidden:
                 if key in self._curves:
                     self._remove_curve(key)
                 continue
+            color = COLORS[columns.index(key) % len(COLORS)]
+            self._draw_reference(key, x_key, side, color)
             points = [(r[x_key], r[key]) for r in self.rows
                       if _is_number(r.get(x_key)) and _is_number(r.get(key))]
+            if not points and key not in self._curves:
+                continue  # only the run compared with has this column
             if key not in self._curves:
-                color = COLORS[columns.index(key) % len(COLORS)]
                 curve = pg.PlotDataItem(
                     name=key, pen=pg.mkPen(color, width=2),
                     symbol="o", symbolSize=5, symbolBrush=color, symbolPen=color,
@@ -261,5 +319,6 @@ class PlotPanel(QWidget):
                 self._view(side).addItem(curve)  # not PlotItem.addItem: legend is ours
                 self.legend.addItem(curve, f"{key} (right)" if side == "right" else key)
                 self._curves[key], self._curve_side[key] = curve, side
+                self._ref_legend_last()
             self._curves[key].setData([p[0] for p in points], [p[1] for p in points])
         self._update_right_axis()

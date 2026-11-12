@@ -131,6 +131,16 @@ Each run gets a folder under the project's `runs/`, named by date and time:
 
 **Show run folder** in the toolbar opens the folder of the last run.
 
+## Past runs
+
+The **Runs** tab, next to the console, lists the project's runs, newest first,
+with their verdict, row and check counts and duration. Double-click one for its
+report. **Show** loads its data into the plot and the Data tab, and its console.
+**Compare** draws its curves dashed next to the current ones, also while the
+next run is being measured, so a change to the circuit or the test shows
+right away; **Clear comparison** removes them. **Delete** moves a run to the
+recycle bin.
+
 ## Next
 
 - [Projects](projects.md): the project file, resources and plot settings.

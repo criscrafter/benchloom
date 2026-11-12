@@ -82,6 +82,8 @@ Each run gets a folder under the project's `runs/` holding `data.csv`,
 when the test made checks or saved waveforms, and `report.html`: one page with
 the PASS/FAIL verdict, the checks, a chart of the data, the waveform images, the
 devices, the data table and the console. **Report** in the toolbar opens it.
+The **Runs** tab lists past runs; **Compare** draws one dashed next to the
+current curves.
 
 The same works without the app:
 

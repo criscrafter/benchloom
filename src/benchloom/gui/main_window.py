@@ -30,6 +30,7 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .runs import RunsPanel
 from .table import DataTable
 from .waveforms import WaveformPanel
 from .plugins import PluginManagerDialog
@@ -157,6 +158,10 @@ class MainWindow(QMainWindow):
         self.panel_view = PanelView()
         self.waveforms = WaveformPanel()
         self.table = DataTable()
+        self.runs = RunsPanel()
+        self.runs.show_requested.connect(self.show_run)
+        self.runs.compare_requested.connect(self.compare_run)
+        self.runs.compare_cleared.connect(self.clear_comparison)
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
@@ -164,11 +169,14 @@ class MainWindow(QMainWindow):
             self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Waveforms", self.waveforms, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Data", self.table, Qt.DockWidgetArea.RightDockWidgetArea),
+            self._dock("Runs", self.runs, Qt.DockWidgetArea.BottomDockWidgetArea),
         ]
+        self.tabifyDockWidget(self._docks[2], self._docks[6])
         self.tabifyDockWidget(self._docks[1], self._docks[5])
         self.tabifyDockWidget(self._docks[5], self._docks[3])
         self.tabifyDockWidget(self._docks[3], self._docks[4])
         self._docks[1].raise_()
+        self._docks[2].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
         self.resizeDocks(self._docks[2:3], [200], Qt.Orientation.Vertical)
 
@@ -422,6 +430,8 @@ class MainWindow(QMainWindow):
         self.plot.clear()
         self.table.clear()
         self.waveforms.clear()
+        self.clear_comparison()
+        self.runs.set_project(project.path if project is not None else None)
         self._apply_plot_settings(project)
         self.editor.mark_error(None)
         self._last_run = None
@@ -675,6 +685,7 @@ class MainWindow(QMainWindow):
         self._failed_checks += not record.get("passed")
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
+        self.runs.refresh(select=Path(path) if path else None)
         self.table.flush()
         self.graph.mark_running(None)
         self._last_run = Path(path) if path else None
@@ -705,6 +716,54 @@ class MainWindow(QMainWindow):
             self._close_when_stopped = False
             self._closing = True  # unsaved changes were asked about already
             self.close()
+
+    # --- past runs ------------------------------------------------------------
+    def _run_label(self, run_dir: Path) -> str:
+        from ..history import read_run
+
+        run = read_run(run_dir)
+        return run.started.strftime("%Y-%m-%d %H:%M:%S") if run.started else run_dir.name
+
+    def show_run(self, run_dir) -> None:
+        """Show a past run's data in the plot and the Data tab, and its console."""
+        if self.runner.running:
+            self.statusBar().showMessage("A test is running; show past runs after it.", 5000)
+            return
+        from ..history import read_rows
+
+        run_dir = Path(run_dir)
+        self.plot.clear()
+        self.table.clear()
+        self.waveforms.clear()
+        for row in read_rows(run_dir):
+            self.plot.add_row(row)
+            self.table.add_row(row)
+        self.table.flush()
+        self.console.clear()
+        try:
+            self.console.setPlainText((run_dir / "console.log").read_text(encoding="utf-8"))
+        except OSError:
+            pass
+        self._last_run = run_dir
+        self._update_actions()
+        self._docks[1].raise_()
+        self.statusBar().showMessage(f"Showing the run of {self._run_label(run_dir)}")
+
+    def compare_run(self, run_dir) -> None:
+        """Draw a past run's curves dashed next to the current ones."""
+        from ..history import read_rows
+
+        run_dir = Path(run_dir)
+        label = self._run_label(run_dir)
+        self.plot.set_reference(read_rows(run_dir), label)
+        self.runs.set_comparing(True)
+        self._docks[1].raise_()
+        self.statusBar().showMessage(f"Comparing with the run of {label} (dashed). Compare "
+                                     "again with another run, or Clear comparison.", 8000)
+
+    def clear_comparison(self) -> None:
+        self.plot.set_reference([])
+        self.runs.set_comparing(False)
 
     def show_report(self) -> None:
         if self._last_run and (self._last_run / "report.html").is_file():

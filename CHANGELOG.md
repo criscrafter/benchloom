@@ -9,6 +9,10 @@
 - **Column order:** `columns = [...]` under `[plot]` in benchloom.toml sets the
   order of the logged columns in data.csv, the plot, the Data tab and the
   report. A visual test keeps the order of its Log row node by itself.
+- **Run history:** a Runs tab next to the console lists the project's runs with
+  their verdict, rows, checks and duration. Open a run's report, show its data
+  and console again, compare it with the current run (its curves are drawn
+  dashed, also while the next run is measured), or move it to the recycle bin.
 
 ## 0.1.4 – Data table, panel widgets, plugin registry and docs
 
