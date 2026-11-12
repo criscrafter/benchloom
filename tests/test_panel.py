@@ -125,6 +125,55 @@ QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 pytest.importorskip("pyqtgraph")
 
 
+def test_charts_take_several_curves_and_tables_take_rows(tmp_path):
+    project = make_project(tmp_path, """
+        panel.trend = { V = 5, I = 0.25 }
+        panel.results = { step = 1, V = 5, ok = true }
+        panel.results = nil
+        panel.dial = 3.5
+    """)
+    panel = Panel.load(project.path)
+    panel.widgets += [Widget("table", "results"), Widget("gauge", "dial", max=10)]
+    panel.save()
+    result, _, changes = run(project)
+    assert result.status == "ok", result.error
+    assert changes == [("trend", {"V": 5.0, "I": 0.25}),
+                       ("results", {"step": 1, "V": 5, "ok": True}),
+                       ("results", None), ("dial", 3.5)]
+
+
+@pytest.mark.parametrize("widget, code, message", [
+    (Widget("chart", "c"), "panel.c = { V = 'high' }", "a number or a table of numbers"),
+    (Widget("chart", "c"), "panel.c = {}", "a number or a table of numbers"),
+    (Widget("chart", "c", x_value="f"), "panel.c = { gain = -3 }", "needs 'f' in the table"),
+    (Widget("table", "t"), "panel.t = 5", "needs a row"),
+    (Widget("table", "t"), "panel.t = { a = { 1 } }", "needs a row"),
+    (Widget("gauge", "g"), "panel.g = 'x'", "needs a number"),
+])
+def test_new_widgets_reject_what_they_cannot_show(tmp_path, widget, code, message):
+    project = make_project(tmp_path, code)
+    panel = Panel.load(project.path)
+    panel.widgets.append(widget)
+    panel.save()
+    result, _, _ = run(project)
+    assert result.status == "error" and message in result.error
+    assert "main.lua:1:" in result.error
+
+
+def test_renaming_a_widget_in_graphs_and_scripts():
+    from benchloom.panel import rename_in_graph, rename_in_lua
+
+    graph = {"nodes": [{"id": "a", "type": "panel.get", "widget": "volts"},
+                       {"id": "b", "type": "panel.set", "widget": "volts2"},
+                       {"id": "c", "type": "device", "widget": "volts"}]}
+    assert rename_in_graph(graph, "volts", "target") == 1
+    assert [n["widget"] for n in graph["nodes"]] == ["target", "volts2", "volts"]
+    code = ("x = panel.volts + panel . volts2\npanel['volts'] = 1\n"
+            "local volts = panel.voltsx -- volts\nprint(panel[ \"volts\" ])")
+    assert rename_in_lua(code, "volts", "target") == (
+        "x = panel.target + panel . volts2\npanel['target'] = 1\n"
+        "local volts = panel.voltsx -- volts\nprint(panel[ \"target\" ])", 3)
+
 @pytest.fixture(scope="module")
 def app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -184,7 +233,7 @@ def test_live_panel_in_the_app(app, tmp_path):
     pump(app, 0.6)
     assert view.items["reading"].control.text() == "9 V"
     assert view.items["ok"].control.on is False
-    assert len(view.items["trend"]._points[0]) > 5
+    assert len(view.items["trend"]._series[""][0]) > 5
 
     view.items["stop"].control.click()
     status, error, _ = wait_for_run(app, window)
@@ -223,4 +272,85 @@ def test_edit_the_panel(app, tmp_path):
     view.remove(second)
     assert [w.name for w in Panel.load(project.path).widgets] == ["setpoint"]
     window.graph.modified = False
+    window.close()
+
+
+def test_new_widgets_in_the_app(app, tmp_path):
+    project = make_project(tmp_path, "")
+    panel = Panel.load(project.path)
+    panel.widgets += [Widget("table", "results", columns=["V", "step"]),
+                      Widget("gauge", "dial", max=10, unit="V"),
+                      Widget("chart", "bode", x_value="f", log_x=True)]
+    panel.save()
+    window = open_window(tmp_path, project)
+    view = window.panel_view
+    view.start_run()
+    view.show_value("trend", {"V": 5.0, "I": 0.25})
+    view.show_value("trend", {"V": 6.0, "I": 0.3})
+    view.show_value("trend", 7.0)  # a plain number is one more curve
+    trend = view.items["trend"]
+    assert sorted(trend._series) == ["", "I", "V"] and len(trend._series["V"][1]) == 2
+    view.show_value("bode", {"f": 100.0, "gain": -3.0})
+    view.show_value("bode", {"f": 0.0, "gain": 0.0})  # no place on a log axis
+    assert view.items["bode"]._series["gain"][:2] == ([100.0], [-3.0])
+    for i in range(3):
+        view.show_value("results", {"step": i, "V": i * 1.5})
+    rows = view.items["results"]._rows
+    assert rows.columns == ["V", "step"] and len(rows.rows) == 3  # the order set for it
+    view.show_value("results", None)
+    assert rows.rows == []
+    view.show_value("dial", 2.5)
+    assert view.items["dial"].control.fraction() == 0.25
+    view.start_run()  # a new run starts empty
+    assert view.items["trend"]._series == {}
+    window.close()
+
+
+def test_renaming_a_widget_keeps_the_nodes(app, tmp_path, monkeypatch):
+    from benchloom.gui import panel_view as panel_view_module
+
+    project = make_project(tmp_path, mode="visual")
+    window = open_window(tmp_path, project)
+    graph = window.graph.to_graph()
+    graph["nodes"].append({"id": "p1", "type": "panel.get", "widget": "target", "x": 0, "y": 0})
+    window.graph.load(graph, window._catalog())
+
+    def rename(dialog):  # what the settings dialog does when the user types a new name
+        dialog.name_edit.setText("setpoint")
+        dialog.accept()
+        return True
+
+    monkeypatch.setattr(panel_view_module.WidgetDialog, "exec", rename)
+    window.panel_view.edit_properties(window.panel_view.items["target"])
+    nodes = {n["id"]: n for n in window.graph.to_graph()["nodes"]}
+    assert nodes["p1"]["widget"] == "setpoint" and not window.graph.nodes["p1"].broken
+    assert window.graph.modified
+    window.graph.modified = False
+    window.close()
+
+
+def test_renaming_a_widget_offers_to_change_the_script(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from benchloom.gui import main_window as main_window_module
+    from benchloom.gui import panel_view as panel_view_module
+
+    project = make_project(tmp_path, "print(panel.target)\npanel.reading = panel.target\n")
+    window = open_window(tmp_path, project)
+    asked = []
+    monkeypatch.setattr(main_window_module.QMessageBox, "question",
+                        lambda *args: asked.append(args[2]) or QMessageBox.StandardButton.Yes)
+
+    def rename(dialog):
+        dialog.name_edit.setText("setpoint")
+        dialog.accept()
+        return True
+
+    monkeypatch.setattr(panel_view_module.WidgetDialog, "exec", rename)
+    window.panel_view.edit_properties(window.panel_view.items["target"])
+    assert "in 2 place(s)" in asked[0]
+    assert window.editor.toPlainText() == "print(panel.setpoint)\npanel.reading = panel.setpoint\n"
+    window.editor.undo()  # one step undoes it
+    assert "panel.target" in window.editor.toPlainText()
+    window.editor.document().setModified(False)
     window.close()

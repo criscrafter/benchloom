@@ -7,6 +7,10 @@
   the selected cells with full precision, ready to paste into a spreadsheet.
 - **Running node:** while a visual test runs, a green outline shows the node
   it is at, so a long loop or a slow instrument is easy to follow.
+- **Front panel:** a gauge and a table widget, and charts with several
+  curves (`panel.trend = { V = v, I = i }`), their X value taken from the
+  table (for example a frequency) and a log X axis. Renaming a widget renames
+  the nodes that use it, and offers to change the script.
 
 ## 0.1.3 – Safer stops, plugin consent and PyPI
 

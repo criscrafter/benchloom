@@ -48,10 +48,14 @@ def copy_text(value) -> str:
 
 
 class RowModel(QAbstractTableModel):
-    def __init__(self, parent=None):
+    """Rows as dicts. ``order`` lists columns that come first, in that order; the
+    others follow as they first appear. Lua tables have no order of their own."""
+
+    def __init__(self, parent=None, order: list[str] | None = None):
         super().__init__(parent)
         self.rows: list[dict] = []
         self.columns: list[str] = []
+        self.order = list(order or [])
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self.rows)
@@ -90,6 +94,8 @@ class RowModel(QAbstractTableModel):
     def extend(self, rows: list[dict]) -> None:
         new = [key for row in rows for key in row if key not in self.columns]
         new = list(dict.fromkeys(new))
+        if new and self.order:
+            new.sort(key=lambda k: self.order.index(k) if k in self.order else len(self.order))
         if new:
             self.beginInsertColumns(QModelIndex(), len(self.columns),
                                     len(self.columns) + len(new) - 1)

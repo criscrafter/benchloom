@@ -283,7 +283,7 @@ class LuaEngine:
 
     def _panel_set(self, name, value):
         try:
-            self.panel.set(name, self._to_python(value))
+            self.panel.set(name, self._plain(value))
             return True, None
         except PanelError as exc:
             return False, str(exc)

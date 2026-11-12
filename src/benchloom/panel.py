@@ -4,7 +4,9 @@
 
 The layout is stored in the project's ``panel.json``. A test reaches the widgets
 by name: ``panel.target_voltage`` reads a control, ``panel.output_ok = true``
-sets an indicator. This module has no Qt in it, so tests also run headless,
+sets an indicator. A chart takes a number, or a table of numbers for several
+curves (``panel.chart1 = { V = v, I = i }``); a table widget takes one row per
+assignment (``panel.results = { step = 1, V = v }``) and is emptied with nil. This module has no Qt in it, so tests also run headless,
 where controls keep their saved values.
 """
 
@@ -30,12 +32,17 @@ WIDGET_TYPES: dict[str, tuple[str, int, int]] = {
     "led": ("Indicator light", 120, 64),
     "bar": ("Bar", 230, 64),
     "chart": ("Chart", 380, 230),
+    "gauge": ("Gauge", 200, 170),
+    "table": ("Table", 380, 200),
     "label": ("Label", 170, 30),
 }
 CONTROLS = ("number", "switch", "button", "text")  # the user sets these
-INDICATORS = ("display", "led", "bar", "chart")  # the test sets these
+INDICATORS = ("display", "led", "bar", "gauge", "chart", "table")  # the test sets these
 VALUE_TYPES = {"number": "number", "switch": "boolean", "button": "boolean", "text": "string",
-               "led": "boolean", "bar": "number", "chart": "number"}
+               "led": "boolean", "bar": "number", "gauge": "number", "chart": "any",
+               "table": "any"}
+STREAMS = ("chart", "table")  # keep what the test sends instead of one current value
+TABLE_ROWS = 10000  # a table widget shows at most the newest this many rows
 
 
 class PanelError(Exception):
@@ -56,6 +63,9 @@ class Widget:
     max: float = 100.0
     value: Any = None  # saved value of a control
     decimals: int | None = None  # digits after the decimal point; None: automatic
+    x_value: str = ""  # chart: the entry of a table that is the X value instead of time
+    log_x: bool = False  # chart: X axis on a log scale
+    columns: list[str] | None = None  # table: these columns first, in this order
 
     @property
     def is_control(self) -> bool:
@@ -190,9 +200,62 @@ class PanelState:
             value = bool(value)
         elif kind == "string":
             value = "" if value is None else str(value)
+        elif widget.type == "chart":
+            value = _chart_value(name, widget, value)
+        elif widget.type == "table":
+            value = _table_value(name, value)
         elif not isinstance(value, (int, float, str, bool, type(None))):
             raise PanelError(f"panel.{name} cannot show {value!r}")
-        if widget.type != "chart":
+        if widget.type not in STREAMS:
             self.values[name] = value
         if self.on_change is not None:
             self.on_change(name, value)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _chart_value(name: str, widget: Widget, value: Any) -> float | dict[str, float]:
+    """A number (one curve), or curve name -> number (several curves at once)."""
+    if _is_number(value):
+        return float(value)
+    if isinstance(value, dict) and value and all(_is_number(v) for v in value.values()):
+        if widget.x_value and widget.x_value not in value:
+            raise PanelError(f"panel.{name} needs '{widget.x_value}' in the table, "
+                             "the chart's X value")
+        return {str(k): float(v) for k, v in value.items()}
+    raise PanelError(f"panel.{name} needs a number or a table of numbers, "
+                     f"such as {{ V = 5, I = 0.2 }}, got {value!r}")
+
+
+def _table_value(name: str, value: Any) -> dict[str, Any] | None:
+    """One row to add (column -> number, text or boolean), or None to empty the table."""
+    if value is None:
+        return None
+    if isinstance(value, dict) and value and all(
+            isinstance(v, (int, float, str, bool)) for v in value.values()):
+        return {str(k): v for k, v in value.items()}
+    raise PanelError(f"panel.{name} needs a row such as {{ step = 1, V = 5 }}, "
+                     f"or nil to empty it, got {value!r}")
+
+
+def rename_in_graph(graph: dict, old: str, new: str) -> int:
+    """Point a visual test's panel nodes at a renamed widget. Returns how many changed."""
+    changed = 0
+    for node in graph.get("nodes", []):
+        if node.get("type") in ("panel.get", "panel.set") and node.get("widget") == old:
+            node["widget"] = new
+            changed += 1
+    return changed
+
+
+def rename_in_lua(code: str, old: str, new: str) -> tuple[str, int]:
+    """Rename ``panel.old`` and ``panel["old"]`` in a script. Returns the code and how
+    many places changed; ``panel.older`` or a variable named ``old`` stay as they are."""
+    dotted = re.compile(rf"\bpanel(\s*\.\s*){re.escape(old)}\b")
+    indexed = re.compile(rf"\bpanel(\s*\[\s*)([\"']){re.escape(old)}\2(\s*\])")
+    code, a = dotted.subn(lambda m: f"panel{m.group(1)}{new}", code)
+    code, b = indexed.subn(lambda m: f"panel{m.group(1)}{m.group(2)}{new}{m.group(2)}"
+                                     f"{m.group(3)}", code)
+    return code, a + b

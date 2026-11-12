@@ -209,8 +209,14 @@ decimals. Numbers show about four significant digits without trailing zeros
 |---|---|---|
 | Number input, switch, text input | control | `panel.target` reads the current value |
 | Button | control | `panel.stop` is `true` once after each click |
-| Value display, indicator light, bar | indicator | `panel.voltage = v` shows a value |
-| Chart | indicator | `panel.trend = v` adds a point against time |
+| Value display, indicator light, bar, gauge | indicator | `panel.voltage = v` shows a value |
+| Chart | indicator | `panel.trend = v` adds a point against time; `panel.trend = { V = v, I = i }` adds one to each curve |
+| Table | indicator | `panel.results = { step = n, V = v }` adds a row; `panel.results = nil` empties it |
+
+A chart can take its X value from the table instead of the time: set
+**X value** to `f` and `panel.bode = { f = 1000, gain = -3 }` draws gain
+against f, on a log scale if you tick it. A table shows the columns named in
+its **Columns** setting first, in that order, since a Lua table has none.
 
 ```lua
 while not panel.stop do
@@ -221,7 +227,8 @@ end
 ```
 
 In a visual test the same widgets appear as nodes under **Front panel** in the
-right-click menu. The layout is saved in the project's `panel.json`. Run from
+right-click menu. Renaming a widget renames its nodes too; in a script, the
+app offers to change `panel.old_name` everywhere. The layout is saved in the project's `panel.json`. Run from
 the command line, controls have the values they had when last run in the app.
 
 ## Instruments

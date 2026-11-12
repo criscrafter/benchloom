@@ -7,24 +7,29 @@ from __future__ import annotations
 import time
 
 import pyqtgraph as pg
-from PySide6.QtCore import QLocale, QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QLocale, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame,
     QHBoxLayout,
     QLabel, QLineEdit, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QToolButton, QVBoxLayout, QWidget,
+    QTableView, QToolButton, QVBoxLayout, QWidget,
 )
 
-from .plot import style_plot
+from .plot import COLORS, style_plot
+from .table import RowModel
 from .theme import PALETTE_EVENTS
-from ..panel import CONTROLS, INDICATORS, WIDGET_TYPES, Panel, Widget, format_value, valid_name
+from ..panel import (
+    CONTROLS, INDICATORS, TABLE_ROWS, WIDGET_TYPES, Panel, Widget, format_value, valid_name,
+)
 
 GRID = 10
 MIN_W, MIN_H = 60, 30
 HANDLE = 14
 EDIT_COLOR = QColor("#3b82f6")
-LED_ON, LED_OFF =QColor("#22c55e"), QColor("#6b7280")
+LED_ON, LED_OFF = QColor("#22c55e"), QColor("#6b7280")
+GAUGE_COLOR = QColor("#3b82f6")
+GAUGE_START, GAUGE_SPAN = 225, -270  # degrees: from bottom left, clockwise to bottom right
 
 
 def snap(value: float) -> int:
@@ -71,6 +76,58 @@ class _Led(QWidget):
         painter.setPen(QPen(self.palette().mid().color(), 1.5))
         painter.setBrush(LED_ON if self.on else LED_OFF)
         painter.drawEllipse(2, (self.height() - size) // 2, size, size)
+
+
+class _Gauge(QWidget):
+    """A round dial: an arc from minimum to maximum, filled up to the value."""
+
+    def __init__(self, model: Widget):
+        super().__init__()
+        self.model = model
+        self.value: float | None = None
+        self.setMinimumSize(80, 70)
+
+    def fraction(self) -> float:
+        if self.value is None:
+            return 0.0
+        span = (self.model.max - self.model.min) or 1.0
+        return max(0.0, min(1.0, (self.value - self.model.min) / span))
+
+    def paintEvent(self, event) -> None:
+        model = self.model
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        side = min(self.width(), self.height() * 1.15) - 8
+        thick = max(6.0, side / 11)
+        rect = QRectF((self.width() - side) / 2 + thick / 2, thick / 2 + 2,
+                      side - thick, side - thick)
+        pen = QPen(self.palette().mid().color(), thick, Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(rect, GAUGE_START * 16, GAUGE_SPAN * 16)
+        if self.value is not None and self.fraction() > 0:
+            pen.setColor(GAUGE_COLOR)
+            painter.setPen(pen)
+            painter.drawArc(rect, GAUGE_START * 16, int(GAUGE_SPAN * 16 * self.fraction()))
+        painter.setPen(self.palette().text().color())
+        font = QFont(self.font())
+        font.setBold(True)
+        font.setPixelSize(max(10, int(side / 6.5)))
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter,
+                         format_number(self.value, "", model.decimals))
+        small = QFont(self.font())
+        small.setPixelSize(max(9, int(side / 13)))
+        painter.setFont(small)
+        painter.setPen(self.palette().placeholderText().color())
+        below = rect.adjusted(0, rect.height() * 0.28, 0, rect.height() * 0.28)
+        painter.drawText(below, Qt.AlignmentFlag.AlignCenter, model.unit)
+        bottom = QRectF(rect.left() - thick, rect.bottom() - small.pixelSize(),
+                        rect.width() + 2 * thick, small.pixelSize() * 2.2)
+        painter.drawText(bottom, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
+                         format_number(model.min, "", model.decimals))
+        painter.drawText(bottom, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
+                         format_number(model.max, "", model.decimals))
 
 
 class _EditOverlay(QWidget):
@@ -209,14 +266,25 @@ class PanelItem(QFrame):
             bar.setRange(0, 1000)
             bar.setFormat(format_number(None, model.unit, model.decimals))
             return bar
+        if kind == "gauge":
+            return _Gauge(model)
         if kind == "chart":
             plot = pg.PlotWidget()
             plot.showGrid(x=True, y=True, alpha=0.2)
             style_plot(plot, self.palette())
             plot.setLabel("left", model.unit or None)
-            self._points: tuple[list, list] = ([], [])
-            self._curve = plot.plot(pen=pg.mkPen("#3b82f6", width=2))
+            if model.x_value:
+                plot.setLabel("bottom", model.x_value)
+            plot.setLogMode(x=model.log_x, y=False)
+            self._legend = None
+            self._series: dict[str, tuple[list, list, pg.PlotDataItem]] = {}
             return plot
+        if kind == "table":
+            self._rows = RowModel(self, model.columns)
+            table = QTableView()
+            table.setModel(self._rows)
+            table.verticalHeader().setDefaultSectionSize(table.fontMetrics().height() + 6)
+            return table
         return QLabel(model.label or model.name)  # static label
 
     def show_value(self, value) -> None:
@@ -231,11 +299,24 @@ class PanelItem(QFrame):
             span = (model.max - model.min) or 1.0
             control.setValue(int(max(0.0, min(1.0, (value - model.min) / span)) * 1000))
             control.setFormat(format_number(value, model.unit, model.decimals))
-        elif kind == "chart" and isinstance(value, (int, float)):
-            xs, ys = self._points
-            xs.append(self.view.elapsed())
-            ys.append(value)
-            self._curve.setData(xs, ys)
+        elif kind == "gauge" and isinstance(value, (int, float)):
+            control.value = float(value)
+            control.update()
+        elif kind == "chart" and isinstance(value, (int, float, dict)):
+            self._add_points(value)
+        elif kind == "table":
+            if value is None:
+                self._rows.clear()
+            elif isinstance(value, dict):
+                bar = control.verticalScrollBar()
+                follow = bar.value() >= bar.maximum()
+                self._rows.extend([value])
+                if len(self._rows.rows) > TABLE_ROWS:
+                    self._rows.beginRemoveRows(QModelIndex(), 0, 0)
+                    del self._rows.rows[0]
+                    self._rows.endRemoveRows()
+                if follow:
+                    control.scrollToBottom()
         elif kind in ("number", "switch", "text"):
             control.blockSignals(True)
             if kind == "number" and isinstance(value, (int, float)):
@@ -248,11 +329,38 @@ class PanelItem(QFrame):
             control.blockSignals(False)
             model.value = value
 
+    def _add_points(self, value) -> None:
+        """A number adds to the one curve; a table adds a point to each of its curves."""
+        model = self.model
+        if isinstance(value, dict):
+            values = dict(value)
+            x = values.pop(model.x_value) if model.x_value in values else self.view.elapsed()
+        else:
+            values, x = {"": value}, self.view.elapsed()
+        if model.log_x and x <= 0:
+            return  # no place on a log axis
+        for name, y in values.items():
+            if name not in self._series:
+                if name and self._legend is None:
+                    self._legend = self.control.addLegend(offset=(6, 6))
+                    self._legend.setLabelTextColor(self.palette().text().color())
+                color = COLORS[len(self._series) % len(COLORS)]
+                curve = self.control.plot(pen=pg.mkPen(color, width=2), name=name or None)
+                self._series[name] = ([], [], curve)
+            xs, ys, curve = self._series[name]
+            xs.append(x)
+            ys.append(y)
+            curve.setData(xs, ys)
+
     def reset(self) -> None:
         """Called when a run starts."""
         if self.model.type == "chart":
-            self._points = ([], [])
-            self._curve.setData([], [])
+            self.control.clear()
+            if self._legend is not None:
+                self._legend.clear()
+            self._series = {}
+        elif self.model.type == "table":
+            self._rows.clear()
 
 
 class WidgetDialog(QDialog):
@@ -272,11 +380,27 @@ class WidgetDialog(QDialog):
         if kind != "label":
             form.addRow("Name in the test", self.name_edit)
         form.addRow("Text" if kind in ("button", "label") else "Caption", self.label_edit)
-        if kind in ("number", "display", "bar", "chart"):
+        if kind in ("number", "display", "bar", "gauge", "chart"):
             form.addRow("Unit", self.unit_edit)
-        if kind in ("number", "bar"):
+        if kind in ("number", "bar", "gauge"):
             form.addRow("Minimum", self.min_box)
             form.addRow("Maximum", self.max_box)
+        self.x_value_edit = QLineEdit(model.x_value)
+        self.x_value_edit.setPlaceholderText("time")
+        self.x_value_edit.setToolTip(
+            "When the test sets a table such as { f = 100, gain = -3 }, the entry named "
+            "here is the X value of the point (here: f). Empty: X is the time.")
+        self.log_x_box = QCheckBox("Log scale")
+        self.log_x_box.setChecked(model.log_x)
+        if kind == "chart":
+            form.addRow("X value", self.x_value_edit)
+            form.addRow("X axis", self.log_x_box)
+        self.columns_edit = QLineEdit(", ".join(model.columns or []))
+        self.columns_edit.setPlaceholderText("in the order they arrive")
+        self.columns_edit.setToolTip("Column names, separated by commas, in the order to "
+                                     "show them, such as: step, V, I. Others follow.")
+        if kind == "table":
+            form.addRow("Columns", self.columns_edit)
         self.decimals_box = QComboBox()
         self.decimals_box.addItem("Automatic", None)
         for n in range(10):
@@ -284,7 +408,7 @@ class WidgetDialog(QDialog):
         self.decimals_box.setCurrentIndex(self.decimals_box.findData(model.decimals))
         self.decimals_box.setToolTip("Digits after the decimal point. Automatic shows about "
                                      "four significant digits, without trailing zeros.")
-        if kind in ("number", "display", "bar"):
+        if kind in ("number", "display", "bar", "gauge"):
             form.addRow("Decimals", self.decimals_box)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -317,12 +441,21 @@ class WidgetDialog(QDialog):
         model.unit = self.unit_edit.text().strip()
         model.min, model.max = self.min_box.value(), self.max_box.value()
         model.decimals = self.decimals_box.currentData()
+        x_value = self.x_value_edit.text().strip()
+        if x_value and not valid_name(x_value):
+            QMessageBox.warning(self, "X value", "The X value must be a name like the "
+                                "entries of the table, such as f or set_V.")
+            return
+        model.x_value, model.log_x = x_value, self.log_x_box.isChecked()
+        columns = [c.strip() for c in self.columns_edit.text().split(",") if c.strip()]
+        model.columns = columns or None
         super().accept()
 
 
 class PanelView(QWidget):
     control_changed = Signal(str, object)  # the user changed a control
     edited = Signal()  # widgets were added, removed, renamed or moved
+    renamed = Signal(str, str)  # a widget's name in the test changed: old, new
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -419,8 +552,11 @@ class PanelView(QWidget):
         self._commit()
 
     def edit_properties(self, item: PanelItem) -> None:
+        old = item.model.name
         if WidgetDialog(self.panel, item.model, self).exec():
             self.rebuild(item)
+            if item.model.name != old:
+                self.renamed.emit(old, item.model.name)
 
     def rebuild(self, item: PanelItem) -> PanelItem:
         """Recreate a widget after its settings changed."""
