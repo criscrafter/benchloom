@@ -153,7 +153,7 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 ```
 
 Besides the devices, a script has `sleep(seconds)`, `log{...}` (one row in
-`data.csv`), `time()` (seconds since start), `print(...)` and `panel` (the
+`data.csv`, the plot and the Data tab), `time()` (seconds since start), `print(...)` and `panel` (the
 front panel, below), and:
 
 - `check(name, value, low, high, unit)`: a pass/fail check. It passes when the

@@ -50,10 +50,9 @@
    device, run folders, command line.
 2. **Desktop shell** (done): project wizard, device manager with serial port
    list and connection test, Lua editor, run/stop in a separate process,
-   console, live plot (with a log X axis), plugin manager, Settings window,
+   console, live plot (with a log X axis), data table, plugin manager, Settings window,
    project templates (the example, and a Bode plot for an FY6900 and a
-   DSO5102P). Still to do here: automatic device discovery, a data table, more
-   templates.
+   DSO5102P). Still to do here: automatic device discovery, more templates.
 3. **Node editor** (done): nodes generated from plugin commands, flow nodes
    (for, while, if), values (math, compare, logic, variables), logging, graph
    to Lua compiler, errors marked on the node, undo/redo, copy/paste and

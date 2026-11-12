@@ -30,6 +30,7 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .table import DataTable
 from .waveforms import WaveformPanel
 from .plugins import PluginManagerDialog
 from .runner import RunController
@@ -155,14 +156,17 @@ class MainWindow(QMainWindow):
         self.plot.hidden_columns_changed.connect(self._hidden_columns_changed)
         self.panel_view = PanelView()
         self.waveforms = WaveformPanel()
+        self.table = DataTable()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Console", self.console, Qt.DockWidgetArea.BottomDockWidgetArea),
             self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Waveforms", self.waveforms, Qt.DockWidgetArea.RightDockWidgetArea),
+            self._dock("Data", self.table, Qt.DockWidgetArea.RightDockWidgetArea),
         ]
-        self.tabifyDockWidget(self._docks[1], self._docks[3])
+        self.tabifyDockWidget(self._docks[1], self._docks[5])
+        self.tabifyDockWidget(self._docks[5], self._docks[3])
         self.tabifyDockWidget(self._docks[3], self._docks[4])
         self._docks[1].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
@@ -171,6 +175,7 @@ class MainWindow(QMainWindow):
         self.runner = RunController(self)
         self.runner.printed.connect(self._print)
         self.runner.row.connect(self.plot.add_row)
+        self.runner.row.connect(self.table.add_row)
         self.runner.panel.connect(self.panel_view.show_value)
         self.runner.waveform.connect(self.waveforms.add)
         self.runner.check.connect(self._check_done)
@@ -407,6 +412,7 @@ class MainWindow(QMainWindow):
         self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
+        self.table.clear()
         self.waveforms.clear()
         self._apply_plot_settings(project)
         self.editor.mark_error(None)
@@ -596,6 +602,7 @@ class MainWindow(QMainWindow):
             return
         self.console.clear()
         self.plot.clear()
+        self.table.clear()
         self.waveforms.clear()
         self._failed_checks = self._checks = 0
         self.editor.mark_error(None)
@@ -630,6 +637,7 @@ class MainWindow(QMainWindow):
         self._failed_checks += not record.get("passed")
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
+        self.table.flush()
         self._last_run = Path(path) if path else None
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)

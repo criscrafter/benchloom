@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Data table:** a Data tab next to the plot lists every logged row as it
+  arrives. It follows the newest row unless you scroll up, and Ctrl+C copies
+  the selected cells with full precision, ready to paste into a spreadsheet.
+
 ## 0.1.3 – Safer stops, plugin consent and PyPI
 
 - **Plugins in a project need your consent:** a project's own `plugins/` folder
