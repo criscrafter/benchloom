@@ -4,7 +4,10 @@
 
 - **Stop during a slow device command** switches the devices off again. A
   command still running more than about 2 s after the stop timeout made the app
-  end the run before the devices were shut down, leaving outputs on.
+  end the run before the devices were shut down, leaving outputs on. The run
+  now answers Stop at once, and the app ends only a run that does not; and a
+  run whose script ended just as it was finished without it no longer gets
+  reported as "ended unexpectedly".
 - **A failed shutdown is no longer hidden:** `run.json` records for each device
   whether it was shut down (`"shutdown": {"psu": "done"}`) or not
   (`"failed: …"`). The report shows a warning above the verdict, the app

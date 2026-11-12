@@ -6,7 +6,8 @@ Kept free of Qt imports so the process starts quickly. Messages on the queue:
 ``("print", text)``, ``("row", dict)``, ``("panel", name, value)``,
 ``("check", dict)``, ``("waveform", name, traces)``, ``("node", id)`` for the node of
 a visual test that is running now and ``("line", number)`` for the script line (each a
-few times a second at most), ``("shutdown",)``
+few times a second at most), ``("stopping",)`` as soon as the run has seen the
+stop (it then shuts its devices down by itself), ``("shutdown",)``
 when the devices start to be shut down, and ``("done", status, error, run_path)``.
 The app sends ``(name, value)`` pairs on ``control_queue`` whenever the user changes
 a front panel control.
@@ -18,6 +19,9 @@ import os
 import threading
 
 NODE_REPORT_S = 0.05  # how often the running node is reported, when it changed
+# Never set: the main thread waits on it (with a timeout) while the other thread that
+# may report a run's end does so and then ends the process.
+REPORT_FLUSH_WAIT = threading.Event()
 
 from .engine import run_project
 
@@ -67,6 +71,13 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
         queue.put(("done", status, error, path))
         return True
 
+    def report_and_wait(status: str, error: str, path: str) -> None:
+        """Report from the main thread. If the run was finished without the script
+        and that thread reports, wait for it: it ends the process once "done" is on
+        its way, and leaving first would end the process before that."""
+        if not report(status, error, path):
+            REPORT_FLUSH_WAIT.wait(30)
+
     def abandoned(result) -> None:
         if report(result.status, result.error or "", str(result.path)):
             queue.close()
@@ -90,14 +101,15 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
             on_waveform=lambda name, traces: queue.put(("waveform", name, traces)),
             stop_timeout=stop_timeout,
             on_shutdown=lambda: queue.put(("shutdown",)),
+            on_stopping=lambda: queue.put(("stopping",)),
             on_abandoned=abandoned,
             on_node=nodes,
             on_line=lines,
         )
         nodes.done.set()  # nothing about nodes or lines after "done"
         lines.done.set()
-        report(result.status, result.error or "", str(result.path))
+        report_and_wait(result.status, result.error or "", str(result.path))
     except Exception as exc:  # failed before the run started
         nodes.done.set()
         lines.done.set()
-        report("error", str(exc), "")
+        report_and_wait("error", str(exc), "")

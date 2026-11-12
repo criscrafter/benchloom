@@ -446,6 +446,7 @@ def run_project(
     trust_plugins: bool = False,
     stop_timeout: float | None = None,
     on_shutdown: Callable[[], None] | None = None,
+    on_stopping: Callable[[], None] | None = None,
     on_abandoned: Callable[[RunResult], None] | None = None,
     on_node: Callable[[str], None] | None = None,
     on_line: Callable[[int], None] | None = None,
@@ -464,7 +465,10 @@ def run_project(
     shut down anyway, from another thread, so that outputs do not stay on; the run is
     finished as "stopped" and ``on_abandoned`` gets its result. The script itself may
     still be running then: the caller has to end the process. ``on_shutdown`` is
-    called when the devices start to be shut down, on either way.
+    called when the devices start to be shut down, on either way. ``on_stopping``
+    is called as soon as the stop is seen (with ``stop_timeout`` only): from then
+    on the run shuts its devices down by itself, within ``stop_timeout`` plus
+    ``STOP_COMMAND_WAIT_S`` and the time the drivers take to close.
 
     ``on_node`` gets the id of each node of a visual test as it starts to run. It is
     called very often; keep it short. ``on_line`` gets the script line the test is at,
@@ -575,6 +579,11 @@ def run_project(
         while not stop_event.wait(0.2):
             if script_ended.is_set():
                 return
+        if on_stopping is not None:
+            try:
+                on_stopping()  # this process answers: the caller need not end it
+            except Exception:
+                pass
         if script_ended.wait(stop_timeout):
             return
         emit(f"The test did not stop within {stop_timeout:g} s; shutting the devices down.")

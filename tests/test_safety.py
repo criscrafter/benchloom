@@ -236,6 +236,8 @@ def test_a_script_that_does_not_stop_still_gets_its_devices_switched_off(tmp_pat
     seen, ended = run_in_worker(project, stop_after=0.2, stop_timeout=0.5)
     assert ended, "the run's process did not end by itself"
     assert ("shutdown",) in seen
+    # the stop is answered at once, before the devices are shut down
+    assert seen.index(("stopping",)) < seen.index(("shutdown",))
     done = seen[-1]
     assert done[:2] == ("done", "stopped") and done[3], seen
     assert (folder / "switched_off.txt").exists()
