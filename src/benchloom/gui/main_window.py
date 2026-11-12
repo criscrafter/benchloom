@@ -7,6 +7,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QUrl
@@ -39,6 +40,7 @@ from .settings import (  # noqa: F401
     GuiSettings, SettingsDialog, app_settings, default_projects_dir,
 )
 from .theme import THEMES, apply_theme
+from .update_bar import UpdateBar, UpdateChecker
 
 MAX_RECENT = 8
 
@@ -155,6 +157,9 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.editor)
         self.stack.addWidget(self.graph)
         self.setCentralWidget(self.stack)
+        self.update_checker = UpdateChecker(self)
+        self.update_checker.done.connect(self._update_checked)
+        self._update_automatic = True
 
         self.devices = DevicesPanel()
         self.devices.command_activated.connect(self._command_activated)
@@ -307,6 +312,19 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self._build_theme_button())
         self.addToolBar(toolbar)
 
+        # a newer version: a bar across the window, under the toolbar, while it is shown
+        self.update_bar = UpdateBar()
+        self.update_bar.skipped.connect(lambda version: self.prefs.set("skipped_version", version))
+        updates = QToolBar("New version")
+        updates.setObjectName("Updates")
+        updates.setMovable(False)
+        updates.toggleViewAction().setVisible(False)  # not in the toolbars' menu
+        updates.addWidget(self.update_bar)
+        updates.hide()
+        self.update_bar.shown.connect(updates.setVisible)
+        self.addToolBarBreak()
+        self.addToolBar(updates)
+
     # --- theme ------------------------------------------------------------
     def theme(self) -> str:
         return self.prefs.get("theme")
@@ -349,8 +367,54 @@ class MainWindow(QMainWindow):
             html.escape(NOTICE.split("\n", 1)[1].strip()).replace("\n\n", "<br><br>")
             .replace("\n", " ").replace(HOMEPAGE, f'<a href="{HOMEPAGE}">{HOMEPAGE}</a>'))
         box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        box.addButton(QMessageBox.StandardButton.Close)
+        check = box.addButton("Check for updates", QMessageBox.ButtonRole.ActionRole)
         box.exec()
+        wanted = box.clickedButton() is check
         box.deleteLater()  # dialogs made with a parent stay until deleted
+        if wanted:
+            self.check_for_updates(automatic=False)
+
+    # --- updates ----------------------------------------------------------
+    UPDATE_INTERVAL_S = 24 * 3600
+
+    def check_for_updates(self, automatic: bool = True) -> bool:
+        """Ask GitHub whether a newer version is out. Automatic checks (at start) run
+        at most once a day, only while switched on in Settings, and stay quiet unless
+        there is something new; a check asked for in About always reports back."""
+        if automatic:
+            if not self.prefs.get("check_updates"):
+                return False
+            try:
+                if time.time() - float(self.prefs.get("last_update_check")) <                         self.UPDATE_INTERVAL_S:
+                    return False
+            except ValueError:
+                pass  # never checked
+        if not self.update_checker.start():
+            return False
+        self._update_automatic = automatic
+        if not automatic:
+            self.statusBar().showMessage("Checking for a new version…")
+        return True
+
+    def _update_checked(self, release, error: str) -> None:
+        automatic = self._update_automatic
+        if release is None:
+            if not automatic:
+                self.statusBar().clearMessage()
+                QMessageBox.warning(self, "Check for updates",
+                                    f"Benchloom could not check for a new version: {error}")
+            return
+        self.prefs.set("last_update_check", str(time.time()))
+        if release.newer_than():
+            if not (automatic and release.version == self.prefs.get("skipped_version")):
+                self.update_bar.show_release(release)
+            if not automatic:
+                self.statusBar().showMessage(f"Benchloom {release.version} is available", 5000)
+        elif not automatic:
+            self.statusBar().clearMessage()
+            QMessageBox.information(self, "Check for updates",
+                                    f"Benchloom {__version__} is the newest version.")
 
     def open_settings(self) -> bool:
         dialog = SettingsDialog(self.prefs, self)

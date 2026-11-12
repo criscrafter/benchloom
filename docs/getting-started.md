@@ -47,6 +47,19 @@
     need no hardware. [CONTRIBUTING.md](https://github.com/criscrafter/benchloom/blob/main/CONTRIBUTING.md)
     has the rest.
 
+## Updates
+
+When Benchloom starts, it asks GitHub at most once a day whether a newer version
+is out. If so, a bar under the toolbar says which one, and **What's new and
+download** opens its release page. For the Windows download, get the new zip
+there; installed with pip, update with `pip install --upgrade benchloom`. **Skip
+this version** stops the bar for that version; **Later** hides it until the next
+start.
+
+The check sends nothing about you or your projects: it is an ordinary request
+for the latest release, which GitHub sees with your IP address. Switch it off
+under Settings → General; **About → Check for updates** checks at any time.
+
 ## Your first test
 
 1. Choose **New project**, give it a name, and pick **Lua script** or

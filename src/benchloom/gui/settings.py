@@ -43,6 +43,7 @@ class GuiSettings:
     """Typed access to the desktop app's QSettings."""
 
     DEFAULTS = {"theme": "system", "projects_dir": "", "reopen_last": False,
+                "check_updates": True, "skipped_version": "", "last_update_check": "",
                 "editor_font_size": 11, "console_font_size": 10, "console_lines": 10000}
     LIMITS = {"editor_font_size": (6, 40), "console_font_size": (6, 40),
               "console_lines": (500, 1_000_000)}
@@ -113,12 +114,18 @@ class SettingsDialog(QDialog):
         row.addWidget(self.projects_edit, 1)
         row.addWidget(browse)
         self.reopen_check = QCheckBox("Open the last project when Benchloom starts")
+        self.updates_check = QCheckBox("Check for new versions when Benchloom starts")
         page = QWidget()
         form = QFormLayout(page)
         form.addRow("Theme", self.theme_combo)
         form.addRow("Projects folder", row)
         form.addRow(self._hint("Where new projects go and where Open project starts."))
         form.addRow("", self.reopen_check)
+        form.addRow("", self.updates_check)
+        form.addRow(self._hint("At most once a day, Benchloom asks GitHub for its latest "
+                               "release and shows a bar if there is a newer one. Nothing "
+                               "about you or your projects is sent. About → Check for "
+                               "updates checks at any time."))
         return page
 
     def _editor_page(self) -> QWidget:
@@ -211,6 +218,7 @@ class SettingsDialog(QDialog):
         self.theme_combo.setCurrentIndex(self.theme_combo.findData(get("theme")))
         self.projects_edit.setText(get("projects_dir"))
         self.reopen_check.setChecked(get("reopen_last"))
+        self.updates_check.setChecked(get("check_updates"))
         self.editor_font.setValue(get("editor_font_size"))
         self.console_font.setValue(get("console_font_size"))
         self.console_lines.setValue(get("console_lines"))
@@ -231,6 +239,7 @@ class SettingsDialog(QDialog):
             "theme": self.theme_combo.currentData(),
             "projects_dir": self.projects_edit.text().strip(),
             "reopen_last": self.reopen_check.isChecked(),
+            "check_updates": self.updates_check.isChecked(),
             "editor_font_size": self.editor_font.value(),
             "console_font_size": self.console_font.value(),
             "console_lines": self.console_lines.value(),

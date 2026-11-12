@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Update message:** when a newer version is out, a bar under the toolbar says
+  so, with its release page one click away (the download, or the `pip` command
+  to update). Benchloom asks GitHub at most once a day at start; switch it off
+  in Settings, or check any time with About → Check for updates. **Skip this
+  version** keeps it quiet until the next one.
 - **No more sudden crash on Python 3.11:** a reference counting bug in PySide6
   slowly used up Python's count of `None`, until Python aborted with
   "none_dealloc" (seen in the tests on Linux, after many windows and theme
