@@ -11,6 +11,11 @@
   curves (`panel.trend = { V = v, I = i }`), their X value taken from the
   table (for example a frequency) and a log X axis. Renaming a widget renames
   the nodes that use it, and offers to change the script.
+- **Plugin registry:** Plugins → Browse online lists plugins others wrote
+  (`registry/index.json` in this repository, added to by pull request) and
+  installs or updates them; a download whose SHA-256 differs from the list is
+  refused. On the command line: `benchloom plugins search`, `benchloom plugins
+  install <id>`, and `benchloom plugins entry` to make the entry for your own.
 
 ## 0.1.3 – Safer stops, plugin consent and PyPI
 

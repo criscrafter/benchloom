@@ -263,13 +263,19 @@ A plugin is a folder with a `plugin.toml` and Python files.
 **Plugins** in the toolbar lists every plugin found, with its devices. There a
 plugin can be switched off (its devices leave the Add device list and runs
 refuse them), installed from a folder or a `.zip`, or removed (to the recycle
-bin). Installed plugins go to `~/.benchloom/plugins/`. The same from the command
-line:
+bin). Installed plugins go to `~/.benchloom/plugins/`. **Browse online** lists
+plugins others wrote, from the [plugin registry](registry/), to install or
+update with one click; each download is checked against the checksum in the
+list. The same from the command line:
 
 ```
+benchloom plugins search rigol            # the online list
+benchloom plugins install rigol           # a listed plugin, by id
 benchloom plugins install my-plugin.zip   # or a folder; --replace to update
 benchloom plugins disable hp              # enable, remove
 ```
+
+To list your own plugin, see [registry/README.md](registry/README.md).
 
 Plugins are loaded from, in order: the built-in ones, `~/.benchloom/plugins/`,
 the extra folders set in Settings, and the project's own `plugins/` folder. A

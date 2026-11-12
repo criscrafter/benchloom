@@ -69,8 +69,9 @@
    FY6900. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
    VISA. Tried on hardware: KP184, 6404, DSO5102P and FY6900. See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build (done: a zip built with PyInstaller,
-   self-tested and attached to each release by CI), then Linux, then Mac. Plugin install
-   from a registry (install from a folder or .zip is done).
+   self-tested and attached to each release by CI), then Linux, then Mac. Plugins
+   install from a folder, a .zip or the online registry (`registry/index.json`,
+   added to by pull request; downloads checked by SHA-256).
 
 ## Not verified yet
 
