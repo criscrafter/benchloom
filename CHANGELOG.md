@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **No more sudden crash on Python 3.11:** a reference counting bug in PySide6
+  slowly used up Python's count of `None`, until Python aborted with
+  "none_dealloc" (seen in the tests on Linux, after many windows and theme
+  switches; a long session in the app could hit it too). Benchloom now works
+  around it on Python 3.11; 3.12 and newer were never affected.
+
 ## 0.1.5 – Safer stops, run history and Lua autocomplete
 
 - **Stop during a slow device command** switches the devices off again. A
