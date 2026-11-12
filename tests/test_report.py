@@ -189,3 +189,19 @@ def test_release_notes_come_from_the_changelog():
     assert "old" not in text and "WITHOUT" not in text and "without warranty" in text
     assert module.section(module.ROOT.joinpath("CHANGELOG.md").read_text(encoding="utf-8"),
                           "0.1.1").startswith("- **Windows download:**")
+
+
+def test_command_line_exit_code_follows_the_verdict(tmp_path, capsys):
+    from benchloom.cli import main as cli
+
+    project = create_project(tmp_path / "proj")
+    script = project.path / "main.lua"
+    for code, expected, verdict in [('check("ok", 5, 0, 10)', 0, "PASS: 1 of 1"),
+                                    ('check("ok", 5, 0, 10) check("bad", 11, 0, 10)', 1,
+                                     "FAIL: 1 of 2"),
+                                    ('print("no checks")', 0, None),
+                                    ('error("boom")', 1, None)]:
+        script.write_text(code, encoding="utf-8")
+        assert cli(["run", str(project.path)]) == expected, code
+        out = capsys.readouterr().out
+        assert (verdict in out) if verdict else ("checks passed" not in out)

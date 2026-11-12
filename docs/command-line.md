@@ -13,19 +13,18 @@ benchloom run my-test                    # run it; the run folder is printed
 benchloom gui                            # the desktop app
 ```
 
-`benchloom run` prints what the test prints, then the run folder. Its exit code
-says how the run went, for use in scripts:
+`benchloom run` prints what the test prints, then the run folder and, when the
+test made checks, its verdict (`PASS: 3 of 3 checks passed`). Its exit code
+says how the run went, for use in scripts and CI:
 
 | Exit code | Meaning |
 |---|---|
-| 0 | the test ran to its end |
-| 1 | the test failed with an error, or was stopped |
+| 0 | the test ran to its end, and every check passed (or it made none) |
+| 1 | a check failed, or the test failed with an error, or was stopped |
 | 2 | Benchloom could not start the run (no such project, a plugin error) |
 
-The exit code does not include the checks: a test that ends normally gives 0
-even when a check failed. The verdict is the `result` in the run's
-`run.json` (`pass`, `fail` or `none`), and each check printed a `PASS` or
-`FAIL` line. `benchloom gui my-test` opens a project in the app.
+The run's `run.json` has the details: `status` (`ok`, `error`, `stopped`) and
+`result` (`pass`, `fail`, `none`). `benchloom gui my-test` opens a project in the app.
 
 Stop a run with Ctrl+C; the outputs are switched off as after a run in the
 app. `--trust-plugins` allows the project's own `plugins/` folder to load, now

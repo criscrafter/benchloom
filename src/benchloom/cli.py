@@ -24,7 +24,11 @@ def _new(args) -> int:
 def _run(args) -> int:
     result = run_project(args.path, trust_plugins=args.trust_plugins)
     print(f"\n{len(result.rows)} row(s) logged. Run saved to {result.path}")
-    return 0 if result.status == "ok" else 1
+    if result.status == "ok" and result.verdict != "none":
+        passed = sum(1 for c in result.checks or [] if c.get("passed"))
+        print(f"{result.verdict.upper()}: {passed} of {len(result.checks or [])} checks passed")
+    # for scripts and CI: 1 when a check failed, as when the test failed or was stopped
+    return 0 if result.status == "ok" and result.verdict != "fail" else 1
 
 
 def _devices(args) -> int:
