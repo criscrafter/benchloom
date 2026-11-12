@@ -165,6 +165,7 @@ class SerialTransport(Transport):
             stopbits=int(stopbits) if stopbits.is_integer() else stopbits,
             rtscts=bool(int(rtscts)),
         )
+        self.lines: dict[str, bool] = {}  # DTR/RTS levels set with set_lines
         self._serial = None
 
     def open(self) -> None:
@@ -183,6 +184,8 @@ class SerialTransport(Transport):
             except serial.SerialException:
                 self.close()
                 raise TransportError(f"cannot open serial port {self.port}: {exc}") from exc
+        if self.lines:
+            self.set_lines()
 
     def configure(self, *, baud=None, bytesize=None, parity=None, stopbits=None) -> None:
         """Change the port settings, also while open. For instruments whose serial
@@ -190,11 +193,34 @@ class SerialTransport(Transport):
         changes = {"baudrate": baud, "bytesize": bytesize,
                    "parity": None if parity is None else str(parity).upper()[:1],
                    "stopbits": stopbits}
+        changed = False
         for key, value in changes.items():
-            if value is not None:
+            if value is not None and self.serial_options.get(key) != value:
                 self.serial_options[key] = value
-                if self._serial is not None:
-                    setattr(self._serial, key, value)
+                changed = True
+        if changed and self._serial is not None:
+            import serial
+
+            try:
+                # all at once: one reconfiguration of the port instead of one per setting
+                self._serial.apply_settings({k: v for k, v in self.serial_options.items()
+                                             if k != "rtscts"})
+            except serial.SerialException:
+                # the CH340 quirk described in open(): change the baud rate away and back
+                self._reconfigure()
+
+    def set_lines(self, *, dtr: bool | None = None, rts: bool | None = None) -> None:
+        """Set the DTR and RTS output lines, also while open (kept for the next open).
+
+        For cables that take their power from these lines, such as the optical
+        receivers of handheld multimeters."""
+        if dtr is not None:
+            self.lines["dtr"] = bool(dtr)
+        if rts is not None:
+            self.lines["rts"] = bool(rts)
+        if self._serial is not None:
+            for name, value in self.lines.items():
+                setattr(self._serial, name, value)
 
     def _other_baud(self) -> int:
         return 19200 if self.serial_options["baudrate"] != 19200 else 9600

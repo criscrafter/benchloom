@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Digitek DT-4000ZC multimeter** (`fs9721.dt4000zc`): reads the display of
+  this handheld meter over its optical serial cable, as a number in the base
+  unit or as text, and checks that the dial is on the function asked for:
+  volts, amps, ohms, continuity, diode, capacitance, frequency, duty cycle and
+  temperature. The decoder handles the FS9721 chip that many cheap meters use.
+  With a USB serial adapter the cable may need a 3.3 kΩ resistor (see
+  docs/INSTRUMENTS.md).
+- **Serial ports:** drivers can set the DTR and RTS lines (`set_lines`), for
+  cables powered from them. Changing the port settings while open works around
+  the CH340 driver refusing them, as opening already did.
+
 ## 0.1.6 – Update message and a Python 3.11 crash fix
 
 - **Update message:** when a newer version is out, a bar under the toolbar says
