@@ -16,6 +16,10 @@
   installs or updates them; a download whose SHA-256 differs from the list is
   refused. On the command line: `benchloom plugins search`, `benchloom plugins
   install <id>`, and `benchloom plugins entry` to make the entry for your own.
+- **Documentation site** at <https://criscrafter.github.io/benchloom/>, built
+  from `docs/`: getting started, projects and resources, the Lua reference,
+  visual tests, the front panel, the command line, instruments, writing and
+  sharing plugins, and safety.
 
 ## 0.1.3 – Safer stops, plugin consent and PyPI
 

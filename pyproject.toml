@@ -48,10 +48,12 @@ usb = ["python-usbtmc>=0.8", "pyusb>=1.2", "libusb-package>=1.0.26"]
 # The desktop app. Optional so the engine can run headless on small machines.
 gui = ["PySide6>=6.6", "pyqtgraph>=0.13"]
 dev = ["pytest>=7"]
+# The documentation site (mkdocs serve, mkdocs build).
+docs = ["mkdocs-material>=9.5,<10"]
 
 [project.urls]
 Homepage = "https://github.com/criscrafter/benchloom"
-Documentation = "https://github.com/criscrafter/benchloom#readme"
+Documentation = "https://criscrafter.github.io/benchloom/"
 Issues = "https://github.com/criscrafter/benchloom/issues"
 Changelog = "https://github.com/criscrafter/benchloom/blob/main/CHANGELOG.md"
 

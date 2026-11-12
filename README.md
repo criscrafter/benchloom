@@ -12,6 +12,10 @@ PASS/FAIL report behind.
 The goal is a short path from "I need to automate this" to a running setup,
 without licence fees, accounts or a vendor runtime.
 
+**Documentation:** <https://criscrafter.github.io/benchloom/>, with getting
+started, the Lua reference, visual tests, the front panel, instruments and
+writing plugins.
+
 ![Benchloom running a Bode plot of an RC filter](docs/images/app.png)
 
 > **Status: early (0.1).** Benchloom works and is used on a real bench, but it

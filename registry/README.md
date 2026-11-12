@@ -14,22 +14,24 @@ checked, not that the code is safe. Install plugins from people you trust.
 ## Adding your plugin
 
 1. Put the plugin folder (with its `plugin.toml`) into a .zip and publish it
-   at a permanent https:// address, for example as a GitHub release asset.
-   A new version gets a new file; never replace a listed one.
+    at a permanent https:// address, for example as a GitHub release asset.
+    A new version gets a new file; never replace a listed one.
+
 2. Make the entry:
 
-   ```
-   benchloom plugins entry my-plugin-1.0.0.zip --url https://github.com/you/my-plugin/releases/download/v1.0.0/my-plugin-1.0.0.zip
-   ```
+    ```
+    benchloom plugins entry my-plugin-1.0.0.zip --url https://github.com/you/my-plugin/releases/download/v1.0.0/my-plugin-1.0.0.zip
+    ```
 
-   It prints the entry with the checksum and the details from `plugin.toml`.
-   Fill in `author`, `license` and `homepage`.
+    It prints the entry with the checksum and the details from `plugin.toml`.
+    Fill in `author`, `license` and `homepage`.
+
 3. Open a pull request that adds the entry to `plugins` in `index.json`
-   (or replaces the entry of the older version). Say which instruments you
-   tried it with.
+    (or replaces the entry of the older version). Say which instruments you
+    tried it with.
 
 The plugin keeps its own licence; the entry only points to it. How to write
-a plugin is in the main README, under "A plugin".
+a plugin: [Writing a plugin](https://criscrafter.github.io/benchloom/writing-plugins/).
 
 ## Your own list
 
