@@ -20,11 +20,15 @@ says how the run went, for use in scripts and CI:
 | Exit code | Meaning |
 |---|---|
 | 0 | the test ran to its end, and every check passed (or it made none) |
-| 1 | a check failed, or the test failed with an error, or was stopped |
+| 1 | a check failed, or the test failed with an error, or was stopped, or a device could not be shut down |
 | 2 | Benchloom could not start the run (no such project, a plugin error) |
 
-The run's `run.json` has the details: `status` (`ok`, `error`, `stopped`) and
-`result` (`pass`, `fail`, `none`). `benchloom gui my-test` opens a project in the app.
+The run's `run.json` has the details: `status` (`ok`, `error`, `stopped`),
+`result` (`pass`, `fail`, `none`) and `shutdown`, which says for each device
+whether its driver shut it down (`done`) or reported an error doing so
+(`failed: …`; check that its output is off). `done` means the driver sent its
+commands without an error, not that the output was measured to be off.
+`benchloom gui my-test` opens a project in the app.
 
 Stop a run with Ctrl+C; the outputs are switched off as after a run in the
 app. `--trust-plugins` allows the project's own `plugins/` folder to load, now

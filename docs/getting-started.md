@@ -123,7 +123,7 @@ Each run gets a folder under the project's `runs/`, named by date and time:
 |---|---|
 | `data.csv` | the rows the test logged, with `time_s` (seconds since the start) |
 | `console.log` | everything the test printed, and errors |
-| `run.json` | status, verdict, check counts, Benchloom version, devices |
+| `run.json` | status, verdict, check counts, Benchloom version, devices and how each one's shutdown went |
 | `checks.csv` | each pass/fail check: name, value, limits, unit, result |
 | `waveforms/` | saved waveforms as CSV, SVG and PNG |
 | `report.html` | one page with the verdict, checks, a chart, the waveforms, the devices, the data and the console |

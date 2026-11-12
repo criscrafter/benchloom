@@ -43,6 +43,15 @@ from .theme import THEMES, apply_theme
 MAX_RECENT = 8
 
 
+def _shutdown_failed(run_path: Path) -> list[str]:
+    """The devices of a finished run whose shutdown failed, from its run.json."""
+    try:
+        meta = json.loads((run_path / "run.json").read_text(encoding="utf-8"))
+        return [name for name, how in (meta.get("shutdown") or {}).items() if how != "done"]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 class NewProjectDialog(QDialog):
     def __init__(self, parent=None, location: Path | None = None):
         super().__init__(parent)
@@ -734,6 +743,11 @@ class MainWindow(QMainWindow):
                         "checks passed", error=bool(self._failed_checks))
         if self.waveforms.waveforms:
             parts.append(f"{len(self.waveforms.waveforms)} waveform(s) saved")
+        failed = _shutdown_failed(Path(path)) if path else []
+        if failed:  # last, so a PASS above does not hide it
+            self._print(f"WARNING: shutting down {', '.join(failed)} failed; check that "
+                        "their outputs are off.", error=True)
+            parts.append(f"shutdown failed: {', '.join(failed)}")
         self.statusBar().showMessage(" · ".join(parts))
         self._update_actions()
         if self._close_when_stopped:

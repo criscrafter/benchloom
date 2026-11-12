@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Stop during a slow device command** switches the devices off again. A
+  command still running more than about 2 s after the stop timeout made the app
+  end the run before the devices were shut down, leaving outputs on.
+- **A failed shutdown is no longer hidden:** `run.json` records for each device
+  whether it was shut down (`"shutdown": {"psu": "done"}`) or not
+  (`"failed: …"`). The report shows a warning above the verdict, the app
+  repeats it after the verdict in the console and the status bar, and
+  `benchloom run` exits with 1.
+- **Safer ends of a run:** a device whose `connect()` fails gets its `close()`
+  called before its port is closed; a failing `on_shutdown` callback no longer
+  keeps the devices from being shut down; and a run ended by a fault in
+  Benchloom itself is recorded as `error`, never as `ok`.
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI
   see a FAIL; it also prints the verdict. Before, only errors and stops gave 1.
 - Dialogs (devices, settings, plugins, new project, About) are deleted after

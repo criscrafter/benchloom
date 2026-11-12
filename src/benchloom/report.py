@@ -33,6 +33,9 @@ h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #e5e7eb; paddin
 .fail { background: #fee2e2; color: #991b1b; }
 .none, .stopped, .error { background: #f3f4f6; color: #374151; }
 .error { background: #fef3c7; color: #92400e; }
+.shutdown-failed { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;
+                   border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
+.shutdown-failed ul { margin: 4px 0 0; }
 table { border-collapse: collapse; font-size: 13px; margin: 8px 0; }
 th, td { border: 1px solid #e5e7eb; padding: 3px 8px; text-align: left; }
 th { background: #f9fafb; }
@@ -93,6 +96,12 @@ def build_report(run: "RunLog", meta: dict[str, Any], plot: dict[str, Any]) -> s
         f"Benchloom {escape(str(meta.get('benchloom', '')))}</div>",
         f"<div class='verdict {css}'>{badge}</div>",
     ]
+    failed = {name: how for name, how in (meta.get("shutdown") or {}).items() if how != "done"}
+    if failed:
+        items = "".join(f"<li><b>{escape(name)}</b>: {escape(how.removeprefix('failed: '))}</li>"
+                        for name, how in failed.items())
+        parts.append("<div class='shutdown-failed'><b>Not every device could be shut down; "
+                     f"check that their outputs are off.</b><ul>{items}</ul></div>")
     summary = []
     if run.checks:
         summary.append(f"{checks.get('passed', 0)} of {len(run.checks)} checks passed")

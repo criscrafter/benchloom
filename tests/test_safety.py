@@ -121,6 +121,76 @@ def test_run_on_the_command_line_needs_the_flag(tmp_path, capsys):
     capsys.readouterr()
 
 
+# --- shutting down ----------------------------------------------------------------------
+def with_driver(folder, old, new):
+    path = folder / "supply.py"
+    path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+
+def test_a_failed_shutdown_is_recorded_and_not_hidden_by_a_pass(tmp_path, capsys):
+    project, folder = make_project(tmp_path, "psu:on() check('fine', true)")
+    with_driver(folder, '        (HERE / "switched_off.txt").write_text("x")',
+                '        raise RuntimeError("no answer from the supply")')
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.status == "ok" and result.verdict == "pass"  # the measurements did pass
+    assert result.shutdown == {"psu": "failed: no answer from the supply"}
+    assert result.shutdown_failed == ["psu"]
+    meta = json.loads((result.path / "run.json").read_text(encoding="utf-8"))
+    assert meta["shutdown"] == {"psu": "failed: no answer from the supply"}
+    report = (result.path / "report.html").read_text(encoding="utf-8")
+    assert "Not every device could be shut down" in report and "no answer" in report
+    assert cli(["run", str(project.path)]) == 1  # trusted by now
+    assert "outputs may still be on" in capsys.readouterr().out
+
+
+def test_a_clean_shutdown_is_recorded_too(tmp_path):
+    project, folder = make_project(tmp_path)
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.shutdown == {"psu": "done"} and not result.shutdown_failed
+    report = (result.path / "report.html").read_text(encoding="utf-8")
+    assert "Not every device could be shut down" not in report
+
+
+def test_a_device_whose_connect_fails_is_still_shut_down(tmp_path):
+    project, folder = make_project(tmp_path)
+    with_driver(folder, "    @command\n    def on(self)",
+                "    def connect(self) -> None:\n"
+                "        raise RuntimeError('half way')\n\n"
+                "    @command\n    def on(self)")
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert result.status == "error" and "half way" in result.error
+    assert (folder / "switched_off.txt").exists()
+
+
+def test_a_failing_on_shutdown_does_not_keep_the_devices_on(tmp_path):
+    project, folder = make_project(tmp_path)
+
+    def on_shutdown():
+        raise RuntimeError("the window went away")
+
+    result = run_project(project.path, on_print=lambda _: None, trust_plugins=True,
+                         on_shutdown=on_shutdown)
+    assert result.status == "ok"
+    assert (folder / "switched_off.txt").exists()
+
+
+def test_a_fault_in_benchloom_itself_is_never_recorded_as_a_clean_run(tmp_path, monkeypatch):
+    import benchloom.engine as engine
+
+    project, folder = make_project(tmp_path)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(engine, "LuaEngine", broken)
+    with pytest.raises(RuntimeError):
+        run_project(project.path, on_print=lambda _: None, trust_plugins=True)
+    assert (folder / "switched_off.txt").exists()
+    (run_folder,) = (project.path / "runs").iterdir()
+    meta = json.loads((run_folder / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "error" and "a bug" in meta["error"]
+
+
 # --- stopping -------------------------------------------------------------------------
 def run_in_worker(project, stop_after, stop_timeout):
     """Run the project as the app does, in its own process; returns the messages and

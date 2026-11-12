@@ -33,7 +33,7 @@ import json
 import shutil
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -349,6 +349,13 @@ class RunResult:
     rows: list[dict[str, Any]]
     verdict: str = "none"  # "pass", "fail" or "none" (no checks)
     checks: list[dict[str, Any]] | None = None
+    # device name -> "done" or "failed: <why>", for the devices that were opened
+    shutdown: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def shutdown_failed(self) -> list[str]:
+        """The devices whose shutdown raised an error: their outputs may still be on."""
+        return [name for name, how in self.shutdown.items() if how != "done"]
 
 
 SHARED_SCHEMES = ("serial", "tcp")  # buses: several devices on one port (RS-485, gateways)
@@ -389,10 +396,18 @@ def open_device(registry: PluginRegistry, config: DeviceConfig,
     new = transport is None
     if new:
         transport = open_transport(config.resource, spec.load_simulator())
+    device = None
     try:
         device = spec.load_driver()(transport, config.settings)
         device.connect()
     except Exception:
+        # connect() may have got as far as switching something on: let the driver
+        # shut down what it can before the port is closed.
+        if device is not None:
+            try:
+                device.close()
+            except Exception:
+                pass  # the error from connect() is the one to report
         if new:
             transport.close()
         raise
@@ -480,7 +495,10 @@ def run_project(
             return
         announced.set()
         if on_shutdown is not None:
-            on_shutdown()
+            try:
+                on_shutdown()
+            except Exception:
+                pass  # telling the caller must never keep the devices from shutting down
 
     def emit(text: str) -> None:
         try:
@@ -507,7 +525,9 @@ def run_project(
 
     devices: dict[str, Device] = {}
     ports = SharedPorts()
-    status, error = "ok", None
+    # "ok" only once the script has ended by itself: a run that ends any other way
+    # must never be recorded as a clean one.
+    status, error = "error", "The run ended unexpectedly."
 
     def shut_down(status: str, error: str | None) -> bool:
         """Switch the devices off and write the run's files. False: already done."""
@@ -517,10 +537,16 @@ def run_project(
                 return False
             closed = True
             announce_shutdown()
+            # How each device's shutdown went: "done" when its driver's close() returned,
+            # "failed: <why>" when it raised. "done" means the commands were sent without
+            # an error, not that the output was seen to be off.
+            shutdown: dict[str, str] = {}
             for name, device in list(devices.items()):
                 try:
                     device.close()  # sources and loads switch their output off here
+                    shutdown[name] = "done"
                 except Exception as exc:
+                    shutdown[name] = f"failed: {exc}"
                     emit(f"Warning: '{name}' could not be shut down cleanly: {exc}")
             for transport in {id(d.transport): d.transport for d in devices.values()}.values():
                 try:
@@ -533,13 +559,14 @@ def run_project(
                 "script": script.name,
                 "devices": {n: {"device": c.device, "resource": c.resource}
                             for n, c in project.devices.items()},
+                "shutdown": shutdown,
             }, project.plot)
             return True
 
     def result() -> RunResult:
         meta = json.loads((run.path / "run.json").read_text(encoding="utf-8"))
         return RunResult(meta["status"], meta["error"], run.path, run.rows, run.verdict(),
-                         run.check_records())
+                         run.check_records(), meta.get("shutdown", {}))
 
     script_ended = threading.Event()
 
@@ -601,12 +628,16 @@ def run_project(
         if stop_event is not None and stop_timeout is not None:
             threading.Thread(target=watch_stop, args=(engine,), daemon=True).start()
         engine.run(code, chunk_name)
+        status, error = "ok", None
     except (ScriptStopped, KeyboardInterrupt):
         status = "stopped"
         emit("Stopped.")
     except ScriptError as exc:
         status, error = "error", str(exc)
         emit(f"Error: {error}")
+    except Exception as exc:  # a fault in Benchloom itself: recorded, then raised on
+        error = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
         script_ended.set()
         shut_down(status, error)  # waits, if the other thread is already doing it

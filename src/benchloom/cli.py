@@ -27,8 +27,12 @@ def _run(args) -> int:
     if result.status == "ok" and result.verdict != "none":
         passed = sum(1 for c in result.checks or [] if c.get("passed"))
         print(f"{result.verdict.upper()}: {passed} of {len(result.checks or [])} checks passed")
-    # for scripts and CI: 1 when a check failed, as when the test failed or was stopped
-    return 0 if result.status == "ok" and result.verdict != "fail" else 1
+    failed = result.shutdown_failed
+    if failed:
+        print(f"WARNING: shutting down {', '.join(failed)} failed; outputs may still be on.")
+    # for scripts and CI: 1 when a check failed, as when the test failed or was stopped,
+    # or a device could not be shut down
+    return 0 if result.status == "ok" and result.verdict != "fail" and not failed else 1
 
 
 def _devices(args) -> int:
