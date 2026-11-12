@@ -73,7 +73,7 @@ log { set_V = volts, V = psu:measure_voltage(), I = psu:measure_current() }
 
 Each call adds a row to `data.csv`, the plot and the **Data** tab. Values are
 numbers, texts or booleans. A `time_s` column with the seconds since the start
-is added to each row. A row may bring new columns; earlier rows have them
+is added to each row; a script cannot log a `time_s` of its own. A row may bring new columns; earlier rows have them
 empty. Lua tables have no order, so the columns are sorted by name unless the
 project's [`[plot] columns`](projects.md#the-plot) says otherwise.
 

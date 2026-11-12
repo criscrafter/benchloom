@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
 import csv
 import json
+import re
 import threading
 
 import pytest
@@ -54,6 +55,41 @@ def test_out_of_range_argument_reports_script_line(tmp_path):
     assert result.status == "error"
     assert "main.lua:2:" in result.error
     assert "above the maximum of 20 V" in result.error
+
+
+def test_nan_and_infinity_never_reach_a_device(tmp_path):
+    for i, value in enumerate(("0/0", "math.huge", "-math.huge")):
+        result, _ = run(make(tmp_path / str(i), f"psu:set_voltage({value})\n"))
+        assert result.status == "error", value
+        assert "must be a finite number" in result.error and "main.lua:1:" in result.error
+
+
+def test_array_arguments_are_checked():
+    from benchloom.plugin import CommandError, Device, Param, command
+
+    class Box(Device):
+        @command(params={"volts": Param(unit="V", min=0, max=10)})
+        def levels(self, volts: list[float]) -> list:
+            return volts
+
+        @command
+        def anything(self, values: list) -> list:
+            return values
+
+    box = Box(None)
+    assert box.commands()["levels"].params[0].items == "number"
+    assert box.call("levels", [1, 2.5]) == [1.0, 2.5]
+    assert box.call("anything", [1, "a", True]) == [1, "a", True]
+    for bad, message in ((5, "must be a list"), ([1, "x"], "'volts[2]' must be a number"),
+                         ([1, 11], "'volts[2]' is 11 V, above the maximum"),
+                         ([float("nan")], "'volts[1]' must be a finite number")):
+        with pytest.raises(CommandError, match=re.escape(message)):
+            box.call("levels", bad)
+
+
+def test_time_s_is_logged_by_benchloom_only(tmp_path):
+    result, _ = run(make(tmp_path, "log{time_s = 5, V = 1}\n"))
+    assert result.status == "error" and "time_s is the time Benchloom logs" in result.error
 
 
 def test_dot_call_gets_a_helpful_error(tmp_path):

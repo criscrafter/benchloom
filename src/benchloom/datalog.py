@@ -62,7 +62,8 @@ def evaluate(value: Any, low: float | None, high: float | None) -> bool:
     if low is None and high is None:
         return value is True or (isinstance(value, (int, float)) and not isinstance(value, bool)
                                  and math.isfinite(value) and value != 0)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
+    # nan and ±inf are no measurement: they never pass, also with one limit only
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return False
     return (low is None or value >= low) and (high is None or value <= high)
 
@@ -105,6 +106,9 @@ class RunLog:
 
     def log(self, values: dict[str, Any]) -> dict[str, Any]:
         """Append one row to data.csv; new keys become new columns. Returns the row."""
+        if "time_s" in values:
+            raise ValueError("log: time_s is the time Benchloom logs by itself; "
+                             "give your value another name")
         row = {"time_s": round(self.elapsed(), 3),
                **{k: values[k] for k in sorted(values, key=self._rank)}}
         self.rows.append(row)

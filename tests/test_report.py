@@ -28,6 +28,8 @@ def test_evaluate():
     assert evaluate(9e9, 0, None) and evaluate(-9e9, None, 0)
     assert evaluate(True, None, None) and not evaluate(False, None, None)
     assert not evaluate(None, None, None) and not evaluate(math.nan, 0, 1)
+    assert not evaluate(math.inf, 0, None) and not evaluate(-math.inf, None, 0)
+    assert not evaluate(math.nan, None, 1) and not evaluate(math.inf, None, None)
     assert not evaluate("1.0", 0, 2) and not evaluate(True, 0, 2)
 
 

@@ -14,6 +14,13 @@
   called before its port is closed; a failing `on_shutdown` callback no longer
   keeps the devices from being shut down; and a run ended by a fault in
   Benchloom itself is recorded as `error`, never as `ok`.
+- **No nan or infinity to a device:** a command argument that is `nan` (from
+  `0/0`) or infinite stops the test with an error instead of being sent. A
+  check never passes with such a value, also with one limit only.
+- **`list` arguments are checked:** `list[float]` checks each item, with the
+  `Param`'s limits applying to every item.
+- `log{ time_s = ... }` stops the test with an error: `time_s` is the time
+  Benchloom logs itself, and a script's own value used to replace it.
 - **`benchloom run` exits with 1 when a check failed**, so scripts and CI
   see a FAIL; it also prints the verdict. Before, only errors and stops gave 1.
 - Dialogs (devices, settings, plugins, new project, About) are deleted after
