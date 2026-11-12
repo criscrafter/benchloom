@@ -5,7 +5,8 @@
 Kept free of Qt imports so the process starts quickly. Messages on the queue:
 ``("print", text)``, ``("row", dict)``, ``("panel", name, value)``,
 ``("check", dict)``, ``("waveform", name, traces)``, ``("node", id)`` for the node of
-a visual test that is running now (a few times a second at most), ``("shutdown",)``
+a visual test that is running now and ``("line", number)`` for the script line (each a
+few times a second at most), ``("shutdown",)``
 when the devices start to be shut down, and ``("done", status, error, run_path)``.
 The app sends ``(name, value)`` pairs on ``control_queue`` whenever the user changes
 a front panel control.
@@ -31,24 +32,24 @@ def _follow_controls(control_queue, values: dict) -> None:
 
 
 class _NodeReporter:
-    """Reports the running node now and then: a loop may start thousands of nodes a
-    second, and the window only needs to show the latest."""
+    """Reports the running node (or script line) now and then: a loop may start
+    thousands of nodes a second, and the window only needs to show the latest."""
 
-    def __init__(self, queue):
-        self.queue = queue
+    def __init__(self, queue, kind: str = "node"):
+        self.queue, self.kind = queue, kind
         self.current: str | None = None
         self.done = threading.Event()
         threading.Thread(target=self._report, daemon=True).start()
 
-    def __call__(self, node_id: str) -> None:
-        self.current = node_id
+    def __call__(self, current) -> None:
+        self.current = current
 
     def _report(self) -> None:
         sent = None
         while not self.done.wait(NODE_REPORT_S):
             current = self.current
             if current != sent:
-                self.queue.put(("node", current))
+                self.queue.put((self.kind, current))
                 sent = current
 
 
@@ -76,6 +77,7 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
         threading.Thread(target=_follow_controls, args=(control_queue, values),
                          daemon=True).start()
     nodes = _NodeReporter(queue)
+    lines = _NodeReporter(queue, "line")
     try:
         result = run_project(
             project_path,
@@ -90,9 +92,12 @@ def run_worker(project_path: str, queue, stop_event, control_queue=None,
             on_shutdown=lambda: queue.put(("shutdown",)),
             on_abandoned=abandoned,
             on_node=nodes,
+            on_line=lines,
         )
-        nodes.done.set()  # nothing about nodes after "done"
+        nodes.done.set()  # nothing about nodes or lines after "done"
+        lines.done.set()
         report(result.status, result.error or "", str(result.path))
     except Exception as exc:  # failed before the run started
         nodes.done.set()
+        lines.done.set()
         report("error", str(exc), "")

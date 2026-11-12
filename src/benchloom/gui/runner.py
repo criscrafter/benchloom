@@ -34,6 +34,7 @@ class RunController(QObject):
     check = Signal(object)  # a pass/fail check, as a dict
     waveform = Signal(str, object)  # a saved waveform: name, {trace: (times, volts)}
     node = Signal(str)  # the node of a visual test that is running now
+    line = Signal(int)  # the script line a Lua test is at
     finished = Signal(str, str, str)  # status, error, run folder
 
     def __init__(self, parent=None):
@@ -102,6 +103,8 @@ class RunController(QObject):
                 self.waveform.emit(message[1], message[2])
             elif message[0] == "node":
                 self.node.emit(message[1] or "")
+            elif message[0] == "line":
+                self.line.emit(int(message[1] or 0))
             elif message[0] == "shutdown":
                 # the devices are being switched off: give that time, do not kill it
                 self._shutting_down = True

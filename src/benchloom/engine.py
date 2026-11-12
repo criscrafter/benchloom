@@ -59,7 +59,7 @@ GRAPH_CHUNK = "graph.lua"  # name of the Lua generated from a visual test
 STOP_COMMAND_WAIT_S = 8.0
 
 _BOOTSTRAP = """
-function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
+function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform, report_line)
     python = nil  -- scripts talk to Python only through the functions below
 
     panel = setmetatable({}, {
@@ -82,7 +82,26 @@ function(emit, should_stop, panel_get, panel_set, py_check, py_save_waveform)
         emit(table.concat(parts, "\\t"))
     end
 
+    -- The line of the script that runs now, for the editor. Only the script is loaded
+    -- with a chunk name starting with "@"; Benchloom's own functions are not.
+    local getinfo = debug.getinfo  -- kept here: scripts get no debug library
+    local last_line = nil
+    local function report_current_line()
+        for level = 2, 50 do
+            local info = getinfo(level, "Sl")
+            if not info then return end
+            if info.source:sub(1, 1) == "@" then
+                if info.currentline ~= last_line and info.currentline > 0 then
+                    last_line = info.currentline
+                    report_line(last_line)
+                end
+                return
+            end
+        end
+    end
+
     local function check_stop()
+        if report_line then report_current_line() end
         if should_stop() then error("%s", 0) end
     end
     -- The count hook catches busy loops. Most scripts spend their time in sleep()
@@ -182,6 +201,7 @@ class LuaEngine:
         on_check: Callable[..., Check] | None = None,
         on_waveform: Callable[[str, dict], Any] | None = None,
         on_node: Callable[[str], None] | None = None,
+        on_line: Callable[[int], None] | None = None,
     ):
         self.stop_event = stop_event or threading.Event()
         self.panel = panel or PanelState(Panel())
@@ -194,7 +214,7 @@ class LuaEngine:
         )
         self._make_device, guard = self.lua.eval(_BOOTSTRAP)(
             on_print, self.stop_event.is_set, self._panel_get, self._panel_set,
-            self._check, self._save_waveform)
+            self._check, self._save_waveform, on_line)
         g = self.lua.globals()
         self._load = g.load  # kept, so a device or script redefining `load` cannot break runs
         # Held while a device command runs, so whoever shuts the devices down for a
@@ -413,6 +433,7 @@ def run_project(
     on_shutdown: Callable[[], None] | None = None,
     on_abandoned: Callable[[RunResult], None] | None = None,
     on_node: Callable[[str], None] | None = None,
+    on_line: Callable[[int], None] | None = None,
 ) -> RunResult:
     """Run a project's test.
 
@@ -431,7 +452,9 @@ def run_project(
     called when the devices start to be shut down, on either way.
 
     ``on_node`` gets the id of each node of a visual test as it starts to run. It is
-    called very often; keep it short.
+    called very often; keep it short. ``on_line`` gets the script line the test is at,
+    when it changed, at each device command, sleep, log or check and now and then in
+    between.
     """
     project = Project.load(project_dir)
     script = project.path / project.script
@@ -550,6 +573,7 @@ def run_project(
         engine = LuaEngine(
             on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event,
             panel=panel, on_check=check, on_waveform=save_waveform, on_node=on_node,
+            on_line=on_line,
         )
         for name, device in devices.items():
             engine.add_device(name, device)

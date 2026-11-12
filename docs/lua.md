@@ -12,6 +12,16 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 check("Output voltage", psu:measure_voltage(), 4.9, 5.1, "V")
 ```
 
+## The editor
+
+The editor offers what you can type: start a name for the project's devices and
+Benchloom's functions, type `psu:` for that device's commands with their
+arguments and units, or `panel.` for the front panel's widgets. Enter or Tab
+takes a choice, Esc closes the list, and Ctrl+Space opens it anywhere.
+
+While a test runs, the line it is at is marked green, and a line where it
+failed is marked red.
+
 ## Instruments
 
 Each instrument of the project is a variable named like its entry in the

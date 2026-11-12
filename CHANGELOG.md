@@ -13,6 +13,10 @@
   their verdict, rows, checks and duration. Open a run's report, show its data
   and console again, compare it with the current run (its curves are drawn
   dashed, also while the next run is measured), or move it to the recycle bin.
+- **Lua editor:** autocomplete for the project's devices, their commands (with
+  arguments and units after `psu:`), the front panel's widgets (after `panel.`)
+  and Benchloom's functions; Ctrl+Space opens it. While a test runs, the line it
+  is at is marked green.
 
 ## 0.1.4 – Data table, panel widgets, plugin registry and docs
 

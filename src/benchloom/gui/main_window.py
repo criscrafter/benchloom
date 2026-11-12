@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         self.devices = DevicesPanel()
         self.devices.command_activated.connect(self._command_activated)
         self.devices.changed.connect(self._devices_changed)
+        self.devices.changed.connect(self.update_completions)
         self.console = QPlainTextEdit(readOnly=True)
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
@@ -187,10 +188,12 @@ class MainWindow(QMainWindow):
         self.runner.panel.connect(self.panel_view.show_value)
         self.runner.waveform.connect(self.waveforms.add)
         self.runner.node.connect(lambda node_id: self.graph.mark_running(node_id or None))
+        self.runner.line.connect(self._line_running)
         self.runner.check.connect(self._check_done)
         self._failed_checks = self._checks = 0
         self.panel_view.control_changed.connect(self.runner.send_control)
         self.panel_view.renamed.connect(self._widget_renamed)
+        self.panel_view.edited.connect(self.update_completions)
         self.runner.finished.connect(self._run_finished)
         self._last_run: Path | None = None
 
@@ -366,6 +369,7 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             self.devices.set_project(self.project)
             self._devices_changed()
+            self.update_completions()
 
     def _system_theme_changed(self, *_) -> None:
         if self.theme() == "system":
@@ -426,6 +430,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Open project", f"Could not read the front panel: {exc}")
                 panel = Panel(project.path / "panel.json")
         self.panel_view.set_panel(panel)
+        self.update_completions()
         self.console.clear()
         self.plot.clear()
         self.table.clear()
@@ -593,6 +598,24 @@ class MainWindow(QMainWindow):
             self.graph.load(self.graph.to_graph(), self._catalog())
             self.graph.modified = modified
 
+    def _line_running(self, line: int) -> None:
+        if self.project is not None and self.project.mode == "lua":
+            self.editor.mark_running(line or None)
+
+    def update_completions(self, *_) -> None:
+        """Tell the editor's autocomplete the devices, their commands and the panel."""
+        from .devices import describe, labelled_signature
+        from .editor import Completion
+
+        devices = {
+            name: [Completion(f"{info.name}(" + ("" if info.params else ")"),
+                              labelled_signature(info), describe(info))
+                   for info in infos]
+            for name, infos in self.devices.commands.items()}
+        panel = self.panel_view.panel
+        names = [w.name for w in panel.widgets if w.has_value] if panel else []
+        self.editor.set_names(devices, names)
+
     def _widget_renamed(self, old: str, new: str) -> None:
         """Keep the test working when a front panel widget gets another name."""
         if not self.project:
@@ -688,6 +711,7 @@ class MainWindow(QMainWindow):
         self.runs.refresh(select=Path(path) if path else None)
         self.table.flush()
         self.graph.mark_running(None)
+        self.editor.mark_running(None)
         self._last_run = Path(path) if path else None
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)
