@@ -1,0 +1,54 @@
+name: Docs
+
+# Builds the documentation site from docs/ and mkdocs.yml. On main it is
+# published to GitHub Pages (https://criscrafter.github.io/benchloom/); for a pull
+# request it is only built, so a broken link or page fails the check.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: |
+          python -m pip install --upgrade pip
+          pip install "mkdocs-material>=9.5,<10"
+          mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

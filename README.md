@@ -12,6 +12,10 @@ PASS/FAIL report behind.
 The goal is a short path from "I need to automate this" to a running setup,
 without licence fees, accounts or a vendor runtime.
 
+**Documentation:** <https://criscrafter.github.io/benchloom/>, with getting
+started, the Lua reference, visual tests, the front panel, instruments and
+writing plugins.
+
 ![Benchloom running a Bode plot of an RC filter](docs/images/app.png)
 
 > **Status: early (0.1).** Benchloom works and is used on a real bench, but it
@@ -140,8 +144,9 @@ that uses their value runs. To measure at a fixed point instead and keep the
 value, right-click the node and choose **Run in sequence**.
 
 A visual test is compiled to Lua and run by the same engine as a script.
-**View as Lua** shows the generated code; each run folder keeps it as
-`graph.lua`.
+While it runs, a green outline marks the node it is at, and a node that
+fails is outlined in red. **View as Lua** shows the generated code; each run
+folder keeps it as `graph.lua`.
 
 ## A script
 
@@ -153,7 +158,7 @@ log { V = psu:measure_voltage(), I = psu:measure_current() }
 ```
 
 Besides the devices, a script has `sleep(seconds)`, `log{...}` (one row in
-`data.csv`), `time()` (seconds since start), `print(...)` and `panel` (the
+`data.csv`, the plot and the Data tab), `time()` (seconds since start), `print(...)` and `panel` (the
 front panel, below), and:
 
 - `check(name, value, low, high, unit)`: a pass/fail check. It passes when the
@@ -208,8 +213,14 @@ decimals. Numbers show about four significant digits without trailing zeros
 |---|---|---|
 | Number input, switch, text input | control | `panel.target` reads the current value |
 | Button | control | `panel.stop` is `true` once after each click |
-| Value display, indicator light, bar | indicator | `panel.voltage = v` shows a value |
-| Chart | indicator | `panel.trend = v` adds a point against time |
+| Value display, indicator light, bar, gauge | indicator | `panel.voltage = v` shows a value |
+| Chart | indicator | `panel.trend = v` adds a point against time; `panel.trend = { V = v, I = i }` adds one to each curve |
+| Table | indicator | `panel.results = { step = n, V = v }` adds a row; `panel.results = nil` empties it |
+
+A chart can take its X value from the table instead of the time: set
+**X value** to `f` and `panel.bode = { f = 1000, gain = -3 }` draws gain
+against f, on a log scale if you tick it. A table shows the columns named in
+its **Columns** setting first, in that order, since a Lua table has none.
 
 ```lua
 while not panel.stop do
@@ -220,7 +231,8 @@ end
 ```
 
 In a visual test the same widgets appear as nodes under **Front panel** in the
-right-click menu. The layout is saved in the project's `panel.json`. Run from
+right-click menu. Renaming a widget renames its nodes too; in a script, the
+app offers to change `panel.old_name` everywhere. The layout is saved in the project's `panel.json`. Run from
 the command line, controls have the values they had when last run in the app.
 
 ## Instruments
@@ -255,13 +267,19 @@ A plugin is a folder with a `plugin.toml` and Python files.
 **Plugins** in the toolbar lists every plugin found, with its devices. There a
 plugin can be switched off (its devices leave the Add device list and runs
 refuse them), installed from a folder or a `.zip`, or removed (to the recycle
-bin). Installed plugins go to `~/.benchloom/plugins/`. The same from the command
-line:
+bin). Installed plugins go to `~/.benchloom/plugins/`. **Browse online** lists
+plugins others wrote, from the [plugin registry](registry/), to install or
+update with one click; each download is checked against the checksum in the
+list. The same from the command line:
 
 ```
+benchloom plugins search rigol            # the online list
+benchloom plugins install rigol           # a listed plugin, by id
 benchloom plugins install my-plugin.zip   # or a folder; --replace to update
 benchloom plugins disable hp              # enable, remove
 ```
+
+To list your own plugin, see [registry/README.md](registry/README.md).
 
 Plugins are loaded from, in order: the built-in ones, `~/.benchloom/plugins/`,
 the extra folders set in Settings, and the project's own `plugins/` folder. A

@@ -41,6 +41,18 @@ that changelog section as its notes, then uploads the package to PyPI;
 nothing needs editing by hand. PyPI accepts it through trusted publishing
 (the `pypi` environment of this repository), so no token is stored anywhere.
 
+## Documentation
+
+The documentation site is built from `docs/` with MkDocs. To preview it:
+
+```
+.venv\Scripts\pip install -e ".[docs]"
+.venv\Scripts\mkdocs serve
+```
+
+and open http://127.0.0.1:8000. `mkdocs build --strict` fails on broken links;
+GitHub runs it for every pull request and publishes the site from main.
+
 ## Writing an instrument plugin
 
 A plugin is a folder with a `plugin.toml` and a Python driver. The README

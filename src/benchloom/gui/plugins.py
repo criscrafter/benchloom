@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-"""The plugin manager: see, switch off, install and remove plugins."""
+"""The plugin manager: see, switch off, install and remove plugins, and find more in
+the online plugin list."""
 
 from __future__ import annotations
 
 import html
 from pathlib import Path
 
-from PySide6.QtCore import QFile, Qt, QUrl
-from PySide6.QtGui import QBrush, QColor, QDesktopServices
+from PySide6.QtCore import QFile, Qt, QTimer, QUrl
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
-    QScrollArea, QSizePolicy, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
-from .. import plugin_install
+from .. import plugin_index, plugin_install
 from ..config import AppConfig, user_plugin_dir
 from ..plugin import SOURCES, DeviceSpec, PluginError, PluginInfo, PluginRegistry
 
@@ -244,6 +246,8 @@ class PluginManagerDialog(QDialog):
         hint.setWordWrap(True)
         hint.setEnabled(False)
 
+        self.browse_button = QPushButton("Browse online…")
+        self.browse_button.clicked.connect(self.browse_online)
         self.install_folder_button = QPushButton("Install from folder…")
         self.install_zip_button = QPushButton("Install from .zip…")
         self.remove_button = QPushButton("Remove")
@@ -253,7 +257,8 @@ class PluginManagerDialog(QDialog):
         self.remove_button.clicked.connect(self.remove_selected)
         self.open_button.clicked.connect(self.open_user_folder)
         buttons = QHBoxLayout()
-        for button in (self.install_folder_button, self.install_zip_button, self.remove_button):
+        for button in (self.browse_button, self.install_folder_button, self.install_zip_button,
+                       self.remove_button):
             buttons.addWidget(button)
         buttons.addStretch()
         buttons.addWidget(self.open_button)
@@ -411,7 +416,184 @@ class PluginManagerDialog(QDialog):
         self.changed = True
         self.reload()
 
+    def browse_online(self) -> None:
+        dialog = BrowseDialog(self.registry.found, parent=self)
+        dialog.exec()
+        if dialog.changed:
+            self.changed = True
+            self.reload()
+
     def open_user_folder(self) -> None:
         folder = user_plugin_dir()
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+
+BROWSE_STATUS = {"new": "", "installed": "Installed", "update": "Update available",
+                 "built-in": "Built in"}
+
+
+class BrowseDialog(QDialog):
+    """The online plugin list: what others wrote, with Install and Update."""
+
+    def __init__(self, installed: list[PluginInfo], location: str | None = None,
+                 parent=None, fetch=None, read=None):
+        super().__init__(parent)
+        self.setWindowTitle("Browse plugins")
+        self.resize(900, 560)
+        self.installed = list(installed)
+        self.location = location or plugin_index.index_location()
+        self._fetch = fetch or plugin_index.fetch_index
+        self._read = read  # how downloads are read; tests pass their own
+        self.entries: list[plugin_index.IndexEntry] = []
+        self.changed = False
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search by name, instrument or description")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._fill)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Plugin", "Version", "Status"])
+        self.tree.setRootIsDecorated(False)
+        header = self.tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in (1, 2):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.currentItemChanged.connect(self._show)
+        self.details = QTextBrowser()
+        self.details.setOpenExternalLinks(True)
+        left = QWidget()
+        column = QVBoxLayout(left)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.addWidget(self.search)
+        column.addWidget(self.tree, 1)
+        splitter = QSplitter()
+        splitter.addWidget(left)
+        splitter.addWidget(self.details)
+        splitter.setSizes([420, 480])
+
+        self.message = QLabel()
+        self.message.setWordWrap(True)
+        self.message.setOpenExternalLinks(True)
+        self.install_button = QPushButton("Install")
+        self.install_button.clicked.connect(lambda: self.install_selected())
+        self.reload_button = QPushButton("Reload list")
+        self.reload_button.clicked.connect(self.load)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.install_button)
+        buttons.addWidget(self.reload_button)
+        buttons.addStretch()
+        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.rejected.connect(self.reject)
+        buttons.addWidget(close)
+        layout = QVBoxLayout(self)
+        layout.addWidget(splitter, 1)
+        layout.addWidget(self.message)
+        layout.addLayout(buttons)
+        self.install_button.setEnabled(False)
+        self.message.setText("Loading the plugin list…")
+        QTimer.singleShot(0, self.load)  # show the window first, then wait for the network
+
+    def load(self) -> bool:
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.entries = self._fetch(self.location)
+        except PluginError as exc:
+            self.entries = []
+            self.message.setText(f"Could not load the plugin list: {html.escape(str(exc))}")
+            self._fill()
+            return False
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        self.message.setText(
+            f"{len(self.entries)} plugin(s) listed. Plugins are Python code by their "
+            "authors; the list checks that you get the listed file, not that it is safe. "
+            "Install only plugins you trust." if self.entries else
+            "The list has no plugins yet. <a href='https://github.com/criscrafter/benchloom/"
+            "tree/main/registry'>Add yours</a>.")
+        self._fill()
+        return True
+
+    def status(self, entry: plugin_index.IndexEntry) -> str:
+        return plugin_index.status(entry, self.installed)
+
+    def _fill(self, *_) -> None:
+        current = self.selected()
+        words = self.search.text().lower().split()
+        self.tree.clear()
+        for entry in self.entries:
+            text = " ".join([entry.id, entry.name, entry.description, *entry.devices]).lower()
+            if not all(word in text for word in words):
+                continue
+            mark = BROWSE_STATUS[self.status(entry)]
+            if not entry.compatible:
+                mark = f"Needs Benchloom {entry.benchloom}"
+            item = QTreeWidgetItem([entry.name, entry.version, mark])
+            item.setData(0, Qt.ItemDataRole.UserRole, entry)
+            self.tree.addTopLevelItem(item)
+            if current is not None and entry.id == current.id:
+                self.tree.setCurrentItem(item)
+        if self.tree.currentItem() is None and self.tree.topLevelItemCount():
+            self.tree.setCurrentItem(self.tree.topLevelItem(0))
+        self._show()
+
+    def selected(self) -> plugin_index.IndexEntry | None:
+        item = self.tree.currentItem()
+        return item.data(0, Qt.ItemDataRole.UserRole) if item else None
+
+    def _show(self, *_) -> None:
+        entry = self.selected()
+        if entry is None:
+            self.details.clear()
+            self.install_button.setEnabled(False)
+            return
+        state = self.status(entry)
+        esc = html.escape
+        rows = [("Version", entry.version), ("Author", entry.author),
+                ("Licence", entry.license), ("Plugin id", entry.id)]
+        if entry.benchloom:
+            rows.append(("Needs", f"Benchloom {entry.benchloom} or newer"))
+        table = "".join(f"<tr><td style='padding-right:12px'><b>{esc(k)}</b></td>"
+                        f"<td>{esc(v)}</td></tr>" for k, v in rows if v)
+        devices = "".join(f"<li>{esc(d)}</li>" for d in entry.devices)
+        link = (f"<p><a href='{esc(entry.homepage, quote=True)}'>{esc(entry.homepage)}</a></p>"
+                if entry.homepage.startswith("https://") else "")
+        self.details.setHtml(
+            f"<h3>{esc(entry.name)}</h3><p>{esc(entry.description)}</p>{link}"
+            f"<table>{table}</table>"
+            + (f"<p><b>Instruments</b></p><ul>{devices}</ul>" if devices else "")
+            + f"<p style='color:gray'>Download: {esc(entry.download)}<br>"
+              f"SHA-256: {esc(entry.sha256)}</p>")
+        self.install_button.setText({"update": "Update", "installed": "Reinstall"}
+                                    .get(state, "Install"))
+        self.install_button.setEnabled(entry.compatible and state != "built-in")
+
+    def install_selected(self, confirm: bool = True):
+        entry = self.selected()
+        if entry is None or not entry.compatible:
+            return None
+        replace = plugin_install.installed_folder(entry.id) is not None
+        if confirm:
+            devices = "".join(f"<li>{html.escape(d)}</li>" for d in entry.devices)
+            what = "Replace the installed copy with" if replace else "Install"
+            answer = QMessageBox.question(
+                self, "Install plugin",
+                f"<p>{what} <b>{html.escape(entry.name)}</b> {html.escape(entry.version)}"
+                f" by {html.escape(entry.author or 'an unnamed author')}?</p><ul>{devices}</ul>"
+                f"<p>{html.escape(plugin_install.TRUST_WARNING)}</p>")
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            kwargs = {"read": self._read} if self._read else {}
+            info = plugin_index.install(entry, replace=replace, **kwargs)
+        except (PluginError, OSError) as exc:
+            QGuiApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Install plugin", f"Could not install the plugin: {exc}")
+            return None
+        QGuiApplication.restoreOverrideCursor()
+        self.changed = True
+        self.installed = [p for p in self.installed if p.path != info.path] + [info]
+        self.message.setText(f"Installed {html.escape(info.name)} {html.escape(info.version)}.")
+        self._fill()
+        return info

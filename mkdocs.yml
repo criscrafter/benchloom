@@ -1,0 +1,80 @@
+# The documentation site, published to https://criscrafter.github.io/benchloom/
+# by .github/workflows/docs.yml. Preview it locally:
+#   pip install -e ".[docs]"
+#   mkdocs serve
+site_name: Benchloom
+site_description: Open lab automation. Wire up instruments visually or script them in Lua.
+site_url: https://criscrafter.github.io/benchloom/
+site_author: Friedrich-Christer Rosenthal
+copyright: Copyright &copy; 2026 Friedrich-Christer Rosenthal. AGPL-3.0-or-later.
+repo_url: https://github.com/criscrafter/benchloom
+repo_name: criscrafter/benchloom
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Projects: projects.md
+      - Lua scripts: lua.md
+      - Visual tests: visual-tests.md
+      - Front panel: front-panel.md
+      - Command line: command-line.md
+  - Instruments: INSTRUMENTS.md
+  - Plugins:
+      - Writing a plugin: writing-plugins.md
+      - The plugin registry: plugin-registry.md
+  - Safety and security: safety.md
+  - About:
+      - Roadmap: PLAN.md
+      - Changelog: changelog.md
+      - Licence: licence.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: warn

@@ -82,11 +82,17 @@ def test_wired_inputs_hide_their_editor(app, tmp_path):
 
 
 def test_run_visual_project(app, window):
+    running = []  # which nodes were outlined while the test ran
+    window.runner.node.connect(lambda _: running.extend(
+        item.id for item in window.graph.nodes.values() if item.running))
     window.run()
     status, error, _ = wait_for_run(app, window)
     assert status == "ok", error
     assert "Sweep finished" in window.console.toPlainText()
     assert len(window.plot.rows) == 10
+    # the sweep spends its time in the loop: Wait and the device calls around it
+    assert {"n5", "n6", "n7"} & set(running)
+    assert not any(item.running for item in window.graph.nodes.values())  # cleared at the end
 
 
 def test_build_a_test_by_hand(app, window):

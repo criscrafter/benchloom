@@ -50,28 +50,28 @@
    device, run folders, command line.
 2. **Desktop shell** (done): project wizard, device manager with serial port
    list and connection test, Lua editor, run/stop in a separate process,
-   console, live plot (with a log X axis), plugin manager, Settings window,
+   console, live plot (with a log X axis), data table, plugin manager, Settings window,
    project templates (the example, and a Bode plot for an FY6900 and a
-   DSO5102P). Still to do here: automatic device discovery, a data table, more
-   templates.
+   DSO5102P). Still to do here: automatic device discovery, more templates.
 3. **Node editor** (done): nodes generated from plugin commands, flow nodes
    (for, while, if), values (math, compare, logic, variables), logging, graph
    to Lua compiler, errors marked on the node, undo/redo, copy/paste and
-   duplicate. Still to do here: highlighting the running node, comments,
-   sub-graphs.
+   duplicate, the running node outlined. Still to do here: comments, sub-graphs.
 4. **Front panel** (done): controls (number, switch, button, text) and
    indicators (value, light, bar, chart) laid out by drag and drop, live in both
    directions while a test runs, available as `panel.<name>` in Lua and as nodes.
-   Still to do here: knobs, gauges and tables, multi-series charts, renaming a
-   widget without breaking the nodes that use it, a full-window panel mode.
+   Also gauges, tables, charts with several curves or their own X value, and
+   renaming a widget along with the nodes and script lines that use it. Still to
+   do here: knobs, a full-window panel mode.
 5. **Device plugins**, each with a simulator. Done: Arduino line protocol
    (generic) · Kunkin KP184 (Modbus/serial, RS-485) · HP 6655A · HP 3478A
    (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB) · Feeltech
    FY6900. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
    VISA. Tried on hardware: KP184, 6404, DSO5102P and FY6900. See [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build (done: a zip built with PyInstaller,
-   self-tested and attached to each release by CI), then Linux, then Mac. Plugin install
-   from a registry (install from a folder or .zip is done).
+   self-tested and attached to each release by CI), then Linux, then Mac. Plugins
+   install from a folder, a .zip or the online registry (`registry/index.json`,
+   added to by pull request; downloads checked by SHA-256).
 
 ## Not verified yet
 

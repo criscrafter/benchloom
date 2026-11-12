@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - platforms without the 5.4 build
 from . import __version__
 from .config import AppConfig
 from .datalog import Check, RunLog, evaluate
-from .graph import Catalog, GraphError, compile_graph
+from .graph import NODE_MARKER, Catalog, GraphError, compile_graph
 from .panel import Panel, PanelError, PanelState
 from .plugin import PROJECT_PLUGIN_HINT, Device, PluginRegistry
 from .project import DeviceConfig, Project, ProjectError
@@ -181,6 +181,7 @@ class LuaEngine:
         panel: PanelState | None = None,
         on_check: Callable[..., Check] | None = None,
         on_waveform: Callable[[str, dict], Any] | None = None,
+        on_node: Callable[[str], None] | None = None,
     ):
         self.stop_event = stop_event or threading.Event()
         self.panel = panel or PanelState(Panel())
@@ -202,6 +203,7 @@ class LuaEngine:
         g.sleep = guard(self._sleep)
         g.time = elapsed
         g.log = guard(lambda table: log_row(self._to_python(table, as_dict=True)))
+        g[NODE_MARKER] = on_node or (lambda node_id: None)  # see compile_graph(trace=True)
 
     def _to_python(self, value: Any, as_dict: bool = False) -> Any:
         if lupa.lua_type(value) != "table":
@@ -281,7 +283,7 @@ class LuaEngine:
 
     def _panel_set(self, name, value):
         try:
-            self.panel.set(name, self._to_python(value))
+            self.panel.set(name, self._plain(value))
             return True, None
         except PanelError as exc:
             return False, str(exc)
@@ -393,6 +395,7 @@ def run_project(
     stop_timeout: float | None = None,
     on_shutdown: Callable[[], None] | None = None,
     on_abandoned: Callable[[RunResult], None] | None = None,
+    on_node: Callable[[str], None] | None = None,
 ) -> RunResult:
     """Run a project's test.
 
@@ -409,6 +412,9 @@ def run_project(
     finished as "stopped" and ``on_abandoned`` gets its result. The script itself may
     still be running then: the caller has to end the process. ``on_shutdown`` is
     called when the devices start to be shut down, on either way.
+
+    ``on_node`` gets the id of each node of a visual test as it starts to run. It is
+    called very often; keep it short.
     """
     project = Project.load(project_dir)
     script = project.path / project.script
@@ -526,7 +532,7 @@ def run_project(
             panel.values = panel_values
         engine = LuaEngine(
             on_print=emit, log_row=log_row, elapsed=run.elapsed, stop_event=stop_event,
-            panel=panel, on_check=check, on_waveform=save_waveform,
+            panel=panel, on_check=check, on_waveform=save_waveform, on_node=on_node,
         )
         for name, device in devices.items():
             engine.add_device(name, device)
@@ -534,7 +540,7 @@ def run_project(
         if project.mode == "visual":
             # visual tests are compiled to Lua; keep the generated code with the run
             try:
-                code, _ = compile_graph(json.loads(code), Catalog(project, registry))
+                code, _ = compile_graph(json.loads(code), Catalog(project, registry), trace=True)
             except (GraphError, ValueError, KeyError, TypeError) as exc:
                 raise ScriptError(f"graph: {exc}") from exc
             chunk_name = GRAPH_CHUNK

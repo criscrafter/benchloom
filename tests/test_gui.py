@@ -51,7 +51,7 @@ def test_open_run_and_plot(app, tmp_path):
     status, error, path = wait_for_run(app, window)
     assert status == "ok", error
     assert "Sweep finished" in window.console.toPlainText()
-    assert len(window.plot.rows) == 10
+    assert len(window.plot.rows) == 10 and window.table.model.rowCount() == 10
     assert window.run_action.isEnabled() and not window.stop_action.isEnabled()
     window.close()
 
@@ -382,3 +382,33 @@ def test_command_line_version_shows_the_notice(capsys):
     from benchloom import __version__
 
     assert out.startswith(f"Benchloom {__version__}") and "WITHOUT ANY WARRANTY" in out
+
+
+def test_data_table_grows_columns_follows_and_copies(app):
+    from benchloom.gui.table import DataTable
+
+    table = DataTable()
+    table.resize(400, 200)
+    table.show()
+    for i in range(50):
+        table.add_row({"time_s": i * 0.1, "V": i / 3})
+    table.add_row({"time_s": 5.0, "V": 1.0, "note": "tab	here", "ok": True})
+    table.flush()
+    model = table.model
+    assert model.columns == ["time_s", "V", "note", "ok"] and model.rowCount() == 51
+    assert model.data(model.index(1, 1)) == "0.3333"  # short, like the plot
+    assert model.data(model.index(0, 2)) == ""  # not logged in that row
+    app.processEvents()
+    bar = table.view.verticalScrollBar()
+    assert bar.value() == bar.maximum() > 0  # follows the newest row
+    bar.setValue(0)
+    table.add_row({"time_s": 6.0})
+    table.flush()
+    app.processEvents()
+    assert bar.value() == 0  # scrolled up: stays there
+    text = table.selection_text([model.index(1, 0), model.index(1, 1), model.index(50, 2),
+                                 model.index(50, 3)])
+    assert text.splitlines() == ["time_s	V	note	ok", "0.1	0.3333333333333333		",
+                                 "		tab here	true"]
+    table.clear()
+    assert model.rowCount() == 0 and model.columnCount() == 0 and "show here" in table.status.text()

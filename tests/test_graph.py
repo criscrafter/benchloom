@@ -135,3 +135,28 @@ def test_lua_literals():
     assert lua_literal(1.0) == "1" and lua_literal(0.1) == "0.1"
     assert lua_literal(True) == "true"
     assert lua_literal('a "b"\n\\') == '"a \\"b\\"\\n\\\\"'
+
+
+def test_traced_code_reports_each_node_without_moving_lines(tmp_path):
+    project = create_project(tmp_path / "proj", "visual")
+    plain, line_map = compile_graph(example_graph(), Catalog(project))
+    traced, traced_map = compile_graph(example_graph(), Catalog(project), trace=True)
+    assert traced_map == line_map and len(traced.splitlines()) == len(plain.splitlines())
+    assert "__node" not in plain
+    assert '    __node("n5"); psu:set_voltage(v.n4_index)' in traced.splitlines()
+
+    seen = []
+    result = run_project(project.path, on_print=lambda _: None, on_node=seen.append)
+    assert result.status == "ok", result.error
+    assert seen[0] == "n2" and seen.count("n5") == 10  # once per pass through the loop
+    assert '__node("n5")' in (result.path / "graph.lua").read_text(encoding="utf-8")
+
+
+def test_a_script_reaches_the_node_report_only_with_text(tmp_path):
+    project = create_project(tmp_path / "proj")
+    (project.path / "main.lua").write_text('__node("x"); __node = nil; print("ok")',
+                                           encoding="utf-8")
+    seen = []
+    result = run_project(project.path, on_print=lambda _: None, on_node=seen.append)
+    assert result.status == "ok", result.error
+    assert seen == ["x"]  # harmless: it only passes a text to the window

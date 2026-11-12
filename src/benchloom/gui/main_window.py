@@ -22,7 +22,7 @@ from .. import HOMEPAGE, NOTICE, __version__
 from ..config import AppConfig
 from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
-from ..panel import Panel, PanelError
+from ..panel import Panel, PanelError, rename_in_graph, rename_in_lua
 from ..plugin import PluginRegistry
 from ..project import Project, ProjectError, create_project, is_project, templates
 from .devices import DevicesPanel
@@ -30,6 +30,7 @@ from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
 from .panel_view import PanelView
 from .plot import PlotPanel
+from .table import DataTable
 from .waveforms import WaveformPanel
 from .plugins import PluginManagerDialog
 from .runner import RunController
@@ -155,14 +156,17 @@ class MainWindow(QMainWindow):
         self.plot.hidden_columns_changed.connect(self._hidden_columns_changed)
         self.panel_view = PanelView()
         self.waveforms = WaveformPanel()
+        self.table = DataTable()
         self._docks = [
             self._dock("Devices", self.devices, Qt.DockWidgetArea.LeftDockWidgetArea),
             self._dock("Plot", self.plot, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Console", self.console, Qt.DockWidgetArea.BottomDockWidgetArea),
             self._dock("Front panel", self.panel_view, Qt.DockWidgetArea.RightDockWidgetArea),
             self._dock("Waveforms", self.waveforms, Qt.DockWidgetArea.RightDockWidgetArea),
+            self._dock("Data", self.table, Qt.DockWidgetArea.RightDockWidgetArea),
         ]
-        self.tabifyDockWidget(self._docks[1], self._docks[3])
+        self.tabifyDockWidget(self._docks[1], self._docks[5])
+        self.tabifyDockWidget(self._docks[5], self._docks[3])
         self.tabifyDockWidget(self._docks[3], self._docks[4])
         self._docks[1].raise_()
         self.resizeDocks(self._docks[:2], [280, 460], Qt.Orientation.Horizontal)
@@ -171,11 +175,14 @@ class MainWindow(QMainWindow):
         self.runner = RunController(self)
         self.runner.printed.connect(self._print)
         self.runner.row.connect(self.plot.add_row)
+        self.runner.row.connect(self.table.add_row)
         self.runner.panel.connect(self.panel_view.show_value)
         self.runner.waveform.connect(self.waveforms.add)
+        self.runner.node.connect(lambda node_id: self.graph.mark_running(node_id or None))
         self.runner.check.connect(self._check_done)
         self._failed_checks = self._checks = 0
         self.panel_view.control_changed.connect(self.runner.send_control)
+        self.panel_view.renamed.connect(self._widget_renamed)
         self.runner.finished.connect(self._run_finished)
         self._last_run: Path | None = None
 
@@ -407,6 +414,7 @@ class MainWindow(QMainWindow):
         self.panel_view.set_panel(panel)
         self.console.clear()
         self.plot.clear()
+        self.table.clear()
         self.waveforms.clear()
         self._apply_plot_settings(project)
         self.editor.mark_error(None)
@@ -565,6 +573,31 @@ class MainWindow(QMainWindow):
             self.graph.load(self.graph.to_graph(), self._catalog())
             self.graph.modified = modified
 
+    def _widget_renamed(self, old: str, new: str) -> None:
+        """Keep the test working when a front panel widget gets another name."""
+        if not self.project:
+            return
+        if self.project.mode == "visual":
+            graph = self.graph.to_graph()
+            if rename_in_graph(graph, old, new):
+                self.graph.load(graph, self._catalog())
+                self.graph.modified = True
+                self.statusBar().showMessage(f"The nodes now use panel.{new}", 5000)
+            return
+        code, count = rename_in_lua(self.editor.toPlainText(), old, new)
+        if not count:
+            return
+        answer = QMessageBox.question(
+            self, "Rename in the script",
+            f"{self.project.script} uses panel.{old} in {count} place(s). "
+            f"Change them to panel.{new}?")
+        if answer == QMessageBox.StandardButton.Yes:
+            cursor = self.editor.textCursor()
+            cursor.beginEditBlock()  # one step to undo
+            cursor.select(cursor.SelectionType.Document)
+            cursor.insertText(code)
+            cursor.endEditBlock()
+
     def _compile(self) -> str | None:
         """Compile the graph; on a problem, mark the node and return None."""
         self.graph.mark_error(None)
@@ -596,6 +629,7 @@ class MainWindow(QMainWindow):
             return
         self.console.clear()
         self.plot.clear()
+        self.table.clear()
         self.waveforms.clear()
         self._failed_checks = self._checks = 0
         self.editor.mark_error(None)
@@ -630,6 +664,8 @@ class MainWindow(QMainWindow):
         self._failed_checks += not record.get("passed")
 
     def _run_finished(self, status: str, error: str, path: str) -> None:
+        self.table.flush()
+        self.graph.mark_running(None)
         self._last_run = Path(path) if path else None
         if error and not path:  # failed before the engine could report it itself
             self._print(f"Error: {error}", error=True)
