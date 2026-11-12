@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.6 – Update message and a Python 3.11 crash fix
 
 - **Update message:** when a newer version is out, a bar under the toolbar says
   so, with its release page one click away (the download, or the `pip` command
