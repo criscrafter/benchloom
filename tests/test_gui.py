@@ -242,15 +242,162 @@ def test_new_project_dialog_offers_templates(app, tmp_path):
 
     dialog = NewProjectDialog(location=tmp_path)
     assert [dialog.template_combo.itemData(i) for i in range(dialog.template_combo.count())] \
-        == ["example", "bode"]
+        == ["example", "empty", "bode"]
     assert dialog.lua_radio.isEnabled() and "power supply" in dialog.template_info.text()
-    dialog.visual_radio.setChecked(True)
     dialog.template_combo.setCurrentIndex(1)
+    assert dialog.template() == "empty" and dialog.visual_radio.isEnabled()
+    dialog.visual_radio.setChecked(True)
+    dialog.template_combo.setCurrentIndex(2)
     assert dialog.template() == "bode" and dialog.mode() == "lua"
     assert not dialog.lua_radio.isEnabled() and not dialog.visual_radio.isEnabled()
     assert "scope CH2" in dialog.template_info.text()
     dialog.template_combo.setCurrentIndex(0)
     assert dialog.visual_radio.isEnabled()
+
+
+def _recent_paths(window):
+    return [window.recent_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(window.recent_list.count())]
+
+
+def _select_recent(window, path):
+    row = _recent_paths(window).index(str(path))
+    window.recent_list.setCurrentRow(row)
+
+
+def test_recent_projects_show_saved_time_and_version(app, tmp_path):
+    from benchloom import __version__
+
+    project = create_project(tmp_path / "proj")
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    window._set_project(None)
+    text = window.recent_list.item(0).text()
+    assert text.startswith("proj\n") and str(project.path) in text
+    assert "Saved today" in text and f"Benchloom {__version__}" in text
+    window.close()
+
+
+def test_recent_click_selects_and_buttons_act(app, tmp_path, monkeypatch):
+    from benchloom.gui import main_window as main_window_module
+    from benchloom.project import Project
+
+    first = create_project(tmp_path / "first")
+    second = create_project(tmp_path / "second")
+    window = make_window(tmp_path)
+    window.settings.setValue("recent", [str(first.path), str(second.path)])
+    window._set_project(None)
+    assert not window.recent_open.isEnabled()  # nothing chosen yet
+
+    # a click only selects
+    item = window.recent_list.item(0)
+    rect = window.recent_list.visualItemRect(item)
+    from PySide6.QtTest import QTest
+    QTest.mouseClick(window.recent_list.viewport(), Qt.MouseButton.LeftButton,
+                     pos=rect.center())
+    assert window.project is None and item.isSelected()
+    assert window.recent_open.isEnabled() and window.recent_delete.isEnabled()
+
+    # rename
+    monkeypatch.setattr(main_window_module.QInputDialog, "getText",
+                        lambda *a, **k: ("renamed", True))
+    window.settings.setValue(main_window_module._plot_key("plot_log_x", first.path), True)
+    window.rename_selected_recent()
+    renamed = tmp_path / "renamed"
+    assert _recent_paths(window) == [str(renamed), str(second.path)]
+    assert Project.load(renamed).name == "renamed"
+    assert window._selected_recent() == str(renamed)
+    assert window.settings.contains(main_window_module._plot_key("plot_log_x", renamed))
+
+    # move
+    monkeypatch.setattr(main_window_module.QFileDialog, "getExistingDirectory",
+                        lambda *a, **k: str(tmp_path / "elsewhere"))
+    window.move_selected_recent()
+    moved = tmp_path / "elsewhere" / "renamed"
+    assert moved.is_dir() and _recent_paths(window)[0] == str(moved)
+
+    # delete: asks first, then goes to the Recycle Bin, not deleted for good
+    trashed = []
+    monkeypatch.setattr(main_window_module.MainWindow, "move_to_trash",
+                        staticmethod(lambda path: trashed.append(path) or True))
+    monkeypatch.setattr(main_window_module.QMessageBox, "question",
+                        lambda *a, **k: main_window_module.QMessageBox.StandardButton.Cancel)
+    window.delete_selected_recent()
+    assert trashed == [] and len(_recent_paths(window)) == 2
+    monkeypatch.setattr(main_window_module.QMessageBox, "question",
+                        lambda *a, **k: main_window_module.QMessageBox.StandardButton.Yes)
+    _select_recent(window, moved)
+    window.delete_selected_recent()
+    assert trashed == [str(moved)] and _recent_paths(window) == [str(second.path)]
+
+    # open: the Open button, or a double click
+    _select_recent(window, second.path)
+    window.open_selected_recent()
+    assert window.project is not None and window.project.path == second.path
+    window.close()
+
+
+def test_recent_pin_duplicate_and_show_folder(app, tmp_path, monkeypatch):
+    from benchloom.gui import main_window as main_window_module
+
+    paths = [create_project(tmp_path / n).path for n in ("a", "b", "c")]
+    window = make_window(tmp_path)
+    window.settings.setValue("recent", [str(p) for p in paths])
+    window._set_project(None)
+
+    # pin c: it goes to the top, marked, and stays there when others are opened
+    _select_recent(window, paths[2])
+    assert window.pin_action.text() == "Pin to top"
+    window.toggle_pin_selected_recent()
+    assert _recent_paths(window)[0] == str(paths[2])
+    assert window.recent_list.item(0).text().startswith("c  (pinned)\n")
+    assert window.pin_action.text() == "Unpin"
+    window._remember(paths[1])
+    window._fill_recent()
+    assert _recent_paths(window) == [str(paths[2]), str(paths[1]), str(paths[0])]
+    assert window._recent()[0] == str(paths[1])  # "reopen last" still means the last one
+
+    # a pinned project keeps its pin when renamed
+    monkeypatch.setattr(main_window_module.QInputDialog, "getText",
+                        lambda *a, **k: ("c2", True))
+    _select_recent(window, paths[2])
+    window.rename_selected_recent()
+    assert window._pinned() == [str(tmp_path / "c2")]
+    window.toggle_pin_selected_recent()
+    assert window._pinned() == [] and "(pinned)" not in window.recent_list.item(0).text()
+
+    # duplicate: suggests "<name> copy", lands under the original, selected
+    asked = []
+    monkeypatch.setattr(main_window_module.QInputDialog, "getText",
+                        lambda *a, **k: asked.append(k["text"]) or ("b copy", True))
+    _select_recent(window, paths[1])
+    window.duplicate_selected_recent()
+    assert asked == ["b copy"]
+    shown = _recent_paths(window)
+    assert shown[shown.index(str(paths[1])) + 1] == str(tmp_path / "b copy")
+    assert window._selected_recent() == str(tmp_path / "b copy")
+
+    opened = []
+    monkeypatch.setattr(main_window_module.QDesktopServices, "openUrl",
+                        lambda url: opened.append(url.toLocalFile()))
+    window.show_selected_recent_folder()
+    assert [main_window_module.Path(p) for p in opened] == [tmp_path / "b copy"]
+    window.close()
+
+
+def test_saving_notes_the_version(app, tmp_path):
+    from benchloom import __version__
+    from benchloom.project import PROJECT_FILE, Project
+
+    project = create_project(tmp_path / "proj")
+    file = project.path / PROJECT_FILE
+    file.write_text(file.read_text(encoding="utf-8").replace(__version__, "0.0.1"),
+                    encoding="utf-8")
+    window = make_window(tmp_path)
+    window.open_project(project.path)
+    window.save()
+    assert Project.load(project.path).saved_with == __version__
+    window.close()
 
 
 def test_bode_project_plots_on_a_log_scale(app, tmp_path):
@@ -464,9 +611,13 @@ def test_device_picker_groups_official_and_third_party_by_manufacturer(app):
     makers = [official.child(i).data(0, Qt.ItemDataRole.UserRole + 1)
               for i in range(official.childCount())]
     assert makers == sorted(makers, key=str.casefold)
-    assert {"HP", "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
-    hp = official.child(makers.index("HP"))
-    assert hp.text(0) == "HP  (3)" and hp.child(0).text(1) in ("Counter", "Multimeter")
+    family = "HP / Agilent / Keysight"  # HP and Agilent devices share one group
+    assert {family, "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
+    assert not {"HP", "Agilent"} & set(makers)
+    hp = official.child(makers.index(family))
+    assert hp.text(0) == f"{family}  (4)"
+    assert {hp.child(i).text(1) for i in range(4)} == {
+        "Counter", "Multimeter", "Power supply", "Data acquisition"}
     # a plugin without a manufacturer or kind falls back to its name and "Other"
     third_makers = {third.child(i).data(0, Qt.ItemDataRole.UserRole + 1): third.child(i)
                     for i in range(third.childCount())}
@@ -483,7 +634,7 @@ def test_device_picker_search_finds_and_picks(app):
     picker.search.setText("HP 3478")
     assert picker.visible_ids() == ["hp.3478a"]
     hp = picker.items["hp.3478a"].parent()
-    assert hp.isExpanded() and not hp.isHidden() and hp.text(0) == "HP  (1)"
+    assert hp.isExpanded() and not hp.isHidden() and hp.text(0) == "HP / Agilent / Keysight  (1)"
     # every other group, and the section left empty, is hidden
     assert picker.sections["third_party"].isHidden()
     others = [picker.sections["official"].child(i) for i in
@@ -551,7 +702,10 @@ def test_device_dialog_describes_the_picked_type(app):
     dialog.set_device_type("hp.3478a")
     assert info.name_field.text() == "HP 3478A multimeter" and info.id_field.text() == "hp.3478a"
     assert info.kind_field.text() == "Multimeter" and info.manufacturer_field.text() == "HP"
-    assert info.plugin_field.text() == "HP / Agilent 0.1.0 (Built-in)"
+    assert info.plugin_field.text() == "HP / Agilent / Keysight 0.1.0 (Built-in)"
+    dialog.set_device_type("hp.34970a")  # the brand it was sold under, not the group
+    assert info.manufacturer_field.text() == "Agilent"
+    dialog.set_device_type("hp.3478a")
     assert "Digits at the start" in info.settings_field.toPlainText()
     assert "GPIB" in info.description_field.toPlainText()
     assert info.form.isRowVisible(info.settings_field)

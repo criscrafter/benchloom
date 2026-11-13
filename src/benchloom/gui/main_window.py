@@ -7,16 +7,18 @@ from __future__ import annotations
 import html
 import json
 import re
+import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtCore import QFile, QSettings, Qt, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMessageBox,
-    QPlainTextEdit, QPushButton, QRadioButton, QSizePolicy, QStackedWidget, QToolBar,
-    QToolButton, QVBoxLayout, QWidget,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QMenu, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSizePolicy,
+    QStackedWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import HOMEPAGE, NOTICE, __version__
@@ -25,7 +27,11 @@ from ..engine import GRAPH_CHUNK
 from ..graph import Catalog, GraphError, compile_graph
 from ..panel import Panel, PanelError, rename_in_graph, rename_in_lua
 from ..plugin import PluginRegistry
-from ..project import Project, ProjectError, create_project, is_project, templates
+from ..project import (
+    Project, ProjectError, create_project, duplicate_project, is_project, last_saved,
+    move_project,
+    project_name_problem, rename_project, stamp_version, templates,
+)
 from .devices import DevicesPanel
 from .editor import CodeEditor, mono_font
 from .graph_editor import GraphEditor
@@ -43,6 +49,40 @@ from .theme import THEMES, apply_theme
 from .update_bar import UpdateBar, UpdateChecker
 
 MAX_RECENT = 8
+
+
+def _plot_key(kind: str, project_path: str | Path) -> str:
+    """The settings key of a project's plot choice."""
+    return kind + "/" + str(project_path).replace("\\", "/").replace("/", "|")
+
+
+def _when(timestamp: float | None, now: datetime | None = None) -> str:
+    if timestamp is None:
+        return "unknown"
+    moment = datetime.fromtimestamp(timestamp)
+    days = ((now or datetime.now()).date() - moment.date()).days
+    if days == 0:
+        return f"today {moment:%H:%M}"
+    if days == 1:
+        return f"yesterday {moment:%H:%M}"
+    return f"{moment:%Y-%m-%d %H:%M}"
+
+
+def _recent_text(path: str, pinned: bool = False) -> str:
+    """A recent project in the welcome list: name, folder, when and by which version
+    it was saved."""
+    try:
+        project = Project.load(path)
+        name, version = project.name, project.saved_with
+    except ProjectError:
+        name, version = Path(path).name, ""
+    version = f"Benchloom {version}" if version else "Benchloom version unknown"
+    pin = "  (pinned)" if pinned else ""
+    return f"{name}{pin}\n{path}\nSaved {_when(last_saved(path))} · {version}"
+
+
+SHOW_FOLDER = {"win32": "Show in Explorer", "darwin": "Show in Finder"}.get(
+    sys.platform, "Show in file manager")
 
 
 def _shutdown_failed(run_path: Path) -> list[str]:
@@ -126,9 +166,9 @@ class NewProjectDialog(QDialog):
         return "lua" if self.lua_radio.isChecked() else "visual"
 
     def accept(self) -> None:
-        name = self.name_edit.text().strip()
-        if not name or re.search(r'[\\/:*?"<>|]', name):
-            QMessageBox.warning(self, "Name", "Enter a project name without special characters.")
+        problem = project_name_problem(self.name_edit.text())
+        if problem:
+            QMessageBox.warning(self, "Name", problem)
             return
         if is_project(self.path()):
             QMessageBox.warning(self, "Name", "A project with this name already exists there.")
@@ -247,8 +287,60 @@ class MainWindow(QMainWindow):
 
         self.recent_label = QLabel("Recent projects")
         self.recent_list = QListWidget()
-        self.recent_list.itemActivated.connect(lambda item: self.open_project(item.text()))
-        self.recent_list.itemClicked.connect(lambda item: self.open_project(item.text()))
+        # long folder paths are shortened in the middle rather than scrolled
+        self.recent_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.recent_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.recent_list.setSpacing(2)
+        # a click selects; a double click or Enter opens
+        self.recent_list.itemActivated.connect(
+            lambda item: self.open_project(item.data(Qt.ItemDataRole.UserRole)))
+        self.recent_list.itemSelectionChanged.connect(self._recent_selection_changed)
+        self.recent_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.recent_list.customContextMenuRequested.connect(self._recent_menu)
+
+        def recent_button(text, slot, tip, shortcut=None):
+            button = QPushButton(text)
+            button.setToolTip(tip)
+            button.clicked.connect(slot)
+            if shortcut:  # only while the list has the focus
+                item = QAction(text, self.recent_list)
+                item.setShortcut(QKeySequence(shortcut))
+                item.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+                item.triggered.connect(slot)
+                self.recent_list.addAction(item)
+            return button
+
+        self.recent_open = recent_button("Open", self.open_selected_recent,
+                                         "Open the project (or double-click it)")
+        self.recent_rename = recent_button("Rename…", self.rename_selected_recent,
+                                           "Rename the project and its folder (F2)", "F2")
+        self.recent_move = recent_button("Move…", self.move_selected_recent,
+                                         "Move the project folder to another place")
+        self.recent_duplicate = recent_button(
+            "Duplicate…", self.duplicate_selected_recent,
+            "Copy the project under a new name, without its past runs")
+        self.recent_delete = recent_button("Delete", self.delete_selected_recent,
+                                           "Move the project folder to the Recycle Bin (Del)",
+                                           "Del")
+        # the less used ones behind a ⋯ button
+        self.pin_action = QAction("Pin to top", self)
+        self.pin_action.triggered.connect(self.toggle_pin_selected_recent)
+        self.show_folder_action = QAction(SHOW_FOLDER, self)
+        self.show_folder_action.triggered.connect(self.show_selected_recent_folder)
+        more_menu = QMenu(self)
+        more_menu.addActions([self.pin_action, self.show_folder_action])
+        self.recent_more = QToolButton(text="⋯")
+        self.recent_more.setToolTip("More: pin to the top, " + SHOW_FOLDER.lower())
+        self.recent_more.setMenu(more_menu)
+        self.recent_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.recent_buttons = QWidget()
+        recent_row = QHBoxLayout(self.recent_buttons)
+        recent_row.setContentsMargins(0, 0, 0, 0)
+        recent_row.addWidget(self.recent_open)
+        recent_row.addStretch()
+        for button in (self.recent_rename, self.recent_move, self.recent_duplicate,
+                       self.recent_delete, self.recent_more):
+            recent_row.addWidget(button)
 
         column = QVBoxLayout()
         column.addStretch(1)
@@ -259,6 +351,7 @@ class MainWindow(QMainWindow):
         column.addSpacing(24)
         column.addWidget(self.recent_label)
         column.addWidget(self.recent_list, 2)
+        column.addWidget(self.recent_buttons)
         column.addStretch(1)
         inner = QWidget()
         inner.setLayout(column)
@@ -450,7 +543,7 @@ class MainWindow(QMainWindow):
 
     # --- plot settings per project ------------------------------------------
     def _plot_key(self, kind: str = "plot_right_axis") -> str:
-        return kind + "/" + str(self.project.path).replace("\\", "/").replace("/", "|")
+        return _plot_key(kind, self.project.path)
 
     def _right_columns_changed(self, columns: list) -> None:
         if self.project is not None:
@@ -483,14 +576,196 @@ class MainWindow(QMainWindow):
         self.plot.set_log_x(log_x)
 
     # --- project handling -------------------------------------------------
-    def _recent(self) -> list[str]:
+    def _recent_entries(self) -> list[str]:
         value = self.settings.value("recent", [])
-        paths = [value] if isinstance(value, str) else list(value or [])
-        return [p for p in paths if is_project(p)]
+        return [value] if isinstance(value, str) else [str(p) for p in value or []]
+
+    def _recent(self) -> list[str]:
+        return [p for p in self._recent_entries() if is_project(p)]
 
     def _remember(self, path: Path) -> None:
         recent = [str(path)] + [p for p in self._recent() if p != str(path)]
         self.settings.setValue("recent", recent[:MAX_RECENT])
+
+    # --- recent projects on the welcome page -----------------------------------
+    def _pinned(self) -> list[str]:
+        value = self.settings.value("pinned", [])
+        return [value] if isinstance(value, str) else [str(p) for p in value or []]
+
+    def _shown_recent(self) -> list[str]:
+        """The welcome list: pinned projects first, then the last opened ones."""
+        pinned = [p for p in self._pinned() if is_project(p)]
+        return pinned + [p for p in self._recent() if p not in pinned]
+
+    def _fill_recent(self, select: str | None = None) -> None:
+        recent = self._shown_recent()
+        pinned = set(self._pinned())
+        self.recent_list.clear()
+        for path in recent:
+            item = QListWidgetItem(_recent_text(path, path in pinned))
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setToolTip(path)
+            self.recent_list.addItem(item)
+            if path == select:
+                self.recent_list.setCurrentItem(item)
+        for widget in (self.recent_label, self.recent_list, self.recent_buttons):
+            widget.setVisible(bool(recent))
+        self._recent_selection_changed()
+
+    def _selected_recent(self) -> str | None:
+        item = self.recent_list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item and item.isSelected() else None
+
+    def _recent_selection_changed(self, *_) -> None:
+        path = self._selected_recent()
+        for button in (self.recent_open, self.recent_rename, self.recent_move,
+                       self.recent_duplicate, self.recent_delete, self.recent_more):
+            button.setEnabled(path is not None)
+        self.pin_action.setText("Unpin" if path in self._pinned() else "Pin to top")
+
+    def _recent_menu(self, pos) -> None:
+        item = self.recent_list.itemAt(pos)
+        if item is None:
+            return
+        self.recent_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Open", self.open_selected_recent)
+        menu.addSeparator()
+        menu.addAction("Rename…", self.rename_selected_recent)
+        menu.addAction("Move…", self.move_selected_recent)
+        menu.addAction("Duplicate…", self.duplicate_selected_recent)
+        menu.addAction("Delete", self.delete_selected_recent)
+        menu.addSeparator()
+        menu.addAction(self.pin_action)
+        menu.addAction(self.show_folder_action)
+        menu.exec(self.recent_list.viewport().mapToGlobal(pos))
+        menu.deleteLater()
+
+    def toggle_pin_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if not path:
+            return
+        pinned = self._pinned()
+        self.settings.setValue(
+            "pinned", [p for p in pinned if p != path] if path in pinned else pinned + [path])
+        self._fill_recent(select=path)
+
+    def show_selected_recent_folder(self) -> None:
+        path = self._selected_recent()
+        if path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def duplicate_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if not path:
+            return
+        base = Path(path).name + " copy"
+        suggested, number = base, 2
+        while Path(path).with_name(suggested).exists():
+            suggested, number = f"{base} {number}", number + 1
+        name, ok = QInputDialog.getText(
+            self, "Duplicate project", "Name of the copy (past runs are not copied)",
+            text=suggested)
+        if not ok:
+            return
+        try:
+            copy = duplicate_project(path, name)
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Duplicate project", str(exc))
+            return
+        # in the list right away, under the original
+        recent = self._recent_entries()
+        at = recent.index(path) + 1 if path in recent else 0
+        self.settings.setValue("recent", (recent[:at] + [str(copy)] + recent[at:])[:MAX_RECENT])
+        self._fill_recent(select=str(copy))
+
+    def open_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if path:
+            self.open_project(path)
+
+    def rename_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if not path:
+            return
+        old = Path(path).name
+        name, ok = QInputDialog.getText(self, "Rename project", "New name", text=old)
+        if not ok or name.strip() == old:
+            return
+        try:
+            self._project_moved(path, rename_project(path, name))
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Rename project", str(exc))
+
+    def move_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if not path:
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self, f"Move {Path(path).name} to", str(Path(path).parent))
+        if not folder:
+            return
+        try:
+            self._project_moved(path, move_project(path, folder))
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Move project", str(exc))
+
+    def delete_selected_recent(self) -> None:
+        path = self._selected_recent()
+        if not path:
+            return
+        answer = QMessageBox.question(
+            self, "Delete project",
+            f"Move the project {Path(path).name} to the Recycle Bin?\n\n"
+            f"The whole folder goes, with its runs and data:\n{path}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if not self.move_to_trash(path):
+            QMessageBox.warning(
+                self, "Delete project",
+                f"Could not move {path} to the Recycle Bin. Is a file of the project "
+                "open in another program? Nothing was deleted.")
+            return
+        self._forget_project(path)
+        self._fill_recent()
+
+    @staticmethod
+    def move_to_trash(path: str) -> bool:
+        """Move a folder to the Recycle Bin (the trash elsewhere), never deleting it
+        for good."""
+        ok, _ = QFile.moveToTrash(path)
+        return bool(ok)
+
+    def _project_moved(self, old: str, new: Path) -> None:
+        """A project got another folder: keep its place in the recent list, its plot
+        choices and whether its plugins are trusted."""
+        new_path = str(new)
+        recent = [new_path if p == old else p for p in self._recent_entries()]
+        self.settings.setValue("recent", recent[:MAX_RECENT])
+        self.settings.setValue("pinned", [new_path if p == old else p for p in self._pinned()])
+        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden"):
+            old_key, new_key = _plot_key(kind, old), _plot_key(kind, new_path)
+            if self.settings.contains(old_key):
+                self.settings.setValue(new_key, self.settings.value(old_key))
+                self.settings.remove(old_key)
+        config = AppConfig.load()
+        if config.trusts(old):
+            config.set_trusted(old, False)
+            config.set_trusted(new_path)
+            config.save()
+        self._fill_recent(select=new_path)
+
+    def _forget_project(self, path: str) -> None:
+        self.settings.setValue("recent", [p for p in self._recent_entries() if p != path])
+        self.settings.setValue("pinned", [p for p in self._pinned() if p != path])
+        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden"):
+            self.settings.remove(_plot_key(kind, path))
+        config = AppConfig.load()
+        if config.trusts(path):
+            config.set_trusted(path, False)
+            config.save()
 
     def _set_project(self, project: Project | None) -> None:
         self.project = project
@@ -517,11 +792,7 @@ class MainWindow(QMainWindow):
             dock.setVisible(project is not None)
         if project is None:
             self.setWindowTitle("Benchloom")
-            recent = self._recent()
-            self.recent_list.clear()
-            self.recent_list.addItems(recent)
-            self.recent_label.setVisible(bool(recent))
-            self.recent_list.setVisible(bool(recent))
+            self._fill_recent()
             self.stack.setCurrentIndex(0)
         else:
             self.setWindowTitle(f"{project.name} — Benchloom")
@@ -650,6 +921,10 @@ class MainWindow(QMainWindow):
         else:
             script.write_text(json.dumps(self.graph.to_graph(), indent=1), encoding="utf-8")
             self.graph.modified = False
+        try:
+            stamp_version(self.project.path)
+        except (ProjectError, OSError):
+            pass  # the test is saved; only the note of the version is missing
 
     # --- visual projects ----------------------------------------------------
     def _load_graph(self) -> None:

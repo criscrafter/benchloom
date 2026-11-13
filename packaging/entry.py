@@ -78,6 +78,14 @@ def selftest() -> int:
             problems.append(f"{len(pngs)} waveform PNGs, expected 5")
         if "PASS" not in (run / "report.html").read_text(encoding="utf-8"):
             problems.append("the report has no PASS")
+    try:  # visa:// works: pyvisa and its pure-Python backend are in the package
+        import pyvisa
+
+        manager = pyvisa.ResourceManager("@py")  # a vendor VISA is used when installed
+        print(f"VISA: pyvisa {pyvisa.__version__}, {manager.visalib}")
+        manager.close()
+    except Exception as exc:  # noqa: BLE001 - report anything
+        problems.append(f"VISA support is missing: {exc!r}")
     try:  # the app's windows can be built
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtCore import QSettings

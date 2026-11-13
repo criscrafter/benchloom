@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- **Managing projects from the welcome page:** the recent projects list shows
+  when each project was saved last and with which Benchloom version. A click
+  selects a project, a double click or Enter opens it, and buttons and a
+  right-click menu pin it to the top, duplicate it (without its past runs),
+  rename it, move its folder, delete it to the recycle bin or show it in
+  Explorer. Saving a project notes the Benchloom version in its project file.
+- **GPIB through a Prologix or AR488 adapter** sets the adapter's read timeout
+  from the connection's timeout, when connecting and whenever a driver changes
+  it. The adapter keeps whatever read timeout the last program set, so a short
+  one left behind made slow measurements, such as the Chroma 6404's (about
+  0.9 s), time out. Connecting also waits for the adapter to answer, so an
+  Arduino Nano that restarts when the port opens works, and a missing adapter
+  is reported as such.
+- **Chroma 6404** tried over GPIB as well as RS-232.
+- **VISA in the Windows download:** `visa://` connections, for example
+  `visa://GPIB0::9::INSTR` through an NI or Keysight GPIB adapter, now work in
+  the packaged program too, not only after `pip install "benchloom[visa]"`. A
+  vendor VISA such as NI-VISA is used when installed; otherwise PyVISA's own
+  backend, which covers serial and network instruments. The build's self-test
+  checks it.
+- **HP, Agilent and Keysight in one group:** the Add device dialog lists devices
+  of the company that was HP, then Agilent, then Keysight under one
+  manufacturer, **HP / Agilent / Keysight**, whichever of the names a plugin
+  gives; the device's details still show that name (the 34970A says Agilent).
+
 ## 0.1.7 – Device picker, DT-4000ZC multimeter and Agilent 34970A
 
 - **Finding a device type:** the Add device dialog lists the device types as a

@@ -144,8 +144,9 @@ LABEL_ROLE = Qt.ItemDataRole.UserRole + 1  # on a manufacturer row: its name
 
 
 def _search_text(spec: DeviceSpec) -> str:
-    return " ".join((spec.name, spec.id, spec.maker, spec.description, kind_label(spec.kind),
-                     spec.kind, spec.plugin.name, spec.plugin.description)).casefold()
+    return " ".join((spec.name, spec.id, spec.maker, spec.brand, spec.description,
+                     kind_label(spec.kind), spec.kind, spec.plugin.name,
+                     spec.plugin.description)).casefold()
 
 
 class DeviceTypePicker(QWidget):
@@ -346,7 +347,7 @@ class DeviceTypeInfo(QGroupBox):
         self.name_field.show_text(spec.name)
         self.id_field.show_text(spec.id)
         self.kind_field.show_text(kind_label(spec.kind))
-        self.manufacturer_field.show_text(spec.maker)
+        self.manufacturer_field.show_text(spec.brand)
         where = SOURCES.get(plugin.source, plugin.source)
         self.plugin_field.show_text(f"{plugin.name} {plugin.version}"
                                     + (f" ({where})" if where else ""))

@@ -58,6 +58,7 @@ are compatible with the AGPL.
 | [pyqtgraph](https://github.com/pyqtgraph/pyqtgraph) | plots (`[gui]`) | MIT |
 | [NumPy](https://numpy.org) | needed by pyqtgraph | BSD-3-Clause |
 | [PyVISA](https://github.com/pyvisa/pyvisa), [PyVISA-py](https://github.com/pyvisa/pyvisa-py) | VISA instruments (`[visa]`) | MIT |
+| [typing_extensions](https://github.com/python/typing_extensions) | needed by PyVISA | PSF-2.0 |
 | [python-usbtmc](https://github.com/python-ivi/python-usbtmc) | USBTMC instruments (`[usb]`) | MIT |
 | [PyUSB](https://github.com/pyusb/pyusb) | USB instruments (`[usb]`) | BSD-3-Clause |
 | [libusb-package](https://github.com/pyocd/libusb-package) (includes libusb) | the libusb library (`[usb]`) | Apache-2.0 (libusb: LGPL-2.1) |

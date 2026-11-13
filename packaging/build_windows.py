@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
 """Build the Windows download: build/Benchloom-<version>-windows-x64.zip.
 
-    pip install -e ".[gui,usb]" pyinstaller
+    pip install -e ".[gui,usb,visa]" pyinstaller
     python packaging/build_windows.py
 
 It builds the folder with PyInstaller, adds the licence files, runs the self-test

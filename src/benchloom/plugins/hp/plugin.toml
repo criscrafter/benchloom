@@ -1,6 +1,6 @@
 [plugin]
 id = "hp"
-name = "HP / Agilent"
+name = "HP / Agilent / Keysight"
 version = "0.1.0"
 description = "Hewlett-Packard and Agilent instruments."
 manufacturer = "HP"

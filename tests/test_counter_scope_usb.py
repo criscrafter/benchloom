@@ -194,3 +194,63 @@ def test_prologix_device_clear():
     gpib._serial = type("S", (), {"write": lambda self, data: sent.append(data)})()
     gpib.device_clear()
     assert sent == [b"++clr\n"]
+
+
+class FakeAdapter:
+    """A Prologix-style adapter on a serial port: answers ++ver after `silent` tries."""
+
+    def __init__(self, version, silent=0):
+        self.version, self.silent, self.sent = version, silent, []
+
+    def write(self, data):
+        self.sent.append(data.decode().strip())
+
+    def reset_input_buffer(self):
+        pass
+
+    def read_until(self, term):
+        if self.sent[-1] != "++ver":
+            return b""
+        if self.silent:  # e.g. a Nano still in its bootloader after the port opened
+            self.silent -= 1
+            return b""
+        return self.version.encode() + b"\r\n" if self.version else b""
+
+    def close(self):
+        pass
+
+
+def open_prologix(monkeypatch, adapter, timeout=2.0):
+    from benchloom.transports import SerialTransport
+
+    monkeypatch.setattr(SerialTransport, "open", lambda self: setattr(self, "_serial", adapter))
+    gpib = PrologixTransport("COM99", 11, timeout=timeout)
+    gpib.open()
+    return gpib
+
+
+def read_timeouts(adapter):
+    return [s for s in adapter.sent if s.startswith("++read_tmo_ms")]
+
+
+def test_prologix_sets_the_adapters_read_timeout(monkeypatch):
+    # the adapter keeps whatever read timeout the last program set, so it is set here
+    ar488 = FakeAdapter("AR488 GPIB controller, ver. 0.53.46, 22/05/2026")
+    gpib = open_prologix(monkeypatch, ar488)
+    assert gpib.adapter_version.startswith("AR488") and gpib.max_read_ms == 32000
+    assert "++addr 11" in ar488.sent and read_timeouts(ar488) == ["++read_tmo_ms 2000"]
+    gpib.set_timeout(12.5)  # e.g. the 53131A with a long gate time
+    gpib.set_timeout(100)
+    assert read_timeouts(ar488)[1:] == ["++read_tmo_ms 12500", "++read_tmo_ms 32000"]
+
+    prologix = FakeAdapter("Prologix GPIB-USB Controller version 6.101")
+    gpib = open_prologix(monkeypatch, prologix, timeout=5)
+    assert gpib.max_read_ms == 3000 and read_timeouts(prologix) == ["++read_tmo_ms 3000"]
+
+
+def test_prologix_waits_for_a_restarting_adapter_and_names_a_missing_one(monkeypatch):
+    nano = FakeAdapter("AR488 GPIB controller, ver. 0.53.46", silent=2)
+    assert open_prologix(monkeypatch, nano).adapter_version.startswith("AR488")
+    assert nano.sent.count("++ver") == 3
+    with pytest.raises(TransportError, match="no Prologix or AR488 adapter answers on COM99"):
+        open_prologix(monkeypatch, FakeAdapter(""))

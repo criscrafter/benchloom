@@ -49,6 +49,15 @@ DEVICE_KINDS = {
 }
 
 
+# Names one company's instruments were sold under, by brand (lower case) -> the
+# group the Add device dialog shows them in. HP's instrument business became
+# Agilent in 1999 and Keysight in 2014, and many models carry all three names.
+_HP_FAMILY = "HP / Agilent / Keysight"
+MANUFACTURER_FAMILIES = {name: _HP_FAMILY for name in (
+    "hp", "hewlett-packard", "hewlett packard", "agilent", "agilent technologies",
+    "keysight", "keysight technologies")}
+
+
 def kind_label(kind: str) -> str:
     """The label of a device kind, also for kinds not in :data:`DEVICE_KINDS`."""
     return DEVICE_KINDS.get(kind) or kind.replace("_", " ").strip().capitalize() or "Other"
@@ -351,9 +360,15 @@ class DeviceSpec:
         return self.category or "other"
 
     @property
-    def maker(self) -> str:
-        """The manufacturer the Add device dialog groups the device under."""
+    def brand(self) -> str:
+        """The manufacturer the plugin names for this device, e.g. "Agilent"."""
         return self.manufacturer or self.plugin.manufacturer or self.plugin.name
+
+    @property
+    def maker(self) -> str:
+        """The manufacturer the Add device dialog groups the device under: the brand,
+        or its family when it is one of several names of one company."""
+        return MANUFACTURER_FAMILIES.get(self.brand.casefold(), self.brand)
 
     def load_driver(self) -> type[Device]:
         return self.plugin.load(self.driver)
