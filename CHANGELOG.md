@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Finding a device type:** the Add device dialog lists the device types as a
+  tree, grouped by manufacturer, with the plugins that come with Benchloom
+  under **Official** and installed ones under **Third party**. A search box
+  finds a type by name, id, manufacturer or description (`HP 3478`), and a
+  filter shows one kind only, such as multimeters or power supplies. A panel
+  beside the tree describes the type picked, as the plugin manager does: kind,
+  manufacturer, plugin, connections, settings and description.
+- **Plugins:** a `[[device]]` entry can give its kind (`category = "dmm"`) and
+  `manufacturer`, which `[plugin]` can also set for all its devices. Both are
+  optional; the built-in plugins have them, and plugins without them are listed
+  under their name, as Other. See docs/writing-plugins.md.
 - **Digitek DT-4000ZC multimeter** (`fs9721.dt4000zc`): reads the display of
   this handheld meter over its optical serial cable, as a number in the base
   unit or as text, and checks that the dial is on the function asked for:

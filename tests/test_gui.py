@@ -102,7 +102,7 @@ def test_device_dialog_round_trips_resources(app):
     assert dialog.config().resource == "usbtmc://03EB:2065/GPIB_23_X"
     # the scope's USB ID is filled in from its plugin
     dialog = DeviceDialog(registry, set())
-    dialog.type_box.setCurrentIndex(dialog.type_box.findData("hantek.dso5000p"))
+    dialog.set_device_type("hantek.dso5000p")
     dialog.connection_box.setCurrentIndex(dialog.connection_box.findData("usb"))
     assert dialog.config().resource == "usb://049F:505A"
 
@@ -133,7 +133,7 @@ def test_device_dialog_shows_the_settings_a_plugin_declares(app):
     dialog._setting_fields["leave_output_on"][1].setChecked(False)
     assert dialog.config().settings == {"timeout": 1.0}
 
-    dialog.type_box.setCurrentIndex(dialog.type_box.findData("generic.scpi"))
+    dialog.set_device_type("generic.scpi")
     assert not dialog._setting_fields and dialog.settings_box.isHidden()
 
 
@@ -230,7 +230,7 @@ def test_settings_dialog_saves_and_applies(app, tmp_path):
 
 def test_device_dialog_offers_the_fixed_baud_rate(app):
     dialog = DeviceDialog(PluginRegistry.default(), set())
-    dialog.type_box.setCurrentIndex(dialog.type_box.findData("feeltech.fy6900"))
+    dialog.set_device_type("feeltech.fy6900")
     dialog.connection_box.setCurrentIndex(dialog.connection_box.findData("serial"))
     dialog.serial_port.set_port("COM12")
     assert dialog.name_edit.text() == "gen"
@@ -431,3 +431,134 @@ def test_dialogs_do_not_stay_behind(app, tmp_path, monkeypatch):
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert window.findChildren(QDialog) == []
     window.close()
+
+
+# --- device type picker in the Add device dialog --------------------------------------
+def _third_party_plugin(folder, manifest_devices):
+    folder.mkdir(parents=True)
+    (folder / "plugin.toml").write_text(
+        '[plugin]\nid = "acme"\nname = "ACME instruments"\nversion = "1.0"\n'
+        + manifest_devices, encoding="utf-8")
+    (folder / "driver.py").write_text(
+        "from benchloom.plugin import Device\n\nclass Box(Device):\n    pass\n",
+        encoding="utf-8")
+
+
+def picker_registry():
+    from benchloom.config import user_plugin_dir
+
+    # one device with a kind and a manufacturer, one with neither
+    _third_party_plugin(user_plugin_dir() / "acme",
+                        '[[device]]\nid = "ps3005"\nname = "ACME PS-3005 supply"\n'
+                        'driver = "driver:Box"\ncategory = "psu"\nmanufacturer = "Acme"\n\n'
+                        '[[device]]\nid = "gizmo"\nname = "Gizmo"\ndriver = "driver:Box"\n')
+    return PluginRegistry.default()
+
+
+def test_device_picker_groups_official_and_third_party_by_manufacturer(app):
+    dialog = DeviceDialog(picker_registry(), set())
+    picker = dialog.type_picker
+    official, third = picker.sections["official"], picker.sections["third_party"]
+    assert picker.tree.topLevelItem(0) is official and official.text(0) == "Official"
+    assert picker.tree.topLevelItem(1) is third and third.text(0) == "Third party"
+    makers = [official.child(i).data(0, Qt.ItemDataRole.UserRole + 1)
+              for i in range(official.childCount())]
+    assert makers == sorted(makers, key=str.casefold)
+    assert {"HP", "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
+    hp = official.child(makers.index("HP"))
+    assert hp.text(0) == "HP  (3)" and hp.child(0).text(1) in ("Counter", "Multimeter")
+    # a plugin without a manufacturer or kind falls back to its name and "Other"
+    third_makers = {third.child(i).data(0, Qt.ItemDataRole.UserRole + 1): third.child(i)
+                    for i in range(third.childCount())}
+    assert set(third_makers) == {"Acme", "ACME instruments"}
+    assert picker.items["acme.gizmo"].text(1) == "Other"
+    assert picker.items["acme.gizmo"].parent() is third_makers["ACME instruments"]
+    # the dialog starts on the demo supply, and a new device starts with its type
+    assert dialog.device_type() == "demo.psu" and dialog.config().device == "demo.psu"
+
+
+def test_device_picker_search_finds_and_picks(app):
+    dialog = DeviceDialog(picker_registry(), set())
+    picker = dialog.type_picker
+    picker.search.setText("HP 3478")
+    assert picker.visible_ids() == ["hp.3478a"]
+    hp = picker.items["hp.3478a"].parent()
+    assert hp.isExpanded() and not hp.isHidden() and hp.text(0) == "HP  (1)"
+    # every other group, and the section left empty, is hidden
+    assert picker.sections["third_party"].isHidden()
+    others = [picker.sections["official"].child(i) for i in
+              range(picker.sections["official"].childCount())]
+    assert [g for g in others if not g.isHidden()] == [hp]
+    # the demo supply, now hidden, gives way to the match, and the dialog follows it
+    assert dialog.device_type() == "hp.3478a" and dialog.name_edit.text() == "dmm"
+
+    picker.search.setText("hewlett-packard")  # the plugin's description
+    assert set(picker.visible_ids()) == {"hp.6655a", "hp.3478a", "hp.53131a"}
+    picker.search.setText("acme")  # the third-party manufacturer and plugin name
+    assert set(picker.visible_ids()) == {"acme.ps3005", "acme.gizmo"}
+    assert picker.sections["official"].isHidden() and not picker.sections["third_party"].isHidden()
+    picker.search.setText("dso5000p")  # the id
+    assert picker.visible_ids() == ["hantek.dso5000p"]
+    picker.search.setText("no such thing")
+    assert picker.visible_ids() == [] and picker.empty_label.isVisibleTo(dialog)
+    picker.search.clear()
+    assert len(picker.visible_ids()) == len(picker.items)
+    assert not picker.empty_label.isVisibleTo(dialog)
+
+
+def test_device_picker_filters_by_kind(app):
+    dialog = DeviceDialog(picker_registry(), set())
+    picker = dialog.type_picker
+    kinds = [picker.kind_box.itemData(i) for i in range(picker.kind_box.count())]
+    assert kinds[0] == "" and kinds[-1] == "other"
+    assert {"dmm", "scope", "psu", "load", "generator", "counter"} <= set(kinds)
+
+    picker.set_kind("dmm")
+    assert set(picker.visible_ids()) == {"hp.3478a", "fs9721.dt4000zc"}
+    assert dialog.device_type() == "fs9721.dt4000zc"  # the first one shown (Digitek)
+    picker.set_current("hp.3478a")
+    picker.set_kind("counter")
+    assert dialog.device_type() == "hp.53131a"
+    picker.set_kind("")
+    assert dialog.device_type() == "hp.53131a"  # still in view, so it stays
+    picker.set_kind("dmm")
+    assert picker.sections["third_party"].isHidden()
+    picker.set_kind("psu")  # official and third-party supplies alike
+    assert set(picker.visible_ids()) == {"hp.6655a", "demo.psu", "acme.ps3005"}
+    assert not picker.sections["third_party"].isHidden()
+    picker.search.setText("acme")  # search and kind together
+    assert picker.visible_ids() == ["acme.ps3005"]
+    picker.set_kind("other")
+    assert picker.visible_ids() == ["acme.gizmo"]
+    picker.search.clear()
+    picker.set_kind("")
+    assert len(picker.visible_ids()) == len(picker.items)
+
+
+def test_device_picker_shows_the_edited_device_type(app):
+    registry = PluginRegistry.default()
+    dialog = DeviceDialog(registry, set(), DeviceConfig("eload", "kunkin.kp184", "sim://"))
+    item = dialog.type_picker.items["kunkin.kp184"]
+    assert dialog.type_picker.tree.currentItem() is item and item.parent().isExpanded()
+    assert dialog.config().device == "kunkin.kp184"
+    # without third-party plugins that section is left out
+    assert dialog.type_picker.sections["third_party"].isHidden()
+
+
+def test_device_dialog_describes_the_picked_type(app):
+    dialog = DeviceDialog(picker_registry(), set())
+    info = dialog.type_info
+    dialog.set_device_type("hp.3478a")
+    assert info.name_field.text() == "HP 3478A multimeter" and info.id_field.text() == "hp.3478a"
+    assert info.kind_field.text() == "Multimeter" and info.manufacturer_field.text() == "HP"
+    assert info.plugin_field.text() == "HP / Agilent 0.1.0 (Built-in)"
+    assert "Digits at the start" in info.settings_field.toPlainText()
+    assert "GPIB" in info.description_field.toPlainText()
+    assert info.form.isRowVisible(info.settings_field)
+    # a third-party type without settings, description or default address
+    dialog.set_device_type("acme.gizmo")
+    assert info.kind_field.text() == "Other" and info.manufacturer_field.text() == "ACME instruments"
+    assert info.plugin_field.text() == "ACME instruments 1.0 (Installed)"
+    assert info.simulator_field.text() == "No" and info.connections_field.text() == "any"
+    for field in (info.settings_field, info.description_field, info.resource_field):
+        assert not info.form.isRowVisible(field)

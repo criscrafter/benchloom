@@ -9,15 +9,20 @@ import re
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox,
-    QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..engine import open_device
-from ..plugin import CommandInfo, PluginError, PluginRegistry, SettingSpec
+from ..plugin import (
+    DEVICE_KINDS, SOURCES, CommandInfo, DeviceSpec, PluginError, PluginRegistry, SettingSpec,
+    kind_label,
+)
 from ..project import DeviceConfig, Project, device_name_problem
 from ..transports import USBGPIB_IDS, TransportError, find_usbtmc, parse_resource
+from .plugins import _Field, _TextField, setting_text
 
 BAUD_RATES = ["9600", "19200", "38400", "57600", "115200"]
 
@@ -134,19 +139,242 @@ class _UsbTmcBox(QWidget):
         return self.combo.currentText().strip() or self.DEFAULT
 
 
+ID_ROLE = Qt.ItemDataRole.UserRole  # on a device row of the type picker: its device type
+LABEL_ROLE = Qt.ItemDataRole.UserRole + 1  # on a manufacturer row: its name
+
+
+def _search_text(spec: DeviceSpec) -> str:
+    return " ".join((spec.name, spec.id, spec.maker, spec.description, kind_label(spec.kind),
+                     spec.kind, spec.plugin.name, spec.plugin.description)).casefold()
+
+
+class DeviceTypePicker(QWidget):
+    """The plugins' device types to pick one from: a search box, a filter by kind and
+    a tree of "Official" and "Third party" plugins, grouped by manufacturer."""
+
+    changed = Signal()
+    SECTIONS = (("official", "Official"), ("third_party", "Third party"))
+
+    def __init__(self, registry: PluginRegistry, parent=None):
+        super().__init__(parent)
+        specs = sorted(registry.devices.values(),
+                       key=lambda s: (s.maker.casefold(), s.name.casefold()))
+        self._current: str | None = None
+        self._kinds: dict[str, str] = {}  # device type -> its kind
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search name, id, manufacturer, description…")
+        self.search.setClearButtonEnabled(True)
+        self.kind_box = QComboBox()
+        self.kind_box.addItem("All kinds", "")
+        kinds = {spec.kind for spec in specs}
+        # the known kinds in their usual order, then the plugins' own, "other" last
+        ordered = [k for k in DEVICE_KINDS if k in kinds and k != "other"]
+        ordered += sorted(kinds - set(DEVICE_KINDS), key=lambda k: kind_label(k).casefold())
+        ordered += ["other"] if "other" in kinds else []
+        for kind in ordered:
+            self.kind_box.addItem(kind_label(kind), kind)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(["Device type", "Kind"])
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tree.setMinimumHeight(200)
+        self.empty_label = QLabel("No device type matches.")
+        self.empty_label.setEnabled(False)
+        self.empty_label.hide()
+
+        self.sections: dict[str, QTreeWidgetItem] = {}
+        self.items: dict[str, QTreeWidgetItem] = {}  # device type -> its row
+        self._search_texts: dict[str, str] = {}
+        for key, label in self.SECTIONS:
+            section = QTreeWidgetItem([label])
+            section.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = section.font(0)
+            font.setBold(True)
+            section.setFont(0, font)
+            self.sections[key] = section
+            self.tree.addTopLevelItem(section)
+            groups: dict[str, QTreeWidgetItem] = {}
+            for spec in specs:
+                if ("official" if spec.plugin.official else "third_party") != key:
+                    continue
+                group = groups.get(spec.maker.casefold())
+                if group is None:
+                    group = QTreeWidgetItem([spec.maker])
+                    group.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                    group.setData(0, LABEL_ROLE, spec.maker)
+                    groups[spec.maker.casefold()] = group
+                    section.addChild(group)
+                item = QTreeWidgetItem([spec.name, kind_label(spec.kind)])
+                item.setData(0, ID_ROLE, spec.id)
+                tip = f"{spec.name} ({spec.id})"
+                if spec.description:
+                    tip += "\n\n" + spec.description
+                item.setToolTip(0, tip)
+                group.addChild(item)
+                self.items[spec.id] = item
+                self._kinds[spec.id] = spec.kind
+                self._search_texts[spec.id] = _search_text(spec)
+            section.setExpanded(True)
+
+        filters = QHBoxLayout()
+        filters.setContentsMargins(0, 0, 0, 0)
+        filters.addWidget(self.search, 1)
+        filters.addWidget(self.kind_box)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(filters)
+        layout.addWidget(self.tree, 1)
+        layout.addWidget(self.empty_label)
+
+        self.search.textChanged.connect(self.apply_filter)
+        self.kind_box.currentIndexChanged.connect(self.apply_filter)
+        self.tree.currentItemChanged.connect(self._item_changed)
+        self.apply_filter()
+
+    def current_id(self) -> str | None:
+        return self._current
+
+    def set_current(self, device_id: str | None) -> None:
+        item = self.items.get(device_id)
+        if item is not None:
+            self._reveal(item)
+            self.tree.setCurrentItem(item)
+            self.tree.scrollToItem(item)
+
+    def set_kind(self, kind: str) -> None:
+        self.kind_box.setCurrentIndex(max(self.kind_box.findData(kind), 0))
+
+    def _reveal(self, item: QTreeWidgetItem) -> None:
+        parent = item.parent()
+        while parent is not None:
+            parent.setExpanded(True)
+            parent = parent.parent()
+
+    def _item_changed(self, item: QTreeWidgetItem | None, _previous=None) -> None:
+        device_id = item.data(0, ID_ROLE) if item is not None else None
+        if device_id and device_id != self._current:
+            self._current = device_id
+            self.changed.emit()
+
+    def matches(self, device_id: str) -> bool:
+        kind = self.kind_box.currentData()
+        if kind and self._kinds[device_id] != kind:
+            return False
+        text = self._search_texts[device_id]
+        return all(word in text for word in self.search.text().casefold().split())
+
+    def apply_filter(self) -> None:
+        """Hide the device types that do not match, and the groups and sections left
+        empty; while a search or a kind is set, open every group that matches."""
+        filtering = bool(self.search.text().strip() or self.kind_box.currentData())
+        any_shown = False
+        for section in self.sections.values():
+            section_count = 0
+            for g in range(section.childCount()):
+                group = section.child(g)
+                count = 0
+                for i in range(group.childCount()):
+                    item = group.child(i)
+                    shown = self.matches(item.data(0, ID_ROLE))
+                    item.setHidden(not shown)
+                    count += shown
+                group.setHidden(count == 0)
+                group.setText(0, f"{group.data(0, LABEL_ROLE)}  ({count})")
+                if filtering:
+                    group.setExpanded(count > 0)
+                section_count += count
+            section.setHidden(section_count == 0)
+            if section_count and filtering:
+                section.setExpanded(True)
+            any_shown = any_shown or section_count > 0
+        self.tree.setVisible(any_shown)
+        self.empty_label.setVisible(not any_shown)
+        if not filtering and self._current in self.items:
+            self._reveal(self.items[self._current])
+        # the type picked is always one in view: the first match, if the filter hid it
+        shown = self.visible_ids()
+        if shown and self._current not in shown:
+            self.set_current(shown[0])
+
+    def visible_ids(self) -> list[str]:
+        """The device types shown, in tree order."""
+        return [i for i, item in self.items.items() if not item.isHidden()]
+
+
+class DeviceTypeInfo(QGroupBox):
+    """Fields describing the device type picked, as the plugin manager shows them."""
+
+    def __init__(self, parent=None):
+        super().__init__("Device type", parent)
+        self.name_field, self.id_field, self.kind_field = _Field(), _Field(), _Field()
+        self.manufacturer_field, self.plugin_field = _Field(), _Field()
+        self.connections_field, self.simulator_field = _Field(), _Field()
+        self.resource_field = _Field()
+        self.settings_field = _TextField(3)
+        self.description_field = _TextField(6)
+        form = self.form = QFormLayout(self)
+        form.addRow("Name", self.name_field)
+        form.addRow("Device type", self.id_field)
+        form.addRow("Kind", self.kind_field)
+        form.addRow("Manufacturer", self.manufacturer_field)
+        form.addRow("Plugin", self.plugin_field)
+        form.addRow("Connections", self.connections_field)
+        form.addRow("Default address", self.resource_field)
+        form.addRow("Simulator", self.simulator_field)
+        form.addRow("Settings", self.settings_field)
+        form.addRow("Description", self.description_field)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.show_device(None)
+
+    def show_device(self, spec: DeviceSpec | None) -> None:
+        if spec is None:
+            for field in (self.name_field, self.id_field, self.kind_field,
+                          self.manufacturer_field, self.plugin_field, self.connections_field,
+                          self.resource_field, self.simulator_field):
+                field.clear()
+            self.settings_field.clear()
+            self.description_field.setPlainText("Choose a device type on the left.")
+            for row in range(self.form.rowCount()):
+                self.form.setRowVisible(row, row == self.form.rowCount() - 1)
+            return
+        plugin = spec.plugin
+        self.name_field.show_text(spec.name)
+        self.id_field.show_text(spec.id)
+        self.kind_field.show_text(kind_label(spec.kind))
+        self.manufacturer_field.show_text(spec.maker)
+        where = SOURCES.get(plugin.source, plugin.source)
+        self.plugin_field.show_text(f"{plugin.name} {plugin.version}"
+                                    + (f" ({where})" if where else ""))
+        self.connections_field.show_text(", ".join(spec.transports) or "any")
+        self.resource_field.show_text(spec.default_resource)
+        self.simulator_field.show_text("Yes" if spec.simulator else "No")
+        self.settings_field.setPlainText("\n".join(setting_text(s) for s in spec.settings))
+        self.description_field.setPlainText(spec.description)
+        for row in range(self.form.rowCount()):
+            self.form.setRowVisible(row, True)
+        for field in (self.resource_field, self.settings_field, self.description_field):
+            text = field.text() if isinstance(field, QLineEdit) else field.toPlainText()
+            self.form.setRowVisible(field, bool(text))
+
+
 class DeviceDialog(QDialog):
     def __init__(self, registry: PluginRegistry, taken_names: set[str],
                  config: DeviceConfig | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit device" if config else "Add device")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(560)
+        self.resize(900, 680)
         self.registry = registry
         self.taken_names = taken_names
         self.settings = dict(config.settings) if config else {}
 
-        self.type_box = QComboBox()
-        for spec in sorted(registry.devices.values(), key=lambda s: s.name.lower()):
-            self.type_box.addItem(f"{spec.name}  ({spec.id})", spec.id)
+        self.type_picker = DeviceTypePicker(registry)
+        self.type_info = DeviceTypeInfo()
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("name used in the test, e.g. psu")
         self.connection_box = QComboBox()
@@ -202,10 +430,27 @@ class DeviceDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         form = QFormLayout()
-        form.addRow("Device type", self.type_box)
         form.addRow("Name", self.name_edit)
         form.addRow("Connection", self.connection_box)
+        # the device types on the left, the one picked described on the right
+        info_column = QWidget()
+        info_layout = QVBoxLayout(info_column)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.addWidget(self.type_info)
+        info_layout.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidget(info_column)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self.type_picker)
+        self.splitter.addWidget(scroll)
+        self.splitter.setSizes([440, 440])
+
         layout = QVBoxLayout(self)
+        layout.addWidget(self.splitter, 1)
         layout.addLayout(form)
         layout.addWidget(self.pages)
         layout.addWidget(self.settings_box)
@@ -213,12 +458,12 @@ class DeviceDialog(QDialog):
         layout.addWidget(buttons)
 
         self.connection_box.currentIndexChanged.connect(self._show_page)
-        self.type_box.currentIndexChanged.connect(self._type_changed)
         if config:
-            index = self.type_box.findData(config.device)
-            if index >= 0:
-                self.type_box.setCurrentIndex(index)
+            self.type_picker.set_current(config.device)
             self.name_edit.setText(config.name)
+        else:
+            self.type_picker.set_current(self._first_type())
+        self.type_picker.changed.connect(self._type_changed)
         self._type_changed()
         if config:
             self._load_resource(config.resource)
@@ -231,9 +476,22 @@ class DeviceDialog(QDialog):
             form.addRow(label, widget) if label else form.addRow(widget)
         self._page_index[key] = self.pages.addWidget(page)
 
+    def _first_type(self) -> str | None:
+        """The demo supply if there is one (it needs no hardware), else the first type."""
+        if "demo.psu" in self.type_picker.items:
+            return "demo.psu"
+        return next(iter(self.type_picker.items), None)
+
+    def device_type(self) -> str | None:
+        return self.type_picker.current_id()
+
+    def set_device_type(self, device_id: str) -> None:
+        self.type_picker.set_current(device_id)
+
     def _type_changed(self) -> None:
         """Offer only the connections the chosen device type supports."""
-        spec = self.registry.devices.get(self.type_box.currentData())
+        spec = self.registry.devices.get(self.device_type())
+        self.type_info.show_device(spec)
         allowed = set(spec.transports) if spec and spec.transports else None
         previous = self.connection_box.currentData()
         self.connection_box.blockSignals(True)
@@ -378,7 +636,7 @@ class DeviceDialog(QDialog):
         return self.custom_resource.text().strip()
 
     def config(self) -> DeviceConfig:
-        return DeviceConfig(self.name_edit.text().strip(), self.type_box.currentData(),
+        return DeviceConfig(self.name_edit.text().strip(), self.device_type(),
                             self.resource(), self._settings())
 
     def _test(self) -> None:
@@ -408,7 +666,7 @@ class DeviceDialog(QDialog):
         if name in self.taken_names:
             QMessageBox.warning(self, "Name", f"There is already a device named '{name}'.")
             return
-        if self.type_box.currentData() is None:
+        if self.device_type() is None:
             QMessageBox.warning(self, "Device type", "Choose a device type.")
             return
         super().accept()

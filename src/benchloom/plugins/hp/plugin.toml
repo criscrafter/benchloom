@@ -3,6 +3,7 @@ id = "hp"
 name = "HP / Agilent"
 version = "0.1.0"
 description = "Hewlett-Packard and Agilent instruments."
+manufacturer = "HP"
 
 [[device]]
 id = "6655a"
@@ -14,6 +15,7 @@ driver = "hp6655a:HP6655A"
 simulator = "hp6655a:HP6655ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "psu"
+category = "psu"
 
 [[device.setting]]
 name = "leave_output_on"
@@ -37,6 +39,7 @@ driver = "hp3478a:HP3478A"
 simulator = "hp3478a:HP3478ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "dmm"
+category = "dmm"
 
 [[device.setting]]
 name = "digits"
@@ -54,6 +57,7 @@ driver = "hp53131a:HP53131A"
 simulator = "hp53131a:HP53131ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "counter"
+category = "counter"
 
 [[device.setting]]
 name = "gate_time"

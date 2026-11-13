@@ -31,6 +31,28 @@ BUILTIN_PLUGIN_DIR = Path(__file__).parent / "plugins"
 SOURCES = {"built-in": "Built-in", "user": "Installed", "folder": "Plugin folder",
            "project": "This project"}
 
+# kinds of device a plugin can give in a [[device]] entry's ``category``, with the
+# label the Add device dialog shows; a plugin may use others, and devices without
+# one count as "other"
+DEVICE_KINDS = {
+    "dmm": "Multimeter",
+    "scope": "Oscilloscope",
+    "psu": "Power supply",
+    "load": "Electronic load",
+    "generator": "Signal generator",
+    "counter": "Counter",
+    "ac_source": "AC source",
+    "smu": "Source measure unit",
+    "analyzer": "Analyzer",
+    "lcr": "LCR meter",
+    "other": "Other",
+}
+
+
+def kind_label(kind: str) -> str:
+    """The label of a device kind, also for kinds not in :data:`DEVICE_KINDS`."""
+    return DEVICE_KINDS.get(kind) or kind.replace("_", " ").strip().capitalize() or "Other"
+
 _TYPE_NAMES = {
     float: "number",
     int: "integer",
@@ -252,6 +274,12 @@ class PluginInfo:
     description: str = ""
     devices: list["DeviceSpec"] = field(default_factory=list)
     source: str = ""  # a key of SOURCES
+    manufacturer: str = ""  # of its devices, unless a device names its own
+
+    @property
+    def official(self) -> bool:
+        """Shipped with Benchloom, rather than installed or found in a folder."""
+        return self.source == "built-in"
 
     @property
     def package(self) -> str:
@@ -315,6 +343,17 @@ class DeviceSpec:
     default_name: str = ""  # suggested name in a project, e.g. "psu"
     settings: tuple[SettingSpec, ...] = ()
     default_resource: str = ""  # offered when adding the device, e.g. "usb://049F:505A"
+    category: str = ""  # a key of DEVICE_KINDS, or a kind of the plugin's own
+    manufacturer: str = ""
+
+    @property
+    def kind(self) -> str:
+        return self.category or "other"
+
+    @property
+    def maker(self) -> str:
+        """The manufacturer the Add device dialog groups the device under."""
+        return self.manufacturer or self.plugin.manufacturer or self.plugin.name
 
     def load_driver(self) -> type[Device]:
         return self.plugin.load(self.driver)
@@ -345,6 +384,7 @@ def read_manifest(folder: Path) -> PluginInfo:
             version=str(meta.get("version", "0")),
             path=folder,
             description=meta.get("description", ""),
+            manufacturer=str(meta.get("manufacturer", "")).strip(),
         )
         for dev in data.get("device", []):
             info.devices.append(
@@ -359,6 +399,8 @@ def read_manifest(folder: Path) -> PluginInfo:
                     default_name=dev.get("default_name", ""),
                     settings=tuple(_setting(entry) for entry in dev.get("setting", ())),
                     default_resource=dev.get("default_resource", ""),
+                    category=str(dev.get("category", "")).strip().lower(),
+                    manufacturer=str(dev.get("manufacturer", "")).strip(),
                 )
             )
     except KeyError as exc:

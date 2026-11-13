@@ -3,6 +3,7 @@ id = "feeltech"
 name = "Feeltech"
 version = "0.1.0"
 description = "Feeltech (FeelElec) function generators."
+manufacturer = "Feeltech"
 
 [[device]]
 id = "fy6900"
@@ -18,6 +19,7 @@ driver = "fy6900:FY6900"
 simulator = "fy6900:FY6900Sim"
 transports = ["serial", "sim"]
 default_name = "gen"
+category = "generator"
 default_resource = "serial://COM1?baud=115200"
 
 [[device.setting]]

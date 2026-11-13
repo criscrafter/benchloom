@@ -3,6 +3,7 @@ id = "kunkin"
 name = "Kunkin"
 version = "0.1.0"
 description = "Kunkin electronic loads."
+manufacturer = "Kunkin"
 
 [[device]]
 id = "kp184"
@@ -15,6 +16,7 @@ driver = "driver:KP184"
 simulator = "simulator:KP184Sim"
 transports = ["serial", "tcp", "sim"]
 default_name = "eload"
+category = "load"
 
 [[device.setting]]
 name = "address"

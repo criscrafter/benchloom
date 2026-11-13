@@ -3,6 +3,7 @@ id = "generic"
 name = "Generic instruments"
 version = "0.1.0"
 description = "Talk to any instrument or microcontroller with raw commands, before a dedicated plugin exists."
+manufacturer = "Generic"
 
 [[device]]
 id = "scpi"
@@ -11,6 +12,7 @@ description = "Any instrument that understands SCPI / IEEE 488.2 commands."
 driver = "driver:GenericScpi"
 simulator = "simulator:GenericScpiSim"
 transports = ["serial", "tcp", "prologix", "visa", "sim"]
+category = "other"
 
 [[device]]
 id = "serial"
@@ -19,3 +21,4 @@ description = "Arduino sketches and other devices that exchange lines of text."
 driver = "driver:SerialLine"
 simulator = "simulator:EchoSim"
 transports = ["serial", "tcp", "sim"]
+category = "other"
