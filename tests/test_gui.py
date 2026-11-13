@@ -157,7 +157,7 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
     details = dialog.details
     assert details.status_field.text() == "Switched off"
     assert details.id_field.text() == "hp" and details.source_field.text() == "Built-in"
-    assert details.device_list.count() == 3 and details.device_box.title() == "Devices (3)"
+    assert details.device_list.count() == 4 and details.device_box.title() == "Devices (4)"
     details.device_list.setCurrentRow(2)  # the 53131A: its settings are listed one per line
     assert details.device_type.text() == "hp.53131a"
     assert details.device_default_name.text() == "counter"
@@ -493,7 +493,7 @@ def test_device_picker_search_finds_and_picks(app):
     assert dialog.device_type() == "hp.3478a" and dialog.name_edit.text() == "dmm"
 
     picker.search.setText("hewlett-packard")  # the plugin's description
-    assert set(picker.visible_ids()) == {"hp.6655a", "hp.3478a", "hp.53131a"}
+    assert set(picker.visible_ids()) == {"hp.6655a", "hp.3478a", "hp.53131a", "hp.34970a"}
     picker.search.setText("acme")  # the third-party manufacturer and plugin name
     assert set(picker.visible_ids()) == {"acme.ps3005", "acme.gizmo"}
     assert picker.sections["official"].isHidden() and not picker.sections["third_party"].isHidden()

@@ -20,6 +20,16 @@
   temperature. The decoder handles the FS9721 chip that many cheap meters use.
   With a USB serial adapter the cable may need a 3.3 kΩ resistor (see
   docs/INSTRUMENTS.md).
+- **Agilent 34970A data acquisition / switch unit** (`hp.34970a`): finds the
+  plug-in cards when it connects and checks every channel against them, so a
+  wrong channel fails with a message naming the card. Measures DC/AC volts,
+  2- and 4-wire ohms, DC/AC current, frequency, period and temperature
+  (thermocouple, RTD, thermistor) on multiplexer channels, scans a channel list
+  at once (`scan("dc_voltage", "101:110")`), switches relays on multiplexer,
+  actuator, matrix and RF cards, and drives the DACs, digital ports and
+  totalizer of a 34907A. Cards go back to their power-on state when a test
+  ends. Tried on a real mainframe without cards, over GPIB through an AR488;
+  the card functions are tested against the simulator.
 - **Serial ports:** drivers can set the DTR and RTS lines (`set_lines`), for
   cables powered from them. Changing the port settings while open works around
   the CH340 driver refusing them, as opening already did.
