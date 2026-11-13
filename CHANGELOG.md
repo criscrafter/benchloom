@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.7 – Device picker, DT-4000ZC multimeter and Agilent 34970A
 
 - **Finding a device type:** the Add device dialog lists the device types as a
   tree, grouped by manufacturer, with the plugins that come with Benchloom
