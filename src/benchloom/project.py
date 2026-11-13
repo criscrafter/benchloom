@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,6 +72,7 @@ class Project:
     # How the plot shows the logged rows: x (column), log_x (bool), right, hide and
     # columns (lists of columns; columns also orders data.csv, the table and the report).
     plot: dict[str, Any] = field(default_factory=dict)
+    saved_with: str = ""  # the Benchloom version that saved the project last; "" if unknown
 
     @classmethod
     def load(cls, path: str | Path) -> "Project":
@@ -103,15 +105,18 @@ class Project:
         if not isinstance(plot, dict):
             raise ProjectError(f"{file}: [plot] must be a table")
         return cls(path, meta.get("name", path.name), mode,
-                   meta.get("script", default_script), devices, dict(plot))
+                   meta.get("script", default_script), devices, dict(plot),
+                   str(meta.get("saved_with", "")))
 
     def save(self) -> None:
         """Rewrite benchloom.toml from this object (comments in the file are lost)."""
+        self.saved_with = _version()
         lines = [
             "[project]",
             f"name = {_toml(self.name)}",
             f"mode = {_toml(self.mode)}",
             f"script = {_toml(self.script)}",
+            f"saved_with = {_toml(self.saved_with)}",
             "",
         ]
         if self.plot:
@@ -129,6 +134,159 @@ class Project:
         # an older project keeps its patchbay.toml
         file = project_file(self.path) or self.path / PROJECT_FILE
         file.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _version() -> str:
+    from . import __version__
+
+    return __version__
+
+
+def _set_project_key(path: str | Path, key: str, value: str) -> None:
+    """Set ``key`` in the [project] table of the project file, keeping the rest of the
+    file (comments too) as it is. Writes nothing if the value is already there."""
+    file = project_file(path)
+    if file is None:
+        raise ProjectError(f"{path} is not a Benchloom project (no {PROJECT_FILE})")
+    text = file.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    new = f"{key} = {_toml(value)}"
+    section = None
+    start = end = None  # the [project] table: header line, last non-empty line
+    found = None
+    for index, line in enumerate(lines):
+        header = re.match(r"\s*\[([^\]]*)\]", line)
+        if header:
+            section = header.group(1).strip()
+            if section == "project":
+                start = end = index
+            continue
+        if section == "project":
+            if re.match(rf"\s*{re.escape(key)}\s*=", line):
+                found = index
+            if line.strip():
+                end = index
+    if found is not None:
+        if lines[found].split("#", 1)[0].strip() == new:
+            return
+        comment = lines[found].split("#", 1)[1] if "#" in lines[found] else ""
+        lines[found] = new + (f"      #{comment}" if comment else "")
+    elif start is None:
+        lines[:0] = ["[project]", new, ""]
+    else:
+        lines.insert(end + 1, new)
+    file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def stamp_version(path: str | Path) -> None:
+    """Note in the project file which Benchloom version saved the project last."""
+    _set_project_key(path, "saved_with", _version())
+
+
+def last_saved(path: str | Path) -> float | None:
+    """When the project was saved last, as a timestamp: the newest of its project file,
+    test and front panel. None if none of them can be read."""
+    path = Path(path)
+    files = [project_file(path), path / "panel.json"]
+    try:
+        files.append(path / Project.load(path).script)
+    except ProjectError:
+        pass
+    times = []
+    for file in files:
+        try:
+            if file is not None:
+                times.append(file.stat().st_mtime)
+        except OSError:
+            pass
+    return max(times, default=None)
+
+
+def project_name_problem(name: str) -> str | None:
+    """Why ``name`` cannot name a project folder, or None if it can."""
+    if not name.strip() or name.strip() in (".", "..") or re.search(r'[\\/:*?"<>|]', name):
+        return "Enter a project name without special characters."
+    return None
+
+
+def rename_project(path: str | Path, name: str) -> Path:
+    """Give a project another name: its folder and the name in its project file.
+    Returns the project's new place."""
+    name = name.strip()
+    problem = project_name_problem(name)
+    if problem:
+        raise ProjectError(problem)
+    path = Path(path).resolve()
+    if not is_project(path):
+        raise ProjectError(f"{path} is not a Benchloom project")
+    target = path.with_name(name)
+    if target.name != path.name:
+        if target.exists() and not _same_file(target, path):
+            raise ProjectError(f"{target} already exists")
+        try:
+            # through a temporary name, so a change of case alone works on Windows too
+            temp = path.with_name(path.name + ".renaming")
+            path.rename(temp)
+            temp.rename(target)
+        except OSError as exc:
+            raise ProjectError(
+                f"Could not rename {path.name}: {exc.strerror or exc}. "
+                "Is a file of the project open in another program?") from exc
+    _set_project_key(target, "name", name)
+    return target
+
+
+def move_project(path: str | Path, folder: str | Path) -> Path:
+    """Move a project folder into ``folder``. Returns the project's new place."""
+    path = Path(path).resolve()
+    folder = Path(folder).resolve()
+    if not is_project(path):
+        raise ProjectError(f"{path} is not a Benchloom project")
+    target = folder / path.name
+    if target == path:
+        return path
+    if folder == path or path in folder.parents:
+        raise ProjectError("A project cannot move into its own folder.")
+    if target.exists():
+        raise ProjectError(f"{target} already exists.")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(target))
+    except OSError as exc:
+        raise ProjectError(
+            f"Could not move {path.name}: {exc.strerror or exc}. "
+            "Is a file of the project open in another program?") from exc
+    return target
+
+
+def duplicate_project(path: str | Path, name: str) -> Path:
+    """Copy a project next to itself under another name, without its past runs.
+    Returns the copy's place."""
+    name = name.strip()
+    problem = project_name_problem(name)
+    if problem:
+        raise ProjectError(problem)
+    path = Path(path).resolve()
+    if not is_project(path):
+        raise ProjectError(f"{path} is not a Benchloom project")
+    target = path.with_name(name)
+    if target.exists():
+        raise ProjectError(f"{target} already exists.")
+    try:
+        shutil.copytree(path, target, ignore=lambda folder, names: (
+            ["runs"] if Path(folder) == path else []))
+    except OSError as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        raise ProjectError(f"Could not copy {path.name}: {exc}") from exc
+    _set_project_key(target, "name", name)
+    return target
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except OSError:
+        return False
 
 
 def _toml(value: Any) -> str:
@@ -154,6 +312,22 @@ script = "{script}"
 [devices.psu]
 device = "demo.psu"
 resource = "sim://"
+"""
+
+_EMPTY_TOML = """\
+[project]
+name = "{name}"
+mode = "{mode}"      # "lua" or "visual"
+script = "{script}"
+
+# One entry per instrument; the entry name is the name used in the test. For example:
+#   [devices.psu]
+#   device = "demo.psu"
+#   resource = "sim://"     # or serial://COM3?baud=9600, tcp://192.168.1.20:5025, ...
+"""
+
+_EMPTY_LUA = """\
+-- Add your devices in the Devices panel, then write the test here.
 """
 
 _LUA = """\
@@ -199,10 +373,12 @@ class Template:
 
 EXAMPLE = Template("example", "Example", "A simulated power supply swept from 1 to 10 V, "
                    "so the project runs straight away.")
+EMPTY = Template("empty", "Empty project", "No devices and an empty test, to start "
+                 "from scratch.")
 
 
 def templates() -> list[Template]:
-    found = [EXAMPLE]
+    found = [EXAMPLE, EMPTY]
     for folder in sorted(TEMPLATES_DIR.iterdir()) if TEMPLATES_DIR.is_dir() else []:
         meta_file = folder / "template.toml"
         if not meta_file.is_file():
@@ -232,16 +408,23 @@ def create_project(path: str | Path, mode: str = "lua", template: str = "example
                 if source.name == PROJECT_FILE:
                     text = text.replace("{name}", json.dumps(path.name)[1:-1])
                 (path / source.name).write_text(text, encoding="utf-8")
+        stamp_version(path)
         return Project.load(path)
     script = "main.lua" if mode == "lua" else "main.graph.json"
+    empty = chosen is EMPTY
     (path / PROJECT_FILE).write_text(
-        _TOML.format(name=path.name, mode=mode, script=script), encoding="utf-8"
-    )
+        (_EMPTY_TOML if empty else _TOML).format(
+            name=json.dumps(path.name)[1:-1], mode=mode, script=script),
+        encoding="utf-8")
+    stamp_version(path)
     if mode == "lua":
-        content = _LUA
+        content = _EMPTY_LUA if empty else _LUA
     else:
-        from .graph import example_graph
+        from .graph import GRAPH_VERSION, example_graph
 
-        content = json.dumps(example_graph(), indent=1)
+        graph = example_graph() if not empty else {
+            "version": GRAPH_VERSION, "wires": [],
+            "nodes": [{"id": "n1", "type": "core.start", "x": 40, "y": 40}]}
+        content = json.dumps(graph, indent=1)
     (path / script).write_text(content, encoding="utf-8")
     return Project.load(path)
