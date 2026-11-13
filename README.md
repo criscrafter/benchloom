@@ -249,6 +249,7 @@ the command line, controls have the values they had when last run in the app.
 | HP 6655A power supply | `hp.6655a` | GPIB | not yet (from the manual) |
 | HP 3478A multimeter | `hp.3478a` | GPIB | not yet (from the manual) |
 | HP 53131A universal counter | `hp.53131a` | GPIB | not yet (from the manual) |
+| Agilent 34970A data acquisition / switch unit | `hp.34970a` | GPIB, RS-232 | mainframe only (cards from the manual) |
 | Digitek DT-4000ZC multimeter (FS9721 chip) | `fs9721.dt4000zc` | optical serial cable | yes |
 | Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA | – |
 | Arduino and other line-based serial devices | `generic.serial` | serial, network | – |

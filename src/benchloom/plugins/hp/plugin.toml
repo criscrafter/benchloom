@@ -3,6 +3,7 @@ id = "hp"
 name = "HP / Agilent"
 version = "0.1.0"
 description = "Hewlett-Packard and Agilent instruments."
+manufacturer = "HP"
 
 [[device]]
 id = "6655a"
@@ -14,6 +15,7 @@ driver = "hp6655a:HP6655A"
 simulator = "hp6655a:HP6655ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "psu"
+category = "psu"
 
 [[device.setting]]
 name = "leave_output_on"
@@ -37,6 +39,7 @@ driver = "hp3478a:HP3478A"
 simulator = "hp3478a:HP3478ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "dmm"
+category = "dmm"
 
 [[device.setting]]
 name = "digits"
@@ -54,6 +57,7 @@ driver = "hp53131a:HP53131A"
 simulator = "hp53131a:HP53131ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "counter"
+category = "counter"
 
 [[device.setting]]
 name = "gate_time"
@@ -63,6 +67,36 @@ default = 0.1
 min = 0.001
 max = 1000
 help = "Longer gates give more digits on frequency, period and ratio."
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+
+[[device]]
+id = "34970a"
+name = "Agilent 34970A data acquisition / switch unit"
+description = """Mainframe with three slots for plug-in modules and an internal \
+multimeter, over GPIB or RS-232 (SCPI). Finds the cards when it connects and checks \
+every channel against them: measures DC/AC volts, ohms (2- and 4-wire), DC/AC current, \
+frequency, period and temperature (thermocouple, RTD, thermistor) on multiplexer \
+channels, scans a channel list at once, switches relays on multiplexer, actuator, \
+matrix and RF cards, and drives the DACs, digital ports and totalizer of a 34907A. \
+Cards: 34901A, 34902A, 34903A, 34904A, 34905A/6A, 34907A, 34908A. Returns the cards \
+to their power-on state (relays open, DACs 0 V) when a test ends, unless told not to."""
+driver = "hp34970a:HP34970A"
+simulator = "hp34970a:HP34970ASim"
+transports = ["prologix", "usbtmc", "visa", "serial", "sim"]
+default_name = "daq"
+category = "data_acquisition"
+manufacturer = "Agilent"
+
+[[device.setting]]
+name = "leave_output_on"
+label = "Leave relays and DACs as they are after a test"
+type = "bool"
+default = false
 
 [[device.setting]]
 name = "check_errors"

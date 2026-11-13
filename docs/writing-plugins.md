@@ -105,12 +105,51 @@ print(psu:measure_voltage())
 |---|---|---|
 | `id` | `[plugin]` | the plugin's id, a short lower-case name; must be unique |
 | `name`, `version`, `description` | `[plugin]` | shown in the plugin manager |
+| `manufacturer` | `[plugin]` | optional: the maker of its devices, such as `"HP"`; the Add device dialog groups devices by it (the plugin's `name` if left out) |
 | `id` | `[[device]]` | the device's id; the device type is `<plugin id>.<device id>` |
-| `name`, `description` | `[[device]]` | shown in the Add device dialog |
+| `name`, `description` | `[[device]]` | shown in the Add device dialog, and searched by it |
+| `category` | `[[device]]` | optional: the kind of device, for the dialog's kind filter (see below) |
+| `manufacturer` | `[[device]]` | optional: overrides the plugin's `manufacturer` for this device |
 | `driver` | `[[device]]` | `module:Class` of the driver |
 | `simulator` | `[[device]]` | `module:Class` of the simulator, used for `sim://` |
 | `transports` | `[[device]]` | the connections it supports, such as `["serial", "tcp", "visa", "sim"]` |
 | `default_name`, `default_resource` | `[[device]]` | offered when the device is added |
+
+### Kind and manufacturer
+
+The Add device dialog lists device types by manufacturer and can show only
+one kind of device. Give each device its kind in `category`:
+
+| `category` | Shown as |
+|---|---|
+| `dmm` | Multimeter |
+| `scope` | Oscilloscope |
+| `psu` | Power supply |
+| `load` | Electronic load |
+| `generator` | Signal generator |
+| `counter` | Counter |
+| `ac_source` | AC source |
+| `smu` | Source measure unit |
+| `analyzer` | Analyzer |
+| `lcr` | LCR meter |
+| `other` | Other |
+
+Another word works too and becomes a kind of its own (`spectrum_analyzer` is
+shown as "Spectrum analyzer"). A device without a `category` counts as Other,
+and one without a `manufacturer` is listed under the plugin's name, so older
+plugins keep working unchanged.
+
+```toml
+[plugin]
+id = "acme"
+name = "ACME instruments"
+manufacturer = "ACME"
+
+[[device]]
+id = "ps3005"
+name = "ACME PS-3005 power supply"
+category = "psu"
+```
 
 ### Settings
 

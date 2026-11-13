@@ -3,6 +3,7 @@ id = "hantek"
 name = "Hantek"
 version = "0.1.0"
 description = "Hantek oscilloscopes."
+manufacturer = "Hantek"
 
 [[device]]
 id = "dso5000p"
@@ -15,4 +16,5 @@ driver = "dso5000p:DSO5000P"
 simulator = "dso5000p:DSO5000PSim"
 transports = ["usb", "sim"]
 default_name = "scope"
+category = "scope"
 default_resource = "usb://049F:505A"

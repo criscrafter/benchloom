@@ -6,7 +6,7 @@ the resource.
 
 The KP184, Chroma 6404, Hantek DSO5102P and Feeltech FY6900 drivers have been
 tried on real instruments (see below). **The HP drivers have not been run against real
-hardware yet.** They are written from the manuals or protocol notes listed for each
+hardware yet**, apart from the 34970A mainframe without cards. They are written from the manuals or protocol notes listed for each
 instrument and are tested against their simulators. Expect small fixes on first
 contact.
 
@@ -220,6 +220,60 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 - **Not a number:** the counter's "no valid result" (9.91E37) is returned as NaN.
 - **Source:** HP 53131A/132A Programming Guide, part no. 53131-90044 (November
   1996).
+
+## Agilent 34970A data acquisition / switch unit (`hp.34970a`)
+
+- **Connection:** GPIB, e.g. `prologix://COM17/1` through an AR488 (the factory
+  address is 9; the tested unit was set to 1), or `usbtmc://`/`visa://`. RS-232 also
+  works in principle (`serial://COM3?baud=9600`, flow control None, a null-modem
+  cable); select the interface on the front panel.
+- **Cards:** the driver asks the three slots which cards they hold when it
+  connects (`list_cards()`, `card_model(slot)`) and checks every channel against
+  them before sending anything, so a wrong channel fails with a message naming
+  the card. Channels are the slot plus the channel on the card: 101 to 122 for a
+  34901A in slot 1.
+
+  | Card | Channels | What the driver does with them |
+  |---|---|---|
+  | 34901A 20-channel multiplexer | 01–20, current 21–22 | measure, 4-wire (n with n+10), current, switch |
+  | 34902A 16-channel reed multiplexer | 01–16 | measure, 4-wire (n with n+8), switch |
+  | 34908A 40-channel single-ended multiplexer | 01–40 | measure (no 4-wire, no current), switch |
+  | 34903A 20-channel actuator | 01–20 | switch |
+  | 34904A 4x8 matrix | row + column, 11–48 | switch |
+  | 34905A/34906A dual RF multiplexer | 11–14, 21–24 | switch |
+  | 34907A multifunction module | digital 01–02, totalizer 03, DAC 04–05 | `write_digital`, `read_digital`, `read_totalizer`, `set_dac` (±12 V) |
+
+- **Measurements** (multiplexer channels, internal multimeter needed):
+  `measure_dc_voltage`, `measure_ac_voltage`, `measure_resistance(channel,
+  four_wire)`, `measure_dc_current`/`measure_ac_current` (34901A channels 21,
+  22), `measure_frequency`, `measure_period`, `measure_temperature(channel,
+  sensor, kind)` with sensor `thermocouple` (type B, E, J, K, N, R, S, T; the
+  card's reference junction), `rtd`, `four_wire_rtd` (85 or 91) or
+  `thermistor` (2252, 5000, 10000), in °C.
+- **Scanning:** `scan(function, "101:110,115")` measures a channel list with one
+  function and returns the readings in channel order. Each measurement is a
+  one-sweep scan: configure, `INIT`, then `DATA:POIN?` until every reading is in,
+  then `FETC?`. No single read waits for a slow measurement, which an AR488 (1.2 s
+  read timeout) would give up on. Overloads read as ±infinity.
+- **Switching:** `close_channel`, `open_channel`, `is_closed`, `open_all(slot)`.
+  The instrument's own rules still apply: a multiplexer closes several channels
+  only while none is in the scan list; a 34908A closes one at a time.
+- **Other:** `set_display_text` (13 characters, no quotes), `clear_display_text`,
+  `reset_card(slot)`.
+- **End of a test:** `SYST:CPON ALL` returns every card to its power-on state
+  (relays open, DACs 0 V, digital ports inputs), unless the device entry says
+  `leave_output_on = true`. A mainframe without cards is left alone.
+- **Simulator:** `sim://` has a 34901A, a 34903A and a 34907A;
+  `sim://?cards=34908A,,34904A` chooses others (an empty place is an empty slot).
+- **Source:** Agilent 34970A User's Guide (chapter 5, Remote Interface Reference;
+  chapter 9, the modules).
+- **Tried on hardware:** a 34970A (firmware 9-1-2) with the internal multimeter
+  and **no cards**, through an AR488 on a Pro Micro, Windows 10. Connecting (0.2 s),
+  finding three empty slots and the multimeter, the reading format and trigger
+  settings, display text, the error queue, and the refusal of every channel
+  command on empty slots all worked; `INIT` without a scan list gave the same
+  error (+113) as the simulator. Everything that needs a card is tested against
+  the simulator only.
 
 ## Hantek DSO5102P oscilloscope (`hantek.dso5000p`)
 

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Finding a device type:** the Add device dialog lists the device types as a
+  tree, grouped by manufacturer, with the plugins that come with Benchloom
+  under **Official** and installed ones under **Third party**. A search box
+  finds a type by name, id, manufacturer or description (`HP 3478`), and a
+  filter shows one kind only, such as multimeters or power supplies. A panel
+  beside the tree describes the type picked, as the plugin manager does: kind,
+  manufacturer, plugin, connections, settings and description.
+- **Plugins:** a `[[device]]` entry can give its kind (`category = "dmm"`) and
+  `manufacturer`, which `[plugin]` can also set for all its devices. Both are
+  optional; the built-in plugins have them, and plugins without them are listed
+  under their name, as Other. See docs/writing-plugins.md.
 - **Digitek DT-4000ZC multimeter** (`fs9721.dt4000zc`): reads the display of
   this handheld meter over its optical serial cable, as a number in the base
   unit or as text, and checks that the dial is on the function asked for:
@@ -9,6 +20,16 @@
   temperature. The decoder handles the FS9721 chip that many cheap meters use.
   With a USB serial adapter the cable may need a 3.3 kΩ resistor (see
   docs/INSTRUMENTS.md).
+- **Agilent 34970A data acquisition / switch unit** (`hp.34970a`): finds the
+  plug-in cards when it connects and checks every channel against them, so a
+  wrong channel fails with a message naming the card. Measures DC/AC volts,
+  2- and 4-wire ohms, DC/AC current, frequency, period and temperature
+  (thermocouple, RTD, thermistor) on multiplexer channels, scans a channel list
+  at once (`scan("dc_voltage", "101:110")`), switches relays on multiplexer,
+  actuator, matrix and RF cards, and drives the DACs, digital ports and
+  totalizer of a 34907A. Cards go back to their power-on state when a test
+  ends. Tried on a real mainframe without cards, over GPIB through an AR488;
+  the card functions are tested against the simulator.
 - **Serial ports:** drivers can set the DTR and RTS lines (`set_lines`), for
   cables powered from them. Changing the port settings while open works around
   the CH340 driver refusing them, as opening already did.

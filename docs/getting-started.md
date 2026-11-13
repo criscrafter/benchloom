@@ -101,7 +101,12 @@ everything else a script can use.
 ## Real instruments
 
 In the **Devices** panel, **Add…** opens the list of device types the plugins
-provide. Pick one, give it a name (the name the test uses, such as `psu`) and
+provide, grouped by manufacturer: **Official** ones come with Benchloom,
+**Third party** ones are plugins you installed. Type in the search box to find
+a type by name, id, manufacturer or description (such as `HP 3478`), or pick a
+kind such as Multimeter or Power supply to see only those. The panel on the
+right describes the type picked: its connections, settings and description.
+Pick one, give it a name (the name the test uses, such as `psu`) and
 a resource: where the instrument is connected, such as `serial://COM3` or
 `prologix://COM4/5`. **Test connection** asks the instrument who it is.
 [Projects](projects.md#resources) lists every kind of resource, and

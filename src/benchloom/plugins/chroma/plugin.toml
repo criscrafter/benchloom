@@ -3,6 +3,7 @@ id = "chroma"
 name = "Chroma"
 version = "0.1.0"
 description = "Chroma ATE instruments."
+manufacturer = "Chroma"
 
 [[device]]
 id = "6404"
@@ -16,6 +17,7 @@ driver = "chroma6404:Chroma6404"
 simulator = "chroma6404:Chroma6404Sim"
 transports = ["usbtmc", "prologix", "visa", "serial", "sim"]
 default_name = "ac"
+category = "ac_source"
 
 [[device.setting]]
 name = "leave_output_on"

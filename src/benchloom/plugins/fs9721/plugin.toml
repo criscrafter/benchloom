@@ -16,4 +16,6 @@ driver = "meter:FS9721Meter"
 simulator = "meter:FS9721Sim"
 transports = ["serial", "sim"]
 default_name = "dmm"
+category = "dmm"
+manufacturer = "Digitek"
 default_resource = "serial://COM1?baud=2400"
