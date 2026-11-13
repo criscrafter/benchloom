@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **GPIB through a Prologix or AR488 adapter** sets the adapter's read timeout
+  from the connection's timeout, when connecting and whenever a driver changes
+  it. The adapter keeps whatever read timeout the last program set, so a short
+  one left behind made slow measurements, such as the Chroma 6404's (about
+  0.9 s), time out. Connecting also waits for the adapter to answer, so an
+  Arduino Nano that restarts when the port opens works, and a missing adapter
+  is reported as such.
+- **Chroma 6404** tried over GPIB as well as RS-232.
+
 ## 0.1.7 – Device picker, DT-4000ZC multimeter and Agilent 34970A
 
 - **Finding a device type:** the Add device dialog lists the device types as a

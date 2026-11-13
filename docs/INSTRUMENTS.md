@@ -112,7 +112,11 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 
 - **Connection:** GPIB: `usbtmc://03EB:2065` (UsbGpib, above),
   `prologix://COM4/5` (Prologix or AR488 adapter, GPIB address 5) or
-  `visa://GPIB0::5::INSTR`.
+  `visa://GPIB0::5::INSTR`. With `prologix://`, Benchloom waits for the adapter
+  to answer `++ver` (an Arduino Nano restarts when the port opens) and sets its
+  read timeout (`++read_tmo_ms`) from the connection's `timeout`: the adapter
+  keeps whatever the last program set, and a too short one makes slow
+  measurements time out. A Prologix allows up to 3 s, an AR488 up to 32 s.
 - **Ratings:** programmable to 122.85 V and 4.095 A; over-voltage protection to
   132 V (from Table 3-1 of the programming guide).
 - **Commands:** `set_voltage`, `set_current`, `set_output`, `set_ovp`, `set_ocp`,
@@ -178,6 +182,11 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 
   Not tried: the over-power and over-current trips, which a 9.5 W bulb cannot
   reach.
+
+  Over GPIB (`prologix://COM17/11`, an AR488 on a Pro Micro, output off and
+  nothing set): identification, the output state and faults, every settings
+  query, all six measurements (about 0.9 s each) and 20 queries in a row (0.1 s)
+  worked, with no errors left. No `SYST:REM` is needed over GPIB.
 - **Current readings** have 10 mA resolution (a 70 mA load reads 0.07 A); the
   power reading is finer.
 - **Switch-on:** the `peak current limit` status (`get_faults`) shows for a
@@ -253,8 +262,9 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 - **Scanning:** `scan(function, "101:110,115")` measures a channel list with one
   function and returns the readings in channel order. Each measurement is a
   one-sweep scan: configure, `INIT`, then `DATA:POIN?` until every reading is in,
-  then `FETC?`. No single read waits for a slow measurement, which an AR488 (1.2 s
-  read timeout) would give up on. Overloads read as ±infinity.
+  then `FETC?`. No single read waits for a slow measurement, so a long scan
+  never runs into a GPIB adapter's read timeout (at most 3 s on a Prologix).
+  Overloads read as ±infinity.
 - **Switching:** `close_channel`, `open_channel`, `is_closed`, `open_all(slot)`.
   The instrument's own rules still apply: a multiplexer closes several channels
   only while none is in the scan list; a 34908A closes one at a time.

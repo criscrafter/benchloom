@@ -279,14 +279,23 @@ def prologix_escape(data: bytes) -> bytes:
 
 
 class PrologixTransport(SerialTransport):
-    """GPIB through a Prologix GPIB-USB or AR488 adapter (a plain serial port)."""
+    """GPIB through a Prologix GPIB-USB or AR488 adapter (a plain serial port).
+
+    The adapter waits only ``++read_tmo_ms`` for an instrument's reply and keeps that
+    setting until it is unplugged, whatever program set it last. So the transport
+    sets it from its own timeout, when opening and in :meth:`set_timeout`, as far as
+    the adapter allows: 3 s on a Prologix, 32 s on an AR488.
+    """
 
     scheme = "prologix"
+    MAX_READ_MS = {"prologix": 3000, "ar488": 32000}
+    OPEN_ATTEMPTS = 3  # an Arduino Nano restarts when the port opens: ++ver may be lost
 
     def __init__(self, port: str, address, *, baud=115200, eos=0, **options):
         super().__init__(port, baud=baud, **options)
         self.address = str(address)
         self.eos = int(eos)  # what the adapter appends on GPIB: 0=CR+LF 1=CR 2=LF 3=none
+        self.adapter_version = ""  # the reply to ++ver, once open
 
     def _adapter(self, text: str) -> None:
         self._serial.write((text + "\n").encode("ascii"))
@@ -294,11 +303,39 @@ class PrologixTransport(SerialTransport):
     def device_clear(self) -> None:
         self._adapter("++clr")
 
+    def _wait_for_adapter(self) -> str:
+        """Ask the adapter for its version until it answers; '' if it never does."""
+        for _ in range(self.OPEN_ATTEMPTS):
+            self._serial.reset_input_buffer()
+            self._adapter("++ver")
+            reply = self._serial.read_until(b"\n").decode("ascii", "replace").strip()
+            if reply:
+                return reply
+        return ""
+
+    @property
+    def max_read_ms(self) -> int:
+        kind = "ar488" if "AR488" in self.adapter_version.upper() else "prologix"
+        return self.MAX_READ_MS[kind]
+
+    def _set_read_timeout(self) -> None:
+        self._adapter(f"++read_tmo_ms {max(1, min(round(self.timeout * 1000), self.max_read_ms))}")
+
     def open(self) -> None:
         super().open()
+        self.adapter_version = self._wait_for_adapter()
+        if not self.adapter_version:
+            self.close()
+            raise TransportError(f"no Prologix or AR488 adapter answers on {self.port}")
         for line in ("++mode 1", "++auto 0", "++eoi 1", f"++eos {self.eos}",
                      "++eot_enable 0", f"++addr {self.address}"):
             self._adapter(line)
+        self._set_read_timeout()
+
+    def set_timeout(self, seconds: float) -> None:
+        super().set_timeout(seconds)
+        if self._serial is not None and self.adapter_version:
+            self._set_read_timeout()
 
     def write(self, text: str) -> None:
         self.write_raw(text.encode(self.encoding))

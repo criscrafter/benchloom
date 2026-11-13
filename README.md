@@ -243,7 +243,7 @@ the command line, controls have the values they had when last run in the app.
 | Instrument | Device type | Connection | Tried on hardware |
 |---|---|---|---|
 | Kunkin KP184 electronic load | `kunkin.kp184` | serial (RS-232/RS-485) | yes |
-| Chroma 6404 AC source | `chroma.6404` | GPIB or serial | yes (serial) |
+| Chroma 6404 AC source | `chroma.6404` | GPIB or serial | yes (serial, GPIB) |
 | Hantek DSO5102P oscilloscope | `hantek.dso5000p` | USB | yes |
 | Feeltech FY6900 function generator | `feeltech.fy6900` | USB serial | yes |
 | HP 6655A power supply | `hp.6655a` | GPIB | not yet (from the manual) |
