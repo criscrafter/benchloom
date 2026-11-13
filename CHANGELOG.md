@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Managing projects from the welcome page:** the recent projects list shows
+  when each project was saved last and with which Benchloom version. A click
+  selects a project, a double click or Enter opens it, and buttons and a
+  right-click menu pin it to the top, duplicate it (without its past runs),
+  rename it, move its folder, delete it to the recycle bin or show it in
+  Explorer. Saving a project notes the Benchloom version in its project file.
 - **GPIB through a Prologix or AR488 adapter** sets the adapter's read timeout
   from the connection's timeout, when connecting and whenever a driver changes
   it. The adapter keeps whatever read timeout the last program set, so a short
