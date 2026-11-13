@@ -611,9 +611,13 @@ def test_device_picker_groups_official_and_third_party_by_manufacturer(app):
     makers = [official.child(i).data(0, Qt.ItemDataRole.UserRole + 1)
               for i in range(official.childCount())]
     assert makers == sorted(makers, key=str.casefold)
-    assert {"HP", "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
-    hp = official.child(makers.index("HP"))
-    assert hp.text(0) == "HP  (3)" and hp.child(0).text(1) in ("Counter", "Multimeter")
+    family = "HP / Agilent / Keysight"  # HP and Agilent devices share one group
+    assert {family, "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
+    assert not {"HP", "Agilent"} & set(makers)
+    hp = official.child(makers.index(family))
+    assert hp.text(0) == f"{family}  (4)"
+    assert {hp.child(i).text(1) for i in range(4)} == {
+        "Counter", "Multimeter", "Power supply", "Data acquisition"}
     # a plugin without a manufacturer or kind falls back to its name and "Other"
     third_makers = {third.child(i).data(0, Qt.ItemDataRole.UserRole + 1): third.child(i)
                     for i in range(third.childCount())}
@@ -630,7 +634,7 @@ def test_device_picker_search_finds_and_picks(app):
     picker.search.setText("HP 3478")
     assert picker.visible_ids() == ["hp.3478a"]
     hp = picker.items["hp.3478a"].parent()
-    assert hp.isExpanded() and not hp.isHidden() and hp.text(0) == "HP  (1)"
+    assert hp.isExpanded() and not hp.isHidden() and hp.text(0) == "HP / Agilent / Keysight  (1)"
     # every other group, and the section left empty, is hidden
     assert picker.sections["third_party"].isHidden()
     others = [picker.sections["official"].child(i) for i in
@@ -698,7 +702,10 @@ def test_device_dialog_describes_the_picked_type(app):
     dialog.set_device_type("hp.3478a")
     assert info.name_field.text() == "HP 3478A multimeter" and info.id_field.text() == "hp.3478a"
     assert info.kind_field.text() == "Multimeter" and info.manufacturer_field.text() == "HP"
-    assert info.plugin_field.text() == "HP / Agilent 0.1.0 (Built-in)"
+    assert info.plugin_field.text() == "HP / Agilent / Keysight 0.1.0 (Built-in)"
+    dialog.set_device_type("hp.34970a")  # the brand it was sold under, not the group
+    assert info.manufacturer_field.text() == "Agilent"
+    dialog.set_device_type("hp.3478a")
     assert "Digits at the start" in info.settings_field.toPlainText()
     assert "GPIB" in info.description_field.toPlainText()
     assert info.form.isRowVisible(info.settings_field)

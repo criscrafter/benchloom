@@ -124,7 +124,7 @@ columns = ["set_V", "V", "I"]  # the order of the logged columns
 | `serial://COM3?baud=9600` | serial port (`serial:///dev/ttyUSB0` on Linux) |
 | `tcp://192.168.1.20:5025` | raw socket |
 | `prologix://COM4/5` | GPIB address 5 through a Prologix or AR488 adapter |
-| `visa://GPIB0::5::INSTR` | any VISA resource, including vendor GPIB adapters (`pip install "benchloom[visa]"`) |
+| `visa://GPIB0::5::INSTR` | any VISA resource, including vendor GPIB adapters such as NI's (in the Windows download; with pip: `pip install "benchloom[visa]"`) |
 
 ## A visual test
 

@@ -175,3 +175,18 @@ def test_run_sees_disabled_plugins(tmp_path):
     result = run_project(project.path)
     assert result.status == "error" and "switched off" in result.error
     assert os.environ["BENCHLOOM_HOME"]
+
+
+def test_hp_agilent_and_keysight_share_one_group(tmp_path):
+    for folder, maker in (("a", "Keysight"), ("b", "Hewlett-Packard"), ("c", "Rigol")):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "plugin.toml").write_text(
+            f'[plugin]\nid = "{folder}"\nmanufacturer = "{maker}"\n'
+            f'[[device]]\nid = "x"\ndriver = "d:D"\n', encoding="utf-8")
+    devices = PluginRegistry([tmp_path]).devices
+    assert devices["a.x"].maker == devices["b.x"].maker == "HP / Agilent / Keysight"
+    assert (devices["a.x"].brand, devices["b.x"].brand) == ("Keysight", "Hewlett-Packard")
+    assert devices["c.x"].maker == devices["c.x"].brand == "Rigol"
+    builtin = PluginRegistry.default().devices
+    assert builtin["hp.34970a"].brand == "Agilent" and builtin["hp.3478a"].brand == "HP"
+    assert builtin["hp.34970a"].maker == builtin["hp.3478a"].maker

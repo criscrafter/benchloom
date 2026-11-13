@@ -139,6 +139,11 @@ shown as "Spectrum analyzer"). A device without a `category` counts as Other,
 and one without a `manufacturer` is listed under the plugin's name, so older
 plugins keep working unchanged.
 
+Give the name the device carries: `"HP"`, `"Agilent"` or `"Keysight"` are all
+right for the company that changed its name from one to the next, and the
+dialog lists all three (and "Hewlett-Packard") in one group, **HP / Agilent /
+Keysight**, while the device's details still show the name you gave.
+
 ```toml
 [plugin]
 id = "acme"

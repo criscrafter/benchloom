@@ -23,9 +23,14 @@ d, b, h = collect_all("libusb_package")  # the libusb DLL for USB instruments
 datas += d
 binaries += b
 hiddenimports += h
+# VISA (visa:// connections, e.g. NI and Keysight GPIB adapters). pyvisa imports its
+# backends by name at run time ("@py" -> pyvisa_py), which PyInstaller cannot see,
+# and reads its version from its metadata. A vendor VISA (NI-VISA) is a DLL of the
+# system's and is used when installed; it is not shipped.
+hiddenimports += collect_submodules("pyvisa") + collect_submodules("pyvisa_py")
 # Licence files of everything shipped (their dist-info folders)
 for package in ("PySide6", "shiboken6", "pyqtgraph", "numpy", "lupa", "pyserial", "pyusb",
-                "python-usbtmc", "libusb-package"):
+                "python-usbtmc", "libusb-package", "pyvisa", "pyvisa-py", "typing_extensions"):
     datas += copy_metadata(package)
 
 excludes = [

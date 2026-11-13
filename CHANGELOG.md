@@ -10,6 +10,16 @@
   Arduino Nano that restarts when the port opens works, and a missing adapter
   is reported as such.
 - **Chroma 6404** tried over GPIB as well as RS-232.
+- **VISA in the Windows download:** `visa://` connections, for example
+  `visa://GPIB0::9::INSTR` through an NI or Keysight GPIB adapter, now work in
+  the packaged program too, not only after `pip install "benchloom[visa]"`. A
+  vendor VISA such as NI-VISA is used when installed; otherwise PyVISA's own
+  backend, which covers serial and network instruments. The build's self-test
+  checks it.
+- **HP, Agilent and Keysight in one group:** the Add device dialog lists devices
+  of the company that was HP, then Agilent, then Keysight under one
+  manufacturer, **HP / Agilent / Keysight**, whichever of the names a plugin
+  gives; the device's details still show that name (the 34970A says Agilent).
 
 ## 0.1.7 – Device picker, DT-4000ZC multimeter and Agilent 34970A
 
