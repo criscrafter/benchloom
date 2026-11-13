@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8 – Project management, VISA in the download and steadier GPIB
 
 - **Managing projects from the welcome page:** the recent projects list shows
   when each project was saved last and with which Benchloom version. A click
