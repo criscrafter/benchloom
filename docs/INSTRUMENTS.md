@@ -148,6 +148,69 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 - **Uncertain:** the range field of `get_status` is shown as the meter's raw
   range number.
 
+## Keysight 3458A multimeter (`hp.3458a`)
+
+- **Connection:** GPIB, as for the 6655A. The factory address is 22 (shown and
+  set with the front-panel `ADDRESS` key). Through UsbGpib, turn off its
+  power-up `*IDN?` as for the 3478A: the 3458A does not know `*IDN?`.
+- **Command set:** HP-ML, not SCPI. At the start the driver sends a device
+  clear (the meter may still be measuring and have readings waiting) and
+  `END ALWAYS` (at power-on replies end without EOI, which VISA and USBTMC wait
+  for), then checks `ID?`, sends `PRESET NORM` and holds the meter (`TARM HOLD`,
+  `TRIG AUTO`); each measurement is one `TARM SGL`. `autocal` turns the input
+  buffer on (`INBUF ON`) while it runs, so the meter does not hold the bus. When a test ends it sends `TARM AUTO`, so the meter measures
+  on its own again.
+- **Commands:**
+    - Measurements: `measure_dc_voltage`, `measure_ac_voltage`,
+      `measure_acdc_voltage`, `measure_resistance`, `measure_resistance_4wire`,
+      `measure_dc_current`, `measure_ac_current`, `measure_acdc_current`,
+      `measure_frequency`, `measure_period`, or `set_function` + `measure`;
+      `measure_many(count)` returns a series of readings as a table.
+    - Settings: `set_range(value)` picks the smallest range holding the value
+      (for frequency and period, the input voltage), `set_autorange`,
+      `set_nplc` (0 to 1000), `set_digits` (3 to 8), `set_autozero`,
+      `set_offset_compensation`, `set_delay` (settling delay) and
+      `set_auto_delay`, `set_fixed_impedance` (10 MΩ or over 10 GΩ on
+      DC volts up to 10 V), `set_ac_bandwidth`, `set_ac_method` (analog, random,
+      sync).
+    - Other: `get_temperature` (to compare with the last autocal),
+      `autocal(kind)` (all, dcv, ac, ohms; waits until done: 16 minutes for all,
+      under 3 for dcv or ac, 11 for ohms), `display_text`, `display_normal`, `get_terminals`, `get_errors`, and
+      `write` / `query` for raw HP-ML.
+- **Device entry options:** `nplc = 10` and `digits = 8` at the start;
+  `check_errors = false` to skip asking `ERR?` after each setting. `digits`
+  (`NDIG`) sets only the display; the readings sent keep the resolution the
+  integration time gives.
+- **Ranges:** like the meter, `set_range` takes a range up to 120 % of its
+  value (1.1 V is measured on the 1 V range), and up to 1050 V and 1.05 A on
+  the top ranges.
+- **Autocal:** let the meter warm up two hours first and disconnect the inputs.
+  Afterwards the manual advises waiting before measuring: 30 minutes after
+  `all` or `ohms`, 15 after `dcv` or `ac`. If autocal is secured, send it raw,
+  for example `dmm:write("ACAL ALL,3458")`.
+- **`set_fixed_impedance(true)`** stays on for resistance, where the 10 MΩ
+  across the input makes readings wrong.
+- **Slow readings:** the driver waits as long as the settings need: NPLC, line
+  frequency from `LINE?`, autozero, offset compensation, AC settling and the
+  settling delay, which it asks with `DELAY?` (that answers the automatic delay
+  too) whenever a setting changed. The meter splits more than 10 power line
+  cycles into parts of NPLC 10, and with offset compensation waits the delay
+  twice in each: NPLC 100 with OCOMP and a 2 s delay takes about 48 s, as
+  3458A users have found. Offset compensation on high ohm ranges needs long
+  delays (1-2 s at 10 kΩ, about 5 s at 100 kΩ, by the same users); a test
+  that wants speed can turn autozero off there, since 4-wire with OCOMP already
+  cancels offsets. A
+  Prologix adapter gives up on a read after 3 s, so longer waits are made of
+  several reads. If no reading comes in time, the driver sends a device clear
+  and fails with "no reading from the 3458A".
+- **Overload** returns infinity (`math.huge` in Lua).
+- **Source:** Keysight 3458A Benutzerhandbuch (user's guide, German), part no.
+  03458-90511, edition 10, March 2023: commands, ranges, error register,
+  overload value, autocal times and power-on states checked against it.
+- **Uncertain:** which error bit an unknown command sets (the manual does not
+  say; the simulator takes it as a syntax error), and whether `TARM AUTO` at the
+  end is enough for the front panel to update without pressing `LOCAL`.
+
 ## Chroma 6404 AC source (`chroma.6404`)
 
 - **Connection:** GPIB (`prologix://COM4/30`, `visa://…`) or RS-232

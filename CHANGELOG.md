@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Keysight 3458A multimeter** (`hp.3458a`, also the HP and Agilent 3458A):
+  DC, AC and AC+DC volts and current, 2- and 4-wire resistance, frequency and
+  period, with integration time, digits, autozero, offset compensation, input
+  impedance, AC method, series of readings, temperature and autocal. Waits as
+  long as a slow reading needs, settling delays and offset compensation
+  included, also through a Prologix adapter. Written from
+  and checked against the 3458A user's guide; not tried on hardware yet.
 - **Math, Compare and And / or nodes** open their operator list as a normal
   menu. The list used to be drawn into the canvas, where `+ - * /` could show
   up garbled or not at all.
