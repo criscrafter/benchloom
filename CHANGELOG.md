@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Keysight 34420A nanovolt / micro-ohm meter** (`hp.34420a`): both voltage
+  channels, ratio and difference, 2- and 4-wire ohms with offset compensation, low
+  power and voltage limit, RTD, thermistor and thermocouple temperature, over GPIB
+  or RS-232.
+- **Fluke 8508A reference multimeter** (`fluke.8508a`): DC and AC volts and current,
+  ohms, True Ohms, High Voltage Ohms, PRT temperature, front, rear and ratio inputs;
+  waits as long as the manual's read rates and settling delays say.
+- **Wavetek 1281 selfcal multimeter** (`wavetek.1281`): the same kind of functions
+  for the 1281's options, checked with `*OPT?` before use; rear channels A and B.
+- **Wavetek 4950 multifunction transfer standard** (`wavetek.4950`): measurements at
+  nominal points with their bands, refused with the reason when outside them; the
+  quality and sample size of each measurement and the warm-up time left.
+- All four are written from and checked against their manuals. Where a manual
+  disagrees with itself, the driver uses only what all of it agrees on, and
+  docs/INSTRUMENTS.md lists the points. Not tried on hardware yet.
+- **Serial connections** take `dsrdtr=1` for DTR/DSR handshake.
+
 - **Keysight 3458A multimeter** (`hp.3458a`, also the HP and Agilent 3458A):
   DC, AC and AC+DC volts and current, 2- and 4-wire resistance, frequency and
   period, with integration time, digits, autozero, offset compensation, input

@@ -1,0 +1,28 @@
+[plugin]
+id = "fluke"
+name = "Fluke"
+version = "0.1.0"
+description = "Fluke reference multimeters."
+manufacturer = "Fluke"
+
+[[device]]
+id = "8508a"
+name = "Fluke 8508A reference multimeter"
+description = """8½-digit reference multimeter with GPIB (IEEE 488.2): DC and AC volts \
+(200 mV to 1000 V), DC and AC current (200 µA to 20 A), 2- and 4-wire ohms (2 Ω to \
+2 GΩ, normal or low current), True Ohms (current reversal, 2 Ω to 20 kΩ), High Voltage \
+Ohms (20 MΩ to 2 GΩ), PRT temperature with probes stored in the meter, front, rear, \
+ratio, difference and deviation inputs, guard, settling delay and input zero. Waits for \
+slow readings as long as the manual's read rates and delays say."""
+driver = "fluke8508a:Fluke8508A"
+simulator = "fluke8508a:Fluke8508ASim"
+transports = ["prologix", "usbtmc", "visa", "sim"]
+default_name = "dmm"
+category = "dmm"
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+help = "Reads *ESR? after each setting and the error queues when it shows an error."
