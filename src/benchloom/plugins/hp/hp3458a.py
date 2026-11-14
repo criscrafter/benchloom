@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import math
 import re
-import time
 
 from benchloom import CommandError, Device, Param, command
-from benchloom.transports import SimTransport
+from benchloom.transports import SimTransport, read_line_within
 
 # function name -> (HP-ML name, ranges by full scale)
 _ACV_RANGES = (10e-3, 100e-3, 1.0, 10.0, 100.0, 1000.0)
@@ -160,24 +159,11 @@ class HP3458A(Device):
         return seconds * 1.2 + 1.0
 
     def _read_line(self, seconds: float, what: str) -> str:
-        """Wait up to ``seconds`` for one line from the meter.
-
-        A Prologix adapter gives up on a read after 3 s (an AR488 after 32 s), so for
-        long waits the read is repeated until the time is up.
-        """
-        max_ms = getattr(self.transport, "max_read_ms", None)
-        step = min(seconds, max_ms / 1000) if max_ms else seconds
-        deadline = time.monotonic() + seconds
-        self.transport.set_timeout(max(self.base_timeout, step))
+        """Wait up to ``seconds`` for one line from the meter (see read_line_within)."""
         try:
-            while True:
-                try:
-                    return self.transport.read()
-                except TimeoutError:
-                    if not max_ms or time.monotonic() >= deadline:
-                        break
-        finally:
-            self.transport.set_timeout(self.base_timeout)
+            return read_line_within(self.transport, seconds)
+        except TimeoutError:
+            pass
         self.transport.device_clear()  # aborts the reading in progress
         raise CommandError(f"no {what} from the 3458A within {seconds:.0f} s")
 
