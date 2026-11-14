@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 – Reference meters: Keysight 3458A and 34420A, Fluke 8508A, Wavetek 1281 and 4950
 
 - **Keysight 34420A nanovolt / micro-ohm meter** (`hp.34420a`): both voltage
   channels, ratio and difference, 2- and 4-wire ohms with offset compensation, low
@@ -18,7 +18,6 @@
   disagrees with itself, the driver uses only what all of it agrees on, and
   docs/INSTRUMENTS.md lists the points. Not tried on hardware yet.
 - **Serial connections** take `dsrdtr=1` for DTR/DSR handshake.
-
 - **Keysight 3458A multimeter** (`hp.3458a`, also the HP and Agilent 3458A):
   DC, AC and AC+DC volts and current, 2- and 4-wire resistance, frequency and
   period, with integration time, digits, autozero, offset compensation, input
