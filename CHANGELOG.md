@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+- **Keysight 34420A nanovolt / micro-ohm meter** (`hp.34420a`): both voltage
+  channels, ratio and difference, 2- and 4-wire ohms with offset compensation, low
+  power and voltage limit, RTD, thermistor and thermocouple temperature, over GPIB
+  or RS-232.
+- **Fluke 8508A reference multimeter** (`fluke.8508a`): DC and AC volts and current,
+  ohms, True Ohms, High Voltage Ohms, PRT temperature, front, rear and ratio inputs;
+  waits as long as the manual's read rates and settling delays say.
+- **Wavetek 1281 selfcal multimeter** (`wavetek.1281`): the same kind of functions
+  for the 1281's options, checked with `*OPT?` before use; rear channels A and B.
+- **Wavetek 4950 multifunction transfer standard** (`wavetek.4950`): measurements at
+  nominal points with their bands, refused with the reason when outside them; the
+  quality and sample size of each measurement and the warm-up time left.
+- All four are written from and checked against their manuals. Where a manual
+  disagrees with itself, the driver uses only what all of it agrees on, and
+  docs/INSTRUMENTS.md lists the points. Not tried on hardware yet.
+- **Serial connections** take `dsrdtr=1` for DTR/DSR handshake.
+
+- **Keysight 3458A multimeter** (`hp.3458a`, also the HP and Agilent 3458A):
+  DC, AC and AC+DC volts and current, 2- and 4-wire resistance, frequency and
+  period, with integration time, digits, autozero, offset compensation, input
+  impedance, AC method, series of readings, temperature and autocal. Waits as
+  long as a slow reading needs, settling delays and offset compensation
+  included, also through a Prologix adapter. Written from
+  and checked against the 3458A user's guide; not tried on hardware yet.
+- **Math, Compare and And / or nodes** open their operator list as a normal
+  menu. The list used to be drawn into the canvas, where `+ - * /` could show
+  up garbled or not at all.
+- **Dark theme:** check boxes (such as output on for the Chroma 6404 or input
+  on for the KP184) and entry fields have a visible edge. Before, they were
+  drawn nearly black on the dark window and could not be told apart from it.
+
 ## 0.1.8 – Project management, VISA in the download and steadier GPIB
 
 - **Managing projects from the welcome page:** the recent projects list shows

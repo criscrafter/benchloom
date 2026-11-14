@@ -5,8 +5,8 @@ Every plugin below ships a simulator, so a test can be written with
 the resource.
 
 The KP184, Chroma 6404, Hantek DSO5102P and Feeltech FY6900 drivers have been
-tried on real instruments (see below). **The HP drivers have not been run against real
-hardware yet**, apart from the 34970A mainframe without cards. They are written from the manuals or protocol notes listed for each
+tried on real instruments (see below). **The HP, Fluke and Wavetek drivers have not been run against
+real hardware yet**, apart from the 34970A mainframe without cards. They are written from the manuals or protocol notes listed for each
 instrument and are tested against their simulators. Expect small fixes on first
 contact.
 
@@ -147,6 +147,108 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   (TM 11-6625-3071-14).
 - **Uncertain:** the range field of `get_status` is shown as the meter's raw
   range number.
+
+## Keysight 3458A multimeter (`hp.3458a`)
+
+- **Connection:** GPIB, as for the 6655A. The factory address is 22 (shown and
+  set with the front-panel `ADDRESS` key). Through UsbGpib, turn off its
+  power-up `*IDN?` as for the 3478A: the 3458A does not know `*IDN?`.
+- **Command set:** HP-ML, not SCPI. At the start the driver sends a device
+  clear (the meter may still be measuring and have readings waiting) and
+  `END ALWAYS` (at power-on replies end without EOI, which VISA and USBTMC wait
+  for), then checks `ID?`, sends `PRESET NORM` and holds the meter (`TARM HOLD`,
+  `TRIG AUTO`); each measurement is one `TARM SGL`. `autocal` turns the input
+  buffer on (`INBUF ON`) while it runs, so the meter does not hold the bus. When a test ends it sends `TARM AUTO`, so the meter measures
+  on its own again.
+- **Commands:**
+    - Measurements: `measure_dc_voltage`, `measure_ac_voltage`,
+      `measure_acdc_voltage`, `measure_resistance`, `measure_resistance_4wire`,
+      `measure_dc_current`, `measure_ac_current`, `measure_acdc_current`,
+      `measure_frequency`, `measure_period`, or `set_function` + `measure`;
+      `measure_many(count)` returns a series of readings as a table.
+    - Settings: `set_range(value)` picks the smallest range holding the value
+      (for frequency and period, the input voltage), `set_autorange`,
+      `set_nplc` (0 to 1000), `set_digits` (3 to 8), `set_autozero`,
+      `set_offset_compensation`, `set_delay` (settling delay) and
+      `set_auto_delay`, `set_fixed_impedance` (10 MΩ or over 10 GΩ on
+      DC volts up to 10 V), `set_ac_bandwidth`, `set_ac_method` (analog, random,
+      sync).
+    - Other: `get_temperature` (to compare with the last autocal),
+      `autocal(kind)` (all, dcv, ac, ohms; waits until done: 16 minutes for all,
+      under 3 for dcv or ac, 11 for ohms), `display_text`, `display_normal`, `get_terminals`, `get_errors`, and
+      `write` / `query` for raw HP-ML.
+- **Device entry options:** `nplc = 10` and `digits = 8` at the start;
+  `check_errors = false` to skip asking `ERR?` after each setting. `digits`
+  (`NDIG`) sets only the display; the readings sent keep the resolution the
+  integration time gives.
+- **Ranges:** like the meter, `set_range` takes a range up to 120 % of its
+  value (1.1 V is measured on the 1 V range), and up to 1050 V and 1.05 A on
+  the top ranges.
+- **Autocal:** let the meter warm up two hours first and disconnect the inputs.
+  Afterwards the manual advises waiting before measuring: 30 minutes after
+  `all` or `ohms`, 15 after `dcv` or `ac`. If autocal is secured, send it raw,
+  for example `dmm:write("ACAL ALL,3458")`.
+- **`set_fixed_impedance(true)`** stays on for resistance, where the 10 MΩ
+  across the input makes readings wrong.
+- **Slow readings:** the driver waits as long as the settings need: NPLC, line
+  frequency from `LINE?`, autozero, offset compensation, AC settling and the
+  settling delay, which it asks with `DELAY?` (that answers the automatic delay
+  too) whenever a setting changed. The meter splits more than 10 power line
+  cycles into parts of NPLC 10, and with offset compensation waits the delay
+  twice in each: NPLC 100 with OCOMP and a 2 s delay takes about 48 s, as
+  3458A users have found. Offset compensation on high ohm ranges needs long
+  delays (1-2 s at 10 kΩ, about 5 s at 100 kΩ, by the same users); a test
+  that wants speed can turn autozero off there, since 4-wire with OCOMP already
+  cancels offsets. A
+  Prologix adapter gives up on a read after 3 s, so longer waits are made of
+  several reads. If no reading comes in time, the driver sends a device clear
+  and fails with "no reading from the 3458A".
+- **Overload** returns infinity (`math.huge` in Lua).
+- **Source:** Keysight 3458A Benutzerhandbuch (user's guide, German), part no.
+  03458-90511, edition 10, March 2023: commands, ranges, error register,
+  overload value, autocal times and power-on states checked against it.
+- **Uncertain:** which error bit an unknown command sets (the manual does not
+  say; the simulator takes it as a syntax error), and whether `TARM AUTO` at the
+  end is enough for the front panel to update without pressing `LOCAL`.
+
+## Keysight 34420A nanovolt / micro-ohm meter (`hp.34420a`)
+
+- **Connection:** GPIB (`prologix://COM4/22`, `usbtmc://…`, `visa://GPIB0::22::INSTR`)
+  or RS-232. Over RS-232 the meter uses DTR/DSR handshake and two stop bits, fixed
+  (p. 199): `serial://COM3?baud=9600&dsrdtr=1`, with the parity and data bits set on
+  the meter (`&parity=E&bytesize=7` for even parity, 7 bits). The driver sets two stop
+  bits itself and sends `SYST:REM` first, as the meter requires (p. 205); a reading
+  that does not come is cancelled with Ctrl-C, the RS-232 device clear (p. 211).
+- **At the start** the driver checks `*IDN?`, sends `*RST` (DC volts on channel 1,
+  autorange, NPLC 10, filters, null and math off) and works with the SENSe commands
+  and `READ?`, so each channel's and function's range, NPLC and null stay as set.
+- **Commands:**
+    - Measurements: `measure_voltage(channel)` (channel 1 to 120 V, channel 2 to
+      12 V), `measure_ratio`, `measure_difference`, `measure_resistance`,
+      `measure_resistance_4wire`, `measure_temperature`, or `set_function` +
+      `measure`; `measure_many(count)` (up to 50000, in one reply).
+    - Settings: `set_channel`, `set_range(value)` (the smallest range holding the
+      value, to 120 % of the range), `set_channel_range(channel, volts)`,
+      `set_autorange`, `set_nplc` (0.02, 0.2, 1, 2, 10, 20, 100, 200, per function),
+      `set_offset_compensation`, `set_low_power`, `set_voltage_limit` (20, 100,
+      500 mV or 0), `set_null`, `null_next_reading`.
+    - Temperature: `set_rtd(rtd_type, r0)` (85 or 91), `set_thermistor`,
+      `set_thermocouple(kind, reference, reference_c)`; these also set °C, which the
+      meter keeps in non-volatile memory.
+    - `display_text` (11 characters), `display_normal`, and the common SCPI commands.
+- **Overload** (`9.90000000E+37`) returns infinity.
+- **Source:** Keysight 34420A User's Guide, part no. 34420-90001, edition 8 (April
+  2026), chapters 3 and 4.
+- **Uncertain:**
+    - The guide gives no reading rates (they are in a separate data sheet). The driver
+      waits twice the integration time at 50 Hz, doubled again with offset
+      compensation and for ratio, difference and temperature, plus 2 s.
+    - The factory RS-232 setting: none / 8 bits on p. 199, even / 7 bits on p. 219.
+    - Thermocouple type N is on pp. 37, 94 and 144, but not in the list on p. 166.
+    - The fixed reference junction: 0 to 55 °C remotely (p. 166), -1 to 55 °C from the
+      front panel (p. 94); the driver allows 0 to 55 °C.
+- **Not covered:** the digital and analog filters (the guide advises against them
+  remotely), statistics and scaling, chart output, calibration.
 
 ## Chroma 6404 AC source (`chroma.6404`)
 
@@ -547,3 +649,119 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   [tspspi/pyfy6900](https://github.com/tspspi/pyfy6900), an EEVblog post on the
   FY6600/FY6800 serial interface, and an earlier test program by the author, all checked on the real
   generator. No code was copied from them.
+
+## Fluke 8508A reference multimeter (`fluke.8508a`)
+
+- **Connection:** GPIB, as for the 6655A; the address is set in the Utility menu.
+- **At the start** the driver sends a device clear, checks `*IDN?`, sends `*RST` and
+  selects external triggering (`TRG_SRCE EXT`): the manual advises against internal
+  triggers under bus control (p. 4-33). Each reading is `X?` (trigger and read).
+- **Commands:**
+    - Measurements: `measure_dc_voltage`, `measure_ac_voltage` (and `get_frequency`),
+      `measure_resistance`, `measure_resistance_4wire`, `measure_true_ohms` (4-wire,
+      current reversed, 2 Ω to 20 kΩ), `measure_hv_ohms` (20 MΩ to 2 GΩ, no autorange),
+      `measure_dc_current`, `measure_ac_current`, `measure_temperature(identity)` with
+      a PRT stored in the meter, `measure`, `measure_many`.
+    - Settings, each for the function in use: `set_range` (the smallest range whose
+      full scale holds the value: 199.99 mV, 1.9999 V … 1050 V), `set_autorange`,
+      `set_resolution` (5 to 8 digits; DC current 5 to 7, AC 5 or 6), `set_fast`,
+      `set_filter`, `set_ac_filter` (1, 10, 40, 100 Hz), `set_dc_coupling`,
+      `set_transfer`, `set_four_wire`, `set_low_current`.
+    - `set_input` (front, rear, ratio, difference, deviation, off), `set_guard`,
+      `set_delay`, `set_auto_delay`, `set_fast_gate`, `input_zero`, `self_test`.
+- **Waiting:** the default settling delay of the manual's tables (p. 4-35, up to 50 s)
+  or the delay set, plus one reading at the read rate of p. 5-14 (down to 1/90
+  reading per second), doubled for front-and-rear inputs and for autorange, plus 20 %
+  and 2 s.
+- **Errors:** after each setting the driver reads `*ESR?`, and on an error the
+  execution and device error queues (`EXQ?`, `DDQ?`), with the texts of appendix A.
+- **Overload** (`±200.0000E+33`) returns infinity.
+- **Source:** Fluke 8508A Reference Multimeter Users Manual, PN 1673798 (July 2002,
+  Rev. 6, 3/13): chapter 4, chapter 5 (ranges, read rates), appendix A.
+- **Uncertain:**
+    - The delay tables name their ranges in decades (1 Ω … 1 GΩ), chapter 5 in 2-and-20
+      steps (2 Ω … 2 GΩ); the driver uses the longest delay of a function.
+    - High Voltage Ohms has no read rate of its own; the slowest one (PRT / True Ohms)
+      is used. The ACI delays are given for 5 digits only; 6 digits uses those of ACV.
+    - The manufacturer field of `*IDN?` is not given; the driver checks the model only.
+- **Not covered:** math (averaging, M, C, Z, dB), limits, the block memory, entering
+  PRT data, spot frequencies, calibration.
+
+## Wavetek 1281 selfcal multimeter (`wavetek.1281`)
+
+- **Connection:** GPIB, as for the 6655A.
+- **At the start** the driver sends a device clear, checks `*IDN?`, reads the fitted
+  options with `*OPT?` (AC option 10, resistance option 20, current option 30) and the
+  line frequency (`LINEF?`), sends `*RST` and selects external triggering. A function
+  whose option is missing is refused before anything is sent. Each reading is `X?`.
+- **Commands:** as for the 8508A, with the 1281's own functions and limits:
+  `measure_hi_ohms` (100 MΩ and 1 GΩ, no autorange) instead of High Voltage Ohms;
+  True Ohms on 10 Ω to 100 kΩ; resolutions DC volts, ohms and True Ohms 5 to 8, Hi
+  Ohms 5 or 6, AC volts and DC current 4 to 6, AC current 4 or 5; `set_input`
+  (front, rear channels A and B, ratio A/B, difference, deviation, off), `set_guard`
+  (local, remote), `input_zero`, `confidence_test`, `self_test`. Ranges follow the
+  handbook's tables (0.2 to 1.99999999 selects the 1 V range, and so on, pp. 5-30 to
+  5-44), so each range reads to twice its value.
+- **Waiting:** the default delay of p. 5-71 (or the delay set), plus twice the A-D
+  integration of p. 5-71 (3.3 ms up to 1024 power line cycles, about 20 s at 50 Hz for
+  8½ digits), doubled for True Ohms, two channels and autorange, plus 20 % and 2 s.
+- **Overload** (`±200.0000E+33`) returns infinity.
+- **Source:** Wavetek Model 1281 Selfcal Digital Multimeter User's Handbook, Section 5
+  and appendix A to Section 4.
+- **Uncertain** (the handbook disagrees with itself; the driver uses only what all of
+  it agrees on):
+    - Resolutions: the diagrams of DC volts, ohms and True Ohms also show 4½ digits,
+      the index does not; Hi Ohms is 4 to 6 in its diagram and the index, 5 to 6 in its
+      text.
+    - AC filters: 1000, 360, 40 and 10 Hz in the index; 100, 40, 10 and 1 Hz in the
+      diagrams and the power-on state, which the driver uses.
+    - Hi Ohms: the table says 20 to 199.9999 MΩ selects 100 MΩ, the example says
+      100000000 selects 1 GΩ; the driver sends 50000000 for the 100 MΩ range.
+    - Ohms: the power-on range is 10 MΩ, but the range table ends at 1 MΩ ("> 2000000
+      use HI_OHMS"); the driver starts ohms in autorange and gives no fixed range for
+      2 to 20 MΩ.
+    - `*IDN?`: the example answers `DATRON INSTRUMENTS,1271,…`; the driver accepts a
+      model of 1281 or 1271.
+    - Appendix A writes `*EXQ?` and `*DDQ?`, Section 5 `EXQ?` and `DDQ?`; the driver
+      uses Section 5's.
+    - No read rates are given; the waits come from the A-D modes, doubled.
+- **Not covered:** math, limits, the block memory, specification readouts,
+  calibration.
+
+## Wavetek 4950 multifunction transfer standard (`wavetek.4950`)
+
+- **Connection:** GPIB, as for the 6655A.
+- **A transfer standard measures at nominal points.** Each measurement names its
+  range and band: `mts:dc_voltage(10)` measures the 10 V point (10 V ±10 %),
+  `mts:dc_voltage(10, "zero")` 0 V ±1 V, `mts:dc_voltage(10, "high")` 19 V. A reading
+  outside its band is refused with the reason (above or below the band, frequency out
+  of its band), unless `set_band_limits(false)`.
+- **At the start** the driver sends a device clear, checks `*IDN?` (model 4950), reads
+  the fitted assemblies with `*OPT?` (AC, ohms, current), sends `*RST`, external
+  triggering and the accuracy mode of the device entry (`accuracy = "high"` by
+  default, as the handbook disagrees on the power-on mode). A reading is `*TRG`, then
+  `RDG?`, which waits for the mean of the sample.
+- **Commands:** `dc_voltage(volts, band)`, `ac_voltage(volts, frequency, band,
+  four_wire)` (frequency band centres 10 Hz to 1 MHz, ±10 %), `resistance(ohms, band,
+  four_wire)`, `dc_current(amps, band)`, `ac_current(amps, frequency)`, each with an
+  optional remote guard; `measure`, `measure_many`; `get_frequency`, `get_quality`
+  (standard error of the mean, ppm of range or reading, or absolute),
+  `get_sample_size`, `get_warm_up_minutes`; `set_accuracy`, `set_corrections`
+  (certified or base), `set_band_limits`, `input_zero`, `self_test`,
+  `resume_self_test`, `get_errors`.
+- **Waiting:** each conversion integrates for 200 ms (Section 1); a sample has up to
+  128 (table of p. 5-39). The driver allows three times the integration per
+  conversion plus 5 s, and 10 s more for AC.
+- **Errors:** the command, execution and device error queues answer with a code and
+  the meter's own text; the driver passes both on.
+- **Source:** Wavetek Model 4950 Multifunction Transfer Standard Instrument User's
+  Handbook, 850270 Issue 4 (December 1998), Section 5.
+- **Uncertain:**
+    - Which range takes which frequency band: the table on pp. 5-30 and 5-36 could not
+      be read reliably from the PDF, so the driver leaves that check to the meter
+      (error 1026).
+    - The time between conversions and the AC settling time are not given.
+    - The power-on accuracy mode (low on p. 5-39, high in appendix B) and some power-on
+      ranges and bands differ within the handbook; the driver always sends them.
+- **Not covered:** calibration, entering the 10 A shunt and 2-wire lead serial numbers
+  (needed for the 10 A range and 2-wire ohms; use `write`), `TEMP?`, `DATE?`, `TIME?`.

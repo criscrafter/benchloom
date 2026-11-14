@@ -103,3 +103,71 @@ name = "check_errors"
 label = "Check for errors after each setting"
 type = "bool"
 default = true
+
+[[device]]
+id = "3458a"
+name = "Keysight 3458A multimeter"
+description = """8½-digit reference multimeter with GPIB (HP-ML, not SCPI), also sold as \
+the HP and Agilent 3458A: DC volts, AC and AC+DC volts, 2- and 4-wire resistance, DC, \
+AC and AC+DC current, frequency and period. Integration time (NPLC), digits, \
+autozero, offset compensation, input impedance, AC method and bandwidth, series of \
+readings, internal temperature and autocal. Factory GPIB address 22."""
+driver = "hp3458a:HP3458A"
+simulator = "hp3458a:HP3458ASim"
+transports = ["usbtmc", "prologix", "visa", "sim"]
+default_name = "dmm"
+category = "dmm"
+manufacturer = "Keysight"
+
+[[device.setting]]
+name = "nplc"
+label = "Integration time at the start (power line cycles)"
+type = "float"
+default = 10
+min = 0
+max = 1000
+help = "10 gives about 7½ digits, 100 the full 8½; each reading then takes 2-4 s with autozero."
+
+[[device.setting]]
+name = "digits"
+label = "Digits at the start"
+type = "int"
+default = 8
+min = 3
+max = 8
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+
+[[device]]
+id = "34420a"
+name = "Keysight 34420A nanovolt / micro-ohm meter"
+description = """7½-digit low-level meter with two DC voltage inputs (channel 1 to \
+100 V, channel 2 to 10 V, both down to 1 mV), GPIB or RS-232 (SCPI), also sold as the HP \
+and Agilent 34420A: voltage per channel, ratio and difference of the channels, 2- and \
+4-wire resistance (1 Ω to 1 MΩ) with offset compensation, low power and voltage limit, \
+and temperature with RTDs, the 5 kΩ thermistor or thermocouples."""
+driver = "hp34420a:HP34420A"
+simulator = "hp34420a:HP34420ASim"
+transports = ["prologix", "usbtmc", "visa", "serial", "sim"]
+default_name = "nvm"
+category = "dmm"
+manufacturer = "Keysight"
+
+[[device.setting]]
+name = "nplc"
+label = "Integration time at the start (power line cycles)"
+type = "float"
+default = 10
+min = 0.02
+max = 200
+help = "0.02, 0.2, 1, 2, 10, 20, 100 or 200."
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true

@@ -157,7 +157,7 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
     details = dialog.details
     assert details.status_field.text() == "Switched off"
     assert details.id_field.text() == "hp" and details.source_field.text() == "Built-in"
-    assert details.device_list.count() == 4 and details.device_box.title() == "Devices (4)"
+    assert details.device_list.count() == 6 and details.device_box.title() == "Devices (6)"
     details.device_list.setCurrentRow(2)  # the 53131A: its settings are listed one per line
     assert details.device_type.text() == "hp.53131a"
     assert details.device_default_name.text() == "counter"
@@ -615,7 +615,7 @@ def test_device_picker_groups_official_and_third_party_by_manufacturer(app):
     assert {family, "Hantek", "Feeltech", "Digitek", "Kunkin"} <= set(makers)
     assert not {"HP", "Agilent"} & set(makers)
     hp = official.child(makers.index(family))
-    assert hp.text(0) == f"{family}  (4)"
+    assert hp.text(0) == f"{family}  (6)"
     assert {hp.child(i).text(1) for i in range(4)} == {
         "Counter", "Multimeter", "Power supply", "Data acquisition"}
     # a plugin without a manufacturer or kind falls back to its name and "Other"
@@ -644,7 +644,7 @@ def test_device_picker_search_finds_and_picks(app):
     assert dialog.device_type() == "hp.3478a" and dialog.name_edit.text() == "dmm"
 
     picker.search.setText("hewlett-packard")  # the plugin's description
-    assert set(picker.visible_ids()) == {"hp.6655a", "hp.3478a", "hp.53131a", "hp.34970a"}
+    assert set(picker.visible_ids()) == {"hp.6655a", "hp.3478a", "hp.3458a", "hp.34420a", "hp.53131a", "hp.34970a"}
     picker.search.setText("acme")  # the third-party manufacturer and plugin name
     assert set(picker.visible_ids()) == {"acme.ps3005", "acme.gizmo"}
     assert picker.sections["official"].isHidden() and not picker.sections["third_party"].isHidden()
@@ -665,7 +665,8 @@ def test_device_picker_filters_by_kind(app):
     assert {"dmm", "scope", "psu", "load", "generator", "counter"} <= set(kinds)
 
     picker.set_kind("dmm")
-    assert set(picker.visible_ids()) == {"hp.3478a", "fs9721.dt4000zc"}
+    assert set(picker.visible_ids()) == {"hp.3478a", "hp.3458a", "hp.34420a", "fluke.8508a", "wavetek.1281",
+                                         "fs9721.dt4000zc"}
     assert dialog.device_type() == "fs9721.dt4000zc"  # the first one shown (Digitek)
     picker.set_current("hp.3478a")
     picker.set_kind("counter")

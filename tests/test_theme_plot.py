@@ -82,7 +82,8 @@ def test_theme_switches_live_and_is_remembered(app, tmp_path):
     sweep(window.plot)  # legend labels made in light mode must turn light in dark mode
     window.set_theme("dark")
     app.processEvents()
-    assert is_dark(app.palette()) and app.style().name() == "fusion"
+    assert is_dark(app.palette()) and isinstance(app.style(), theme.DarkStyle)
+    assert app.style().baseStyle().name() == "fusion"
     background = window.plot.plot.backgroundBrush().color()
     assert background.lightness() < 60
     assert window.editor.highlighter.formats["keyword"].foreground().color().name() == "#c792ea"
@@ -114,3 +115,18 @@ def test_right_axis_choice_is_kept_per_project(app, tmp_path):
     window.open_project(first.path)
     assert window.plot.right_columns == {"P"}
     window.close()
+
+
+def test_dark_check_boxes_and_fields_have_a_visible_edge(app):
+    from PySide6.QtWidgets import QCheckBox, QLineEdit
+
+    apply_theme("dark", app)
+    window_color = app.palette().window().color()
+    for widget in (QCheckBox(), QLineEdit()):
+        widget.resize(60, 24)
+        image = widget.grab().toImage()
+        lightest = max(image.pixelColor(x, y).lightness()
+                       for x in range(image.width()) for y in range(image.height()))
+        # Fusion alone draws the edge darker than the window: nothing to see
+        assert lightest > window_color.lightness() + 40, type(widget).__name__
+    apply_theme("light", app)

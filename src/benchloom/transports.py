@@ -16,7 +16,8 @@ A device entry in a project names its connection with a resource string:
 Common options: ``timeout`` (seconds), ``term`` (line ending for both
 directions, e.g. ``term=\\r\\n``), ``write_term``, ``read_term``.
 Serial options: ``baud``, ``bytesize``, ``parity`` (N, E, O), ``stopbits``,
-``rtscts=1`` for hardware handshake.
+``rtscts=1`` for RTS/CTS hardware handshake, ``dsrdtr=1`` for DTR/DSR (as the
+Keysight 34420A uses).
 """
 
 from __future__ import annotations
@@ -156,14 +157,14 @@ class SerialTransport(Transport):
     scheme = "serial"
 
     def __init__(self, port: str, *, baud=9600, bytesize=8, parity="N", stopbits=1, rtscts=0,
-                 **options):
+                 dsrdtr=0, **options):
         super().__init__(**options)
         self.port = port
         stopbits = float(stopbits)
         self.serial_options = dict(
             baudrate=int(baud), bytesize=int(bytesize), parity=str(parity).upper()[:1],
             stopbits=int(stopbits) if stopbits.is_integer() else stopbits,
-            rtscts=bool(int(rtscts)),
+            rtscts=bool(int(rtscts)), dsrdtr=bool(int(dsrdtr)),
         )
         self.lines: dict[str, bool] = {}  # DTR/RTS levels set with set_lines
         self._serial = None
@@ -204,7 +205,7 @@ class SerialTransport(Transport):
             try:
                 # all at once: one reconfiguration of the port instead of one per setting
                 self._serial.apply_settings({k: v for k, v in self.serial_options.items()
-                                             if k != "rtscts"})
+                                             if k not in ("rtscts", "dsrdtr")})
             except serial.SerialException:
                 # the CH340 quirk described in open(): change the baud rate away and back
                 self._reconfigure()
@@ -490,6 +491,31 @@ class VisaTransport(Transport):
 
     def read_until(self, term: bytes) -> bytes:
         return self._instrument.read_raw()
+
+
+def read_line_within(transport: Transport, seconds: float) -> str:
+    """Read one line, waiting up to ``seconds`` for it; raise TimeoutError if none comes.
+
+    For slow measurements. A Prologix adapter gives up on a read after 3 s (an AR488
+    after 32 s), so for longer waits the read is repeated until the time is up. The
+    transport's own timeout is restored afterwards.
+    """
+    import time
+
+    base = transport.timeout
+    max_ms = getattr(transport, "max_read_ms", None)
+    step = min(seconds, max_ms / 1000) if max_ms else seconds
+    deadline = time.monotonic() + seconds
+    transport.set_timeout(max(base, step))
+    try:
+        while True:
+            try:
+                return transport.read()
+            except TimeoutError:
+                if not max_ms or time.monotonic() >= deadline:
+                    raise
+    finally:
+        transport.set_timeout(base)
 
 
 def parse_resource(resource: str) -> tuple[str, str, dict[str, str]]:

@@ -1,0 +1,57 @@
+[plugin]
+id = "wavetek"
+name = "Wavetek / Datron"
+version = "0.1.0"
+description = "Wavetek (Datron) precision multimeters and transfer standards."
+manufacturer = "Wavetek"
+
+[[device]]
+id = "1281"
+name = "Wavetek 1281 selfcal digital multimeter"
+description = """8½-digit selfcal multimeter with GPIB (IEEE 488.2), also sold as the \
+Datron 1281: DC volts (100 mV to 1000 V) and, with its options, AC volts (option 10), \
+2- and 4-wire ohms, True Ohms and Hi Ohms (option 20), DC and AC current (option 30); \
+front input and rear channels A and B with ratio, difference and deviation, guard, \
+settling delay and input zero. Checks the fitted options with *OPT? before using a \
+function."""
+driver = "wavetek1281:Wavetek1281"
+simulator = "wavetek1281:Wavetek1281Sim"
+transports = ["prologix", "usbtmc", "visa", "sim"]
+default_name = "dmm"
+category = "dmm"
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true
+help = "Reads *ESR? after each setting and the error queues when it shows an error."
+
+[[device]]
+id = "4950"
+name = "Wavetek 4950 multifunction transfer standard"
+description = """Transfer standard with GPIB (IEEE 488.2), also sold as the Datron \
+4950, for calibrating calibrators at nominal points: DC volts (100 mV to 1000 V), AC \
+volts (1 mV to 1000 V in frequency bands from 10 Hz to 1 MHz), resistance (10 Ω to \
+100 MΩ), DC and AC current (100 µA to 10 A). Each measurement names its range and \
+band (zero, full or 190 %); readings outside the band are refused with the reason. \
+Gives the quality (standard error) and sample size of each measurement, the warm-up \
+time left, accuracy mode, certified or base corrections, input zero and selftest."""
+driver = "wavetek4950:Wavetek4950"
+simulator = "wavetek4950:Wavetek4950Sim"
+transports = ["prologix", "usbtmc", "visa", "sim"]
+default_name = "mts"
+category = "transfer_standard"
+
+[[device.setting]]
+name = "accuracy"
+label = "Accuracy mode at the start (high or low)"
+type = "text"
+default = "high"
+help = "High takes large samples (up to 128 conversions) and gives one more digit."
+
+[[device.setting]]
+name = "check_errors"
+label = "Check for errors after each setting"
+type = "bool"
+default = true

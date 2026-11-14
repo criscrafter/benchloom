@@ -45,6 +45,33 @@ RUNNING_COLOR = QColor("#16a34a")  # the node a running test is at
 HEADER_COLORS = {"start": "#6b7280", "flow": "#b45309", "action": "#6d28d9", "value": "#0f766e"}
 
 
+class ChoiceBox(QComboBox):
+    """A combo box for a node that opens its list as a normal menu.
+
+    The list of a combo box embedded in the scene is itself drawn into the scene,
+    where it is scaled with the zoom and repainted only in parts, so its entries
+    can show up garbled or not at all. A top-level menu avoids that.
+    """
+
+    def showPopup(self) -> None:
+        proxy = self.graphicsProxyWidget()
+        views = proxy.scene().views() if proxy is not None and proxy.scene() else []
+        if not views:
+            super().showPopup()
+            return
+        view = views[0]
+        corner = view.mapFromScene(proxy.mapToScene(QPointF(0, proxy.size().height())))
+        menu = QMenu(view)
+        menu.setFont(self.font())
+        menu.setMinimumWidth(round(self.width() * view.transform().m11()))
+        for index in range(self.count()):
+            action = menu.addAction(self.itemText(index))
+            action.setCheckable(True)
+            action.setChecked(index == self.currentIndex())
+            action.triggered.connect(lambda _=False, i=index: self.setCurrentIndex(i))
+        menu.exec(view.viewport().mapToGlobal(corner))
+
+
 def format_value(value) -> str:
     if value is None:
         return ""
@@ -231,7 +258,7 @@ class NodeItem(QGraphicsItem):
             if value is None:
                 value = item.default if item.default is not None else item.choices[0]
                 self.data["values"][key] = value
-            widget = QComboBox()
+            widget = ChoiceBox()
             widget.addItems([str(choice) for choice in item.choices])
             widget.setCurrentText(str(value))
             widget.currentIndexChanged.connect(
