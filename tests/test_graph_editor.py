@@ -302,3 +302,35 @@ def test_check_and_save_waveform_nodes_compile(app, tmp_path):
     code, _ = compile_graph(graph, Catalog(project))
     assert 'v.n2_passed = check("Level", 1.5, 1, nil, "V")' in code
     assert 'save_waveform("trace", psu:measure_voltage())' in code
+
+
+def test_operator_list_opens_as_a_normal_menu(app, tmp_path):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QMenu
+
+    project = create_project(tmp_path / "proj", "visual")
+    editor = GraphEditor()
+    editor.load(example_graph(), Catalog(project))
+    editor.resize(800, 600)
+    editor.show()
+    node = editor.add_node({"type": "core.math"})
+    box = node.proxies["op"].widget()
+    seen = []
+
+    def pick():
+        menu = QApplication.activePopupWidget()
+        seen.append(menu)
+        if isinstance(menu, QMenu):
+            texts = [action.text() for action in menu.actions()]
+            seen.append(texts)
+            menu.actions()[texts.index("*")].trigger()
+        menu.close()
+
+    QTimer.singleShot(0, pick)
+    box.showPopup()
+    # a top-level menu, not a list drawn into the scene
+    assert isinstance(seen[0], QMenu) and seen[0].graphicsProxyWidget() is None
+    assert seen[1] == ["+", "-", "*", "/"]
+    assert node.data["values"]["op"] == "*" and box.currentText() == "*"
+    editor.modified = False
+    editor.close()

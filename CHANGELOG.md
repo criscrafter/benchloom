@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Math, Compare and And / or nodes** open their operator list as a normal
+  menu. The list used to be drawn into the canvas, where `+ - * /` could show
+  up garbled or not at all.
+- **Dark theme:** check boxes (such as output on for the Chroma 6404 or input
+  on for the KP184) and entry fields have a visible edge. Before, they were
+  drawn nearly black on the dark window and could not be told apart from it.
+
 ## 0.1.8 – Project management, VISA in the download and steadier GPIB
 
 - **Managing projects from the welcome page:** the recent projects list shows
