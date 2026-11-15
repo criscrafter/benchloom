@@ -49,7 +49,7 @@
 
 ## Updates
 
-When Benchloom starts, it asks GitHub at most once a day whether a newer version
+When Benchloom starts, it asks GitHub whether a newer version
 is out. If so, a bar under the toolbar says which one, and **What's new and
 download** opens its release page. For the Windows download, get the new zip
 there; installed with pip, update with `pip install --upgrade benchloom`. **Skip

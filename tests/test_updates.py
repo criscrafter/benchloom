@@ -67,7 +67,7 @@ def wait_for(app, window):
         app.processEvents()
 
 
-def test_a_newer_version_shows_the_bar_once_a_day(app, tmp_path):
+def test_a_newer_version_shows_the_bar_at_every_start(app, tmp_path):
     asked = []
 
     def fetch():
@@ -80,13 +80,11 @@ def test_a_newer_version_shows_the_bar_once_a_day(app, tmp_path):
     assert window.update_bar.is_open
     assert "Benchloom 99.0 is available" in window.update_bar.label.text()
     assert __version__ in window.update_bar.label.text()
-    assert not window.check_for_updates()  # checked already today
     assert len(asked) == 1
 
     window.update_bar.skip()  # not mentioned again by the automatic check
     assert not window.update_bar.is_open and window.prefs.get("skipped_version") == "99.0"
-    window.prefs.set("last_update_check", "0")
-    assert window.check_for_updates()
+    assert window.check_for_updates()  # next start asks again, no daily limit
     wait_for(app, window)
     assert not window.update_bar.is_open and len(asked) == 2
     window.close()
@@ -98,7 +96,6 @@ def test_no_bar_when_up_to_date_switched_off_or_offline(app, tmp_path):
     wait_for(app, window)
     assert not window.update_bar.is_open
 
-    window.prefs.set("last_update_check", "0")
     window.prefs.set("check_updates", False)
     assert not window.check_for_updates()  # switched off in Settings
 
@@ -110,5 +107,4 @@ def test_no_bar_when_up_to_date_switched_off_or_offline(app, tmp_path):
     assert window.check_for_updates()  # quietly: no message box at start
     wait_for(app, window)
     assert not window.update_bar.is_open
-    assert window.prefs.get("last_update_check") == "0"  # tried again next start
     window.close()

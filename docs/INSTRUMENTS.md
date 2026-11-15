@@ -307,9 +307,13 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   about a second, because the source makes a new measurement for every query.
   A row with voltage, current and frequency therefore takes about 3 s.
 
-## HP 53131A universal counter (`hp.53131a`)
+## HP / Agilent 53131A / 53132A universal counter (`hp.53131a`)
 
-- **Connection:** GPIB, as for the 6655A. The 53132A works with the same driver.
+- **Connection:** GPIB, as for the 6655A, e.g. `prologix://COM17/1` through an
+  AR488. Tried on a real 53131A (firmware 3944) with an FY6900 as the source.
+- **53131A and 53132A:** both take the same commands, so one driver serves both.
+  The 53132A resolves 12 digits in one second instead of 10, and time intervals
+  to 150 ps instead of 500 ps. It is untested on hardware.
 - **Commands:**
     - Measurements: `measure_frequency(channel)` (1, 2 or 3), `measure_period`,
       `measure_ratio` (channel 1 / 2), `measure_time_interval` (1 to 2),
@@ -324,20 +328,45 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 - **Gate time:** frequency, period and ratio use time gating with the gate time
   set by `set_gate_time` or the device setting (0.1 s by default). A longer gate
   gives more digits.
+- **Trigger:** every measurement starts with `:CONFigure`, which sets the trigger
+  level of both channels back to auto and the slope to rising (coupling,
+  impedance, attenuation and filter stay). The driver sends the level and slope
+  from `set_trigger_level` and `set_trigger_slope` again after it, for
+  frequency, period, ratio, time interval, phase and totalize. Pulse width, duty
+  cycle and rise/fall time use the counter's own levels (50 %, 10/90 %).
+- **Auto trigger** needs a signal above 100 Hz and 100 mVpp; below 100 Hz set a
+  trigger level. Totalize never auto-triggers, so set a level before it.
+- **Phase:** `measure_phase` is channel 1 relative to channel 2, positive when
+  channel 1 leads; one period of channel 2 is 360°.
+- **Rise and fall time** need clean edges: on a fast edge that rings, the ringing
+  crosses the 10 % and 90 % levels, and the result is a pulse width instead.
+  The peak voltages include the overshoot too.
 - **No signal:** a measurement waits for its signal, and the counter then
   ignores every other command until a device clear. If no reading arrives within
-  the gate time plus 2 s, the driver sends a device clear and fails with "no
-  reading on channel N".
+  the gate time plus 2 s, the driver sends a device clear and `*CLS` (the clear
+  leaves `-230,"Data corrupt or stale"` behind) and fails with "no reading on
+  channel N". The next measurement works normally.
 - **Not a number:** the counter's "no valid result" (9.91E37) is returned as NaN.
-- **Source:** HP 53131A/132A Programming Guide, part no. 53131-90044 (November
-  1996).
+- **Measured** on the 53131A from an FY6900 (1 MΩ, DC coupled): frequency from
+  1 kHz to 60 MHz to within 8 ppm (the generator's clock), period, ratio 4.0,
+  phase 90.02°, time interval 24.98 µs at 10 kHz, duty cycle 0.29999, pulse
+  widths 300.0 µs and 700.0 µs, rise time 0.399 ms on a triangle, totalize 1000
+  in 1 s, peaks of a 2 Vpp sine ±1.0 V. Channel 3 without the option fails
+  with `-241,"Hardware missing"`.
+- **Sources:** HP 53131A/132A Programming Guide, part no. 53131-90044 (November
+  1996); Agilent 53131A/132A Operating Guide, part no. 53131-90055 (October
+  2006): phase (p. 2-15), auto trigger (pp. 2-44 to 2-45, input specifications
+  p. 3-2), model differences (p. xvi).
 
 ## Agilent 34970A data acquisition / switch unit (`hp.34970a`)
 
 - **Connection:** GPIB, e.g. `prologix://COM17/1` through an AR488 (the factory
   address is 9; the tested unit was set to 1), or `usbtmc://`/`visa://`. RS-232 also
-  works in principle (`serial://COM3?baud=9600`, flow control None, a null-modem
-  cable); select the interface on the front panel.
+  works in principle, with a null-modem cable; select the interface on the front
+  panel. The factory settings are 57600 baud, 8 data bits, no parity and XON/XOFF.
+  Set the flow control to DTR/DSR there and use
+  `serial://COM3?baud=57600&dsrdtr=1`. The manual advises against no flow control
+  unless the baud rate is below 9600.
 - **Cards:** the driver asks the three slots which cards they hold when it
   connects (`list_cards()`, `card_model(slot)`) and checks every channel against
   them before sending anything, so a wrong channel fails with a message naming
@@ -354,31 +383,79 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   | 34905A/34906A dual RF multiplexer | 11–14, 21–24 | switch |
   | 34907A multifunction module | digital 01–02, totalizer 03, DAC 04–05 | `write_digital`, `read_digital`, `read_totalizer`, `set_dac` (±12 V) |
 
-- **Measurements** (multiplexer channels, internal multimeter needed):
+- **Measurements** (multiplexer channels, internal multimeter needed and switched
+  on; `list_cards()` says "switched off" when it is not):
   `measure_dc_voltage`, `measure_ac_voltage`, `measure_resistance(channel,
   four_wire)`, `measure_dc_current`/`measure_ac_current` (34901A channels 21,
   22), `measure_frequency`, `measure_period`, `measure_temperature(channel,
   sensor, kind)` with sensor `thermocouple` (type B, E, J, K, N, R, S, T; the
   card's reference junction), `rtd`, `four_wire_rtd` (85 or 91) or
   `thermistor` (2252, 5000, 10000), in °C.
-- **Scanning:** `scan(function, "101:110,115")` measures a channel list with one
-  function and returns the readings in channel order. Each measurement is a
-  one-sweep scan: configure, `INIT`, then `DATA:POIN?` until every reading is in,
-  then `FETC?`. No single read waits for a slow measurement, so a long scan
-  never runs into a GPIB adapter's read timeout (at most 3 s on a Prologix).
+- **Measurement options** (0 keeps the instrument's default):
+  - `range`: DC and AC volts 0.1, 1, 10, 100, 300 V; resistance 100 Ω to
+    100 MΩ in decades; current 0.01, 0.1, 1 A; 0 is autorange (p. 21, p. 214).
+  - `resolution` in the function's unit, for DC volts, DC current and
+    resistance (AC is fixed at 6½ digits, p. 208). It sets the integration time
+    (table on p. 203), so give it or `nplc`, not both.
+  - `nplc`: 0.02, 0.2, 1, 2, 10, 20, 100 or 200 for DC volts, DC current,
+    resistance and temperature (p. 218); the default is 1.
+  - `aperture`: the gate time of frequency and period, 0.01, 0.1 (default) or
+    1 s (p. 217).
+
+  `CONF` puts range, resolution, NPLC and channel delay back to their defaults
+  (p. 214), so the driver sends the NPLC or gate time after it every time.
+- **Scanning:** `scan(function, "101:110,115", ..., range, resolution, nplc,
+  aperture)` measures a channel list with one function and returns the readings
+  in channel order. Each measurement is a one-sweep scan: configure, `INIT`, then
+  `DATA:POIN?` until every reading is in, then `FETC?`, then `ROUT:SCAN (@)` to
+  empty the scan list again (p. 240). No single read waits for a slow
+  measurement, so a long scan never runs into a GPIB adapter's read timeout (at
+  most 3 s on a Prologix). The time a scan may take comes from the automatic
+  channel delays (p. 89) and the reading rates at 50 Hz (p. 408), doubled.
   Overloads read as ±infinity.
+- **Monitor:** a measurement configures its channel and scans it again each
+  time, so the relay switches for every reading. To read one channel over and
+  over without that, `start_monitor(function, channel, ...)` (same options as
+  `scan`) configures it, puts it in the scan list and sends `ROUT:MON (@ch)` and
+  `ROUT:MON:STAT ON`; `read_monitor()` returns the latest reading
+  (`ROUT:MON:DATA?`, p. 238); `stop_monitor()` ends it. Any measurement or scan
+  stops a running monitor first, and so does the end of a test. Monitoring needs
+  the internal multimeter and does not work on actuator, matrix or RF cards
+  (p. 93). `start_monitor` waits two reading times before it returns, so the
+  first `read_monitor` is not a reading from before.
 - **Switching:** `close_channel`, `open_channel`, `is_closed`, `open_all(slot)`.
-  The instrument's own rules still apply: a multiplexer closes several channels
-  only while none is in the scan list; a 34908A closes one at a time.
-- **Other:** `set_display_text` (13 characters, no quotes), `clear_display_text`,
+  The instrument's own rules still apply, and closing a relay may open others:
+  - a 34901A or 34902A closes several channels only while none of its channels is
+    in the scan list. The driver empties the scan list after every measurement,
+    but a running monitor keeps its channel there: while it runs, closing a
+    relay on that card opens the one closed before;
+  - a 34908A always has only one channel closed;
+  - on a 34901A, channels 21 and 22 cannot both be connected; closing one also
+    affects the other (p. 164);
+  - the RF cards (34905A/6A) keep one channel per bank connected and have no
+    OPEN: `open_channel` and `open_all` refuse and say to close another channel
+    of the bank.
+- **Other:** `set_display_text` (13 characters, no quotes; a comma, period or
+  semicolon shares the place of the character before it), `clear_display_text`,
   `reset_card(slot)`.
 - **End of a test:** `SYST:CPON ALL` returns every card to its power-on state
   (relays open, DACs 0 V, digital ports inputs), unless the device entry says
   `leave_output_on = true`. A mainframe without cards is left alone.
 - **Simulator:** `sim://` has a 34901A, a 34903A and a 34907A;
-  `sim://?cards=34908A,,34904A` chooses others (an empty place is an empty slot).
+  `sim://?cards=34908A,,34904A` chooses others (an empty place is an empty slot),
+  `dmm=off` switches the multimeter off and `dmm=none` leaves it out. It follows
+  the relay rules above and skips the channels a range covers but a card lacks.
 - **Source:** Agilent 34970A User's Guide (chapter 5, Remote Interface Reference;
-  chapter 9, the modules).
+  chapter 4, Module Overview, pages 163–177).
+- **Not in the manual:** the reply of `SYST:CTYP?` for an empty slot (taken from
+  the tested unit); what `SENS:DIG:DATA:BYTE?` reads on a port written as output
+  (the simulator returns the last byte written); which error number a refused
+  `ROUT:OPEN` on an RF card gives (the simulator uses +221, also for the monitor
+  errors). Whether the monitored channel's relay stays closed between readings:
+  the manual does not say, but a tester saw it on a real unit. How soon after
+  `ROUT:MON:STAT ON` the first reading of the channel is there: the manual gives
+  no figure, so `start_monitor` waits two reading times (one may already be under
+  way); the reading times are the manual's, the factor two is the driver's.
 - **Tried on hardware:** a 34970A (firmware 9-1-2) with the internal multimeter
   and **no cards**, through an AR488 on a Pro Micro, Windows 10. Connecting (0.2 s),
   finding three empty slots and the multimeter, the reading format and trigger

@@ -1,14 +1,38 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-"""HP 53131A / 53132A universal counter, and a simulator for it.
+"""HP / Agilent 53131A and 53132A universal counters, and a simulator for them.
 
 Commands are from the HP 53131A/132A Programming Guide (part no. 53131-90044,
-November 1996). Measurements use :CONFigure, the gate settings, then :READ?, so
-the gate time set with set_gate_time applies to frequency, period and ratio.
+November 1996); the Agilent 53131A/132A Operating Guide (part no. 53131-90055,
+October 2006) gives the phase direction, the auto-trigger limits and the
+differences between the two models. Both take the same commands; the 53132A
+resolves more digits (12 instead of 10 in one second) and finer time intervals
+(150 ps instead of 500 ps).
 
-A measurement waits for its signal; with none the counter holds off every further
-command until a device clear. The driver therefore sends a device clear when a
-reading does not arrive in time.
+Measurements use :CONFigure, the gate settings, then :READ?, so the gate time
+set with set_gate_time applies to frequency, period and ratio.
+
+Checked on a real 53131A (firmware 3944) through an AR488:
+
+- :CONFigure keeps coupling, impedance, attenuation and filter, but sets the
+  trigger level of both channels back to auto and the slope to rising. The
+  driver therefore remembers set_trigger_level and set_trigger_slope and sends
+  them again after each :CONFigure, for the measurements whose levels and
+  slopes the Operating Guide says may be changed: frequency, period, ratio,
+  time interval and phase, and totalize, which never auto-triggers. Pulse
+  width, duty cycle and rise/fall time keep the counter's own levels (50 %,
+  10/90 %) and slopes.
+- Auto trigger needs a signal above 100 Hz and 100 mVpp (Operating Guide,
+  input specifications); below 100 Hz, readings time out now and then.
+- A measurement waits for its signal; with none the counter holds off every
+  further command until a device clear. The driver therefore sends a device
+  clear when a reading does not arrive in time. The clear leaves
+  -230,"Data corrupt or stale" in the error queue, which would fail the next
+  measurement, so the driver sends *CLS after it.
+- On a fast edge that rings, rise and fall time can come out as a pulse width:
+  the 10 % and 90 % levels are taken from the peaks, and the ringing crosses
+  them (an FY6900 rectangle into 1 MΩ read 0.7 ms rise time). A triangle read
+  0.399 ms for the 0.4 ms expected.
 """
 
 from __future__ import annotations
@@ -27,11 +51,19 @@ MIN_GATE, MAX_GATE = 1e-3, 1000.0
 CHANNEL = Param(min=1, max=2)
 ANY_CHANNEL = Param(min=1, max=3)  # channel 3 is the optional RF input
 
+# Measurements that take the trigger level and slope set with set_trigger_level and
+# set_trigger_slope (the counter resets both at every :CONFigure).
+TRIGGERED = {"FREQ", "PER", "FREQ:RAT", "TINT", "PHAS", "TOT:TIM"}
+
 
 class HP53131A(ScpiDevice):
     def connect(self) -> None:
         self.gate_time = float(self.settings.get("gate_time", 0.1))
         self.base_timeout = self.transport.timeout
+        self.levels: dict[int, float | None] = {1: None, 2: None}  # None: auto trigger
+        self.slopes = {1: "POS", 2: "POS"}
+        # an error left from before (e.g. an aborted reading) would fail the first setting
+        self.transport.write("*CLS")
 
     # --- helpers ----------------------------------------------------------------------
     def _settings(self, *commands: str) -> None:
@@ -43,6 +75,13 @@ class HP53131A(ScpiDevice):
     def _read(self, configure: str, channels: str, gated: bool = False,
               wait: float = 0.0) -> float:
         setup = [f":CONF:{configure} {channels}".rstrip()]
+        if configure in TRIGGERED:  # :CONF set these back to auto and rising
+            for n in (1, 2):
+                if f"@{n}" in channels:
+                    if self.levels[n] is not None:
+                        setup.append(f":EVEN{n}:LEV {self.levels[n]:.3f}")
+                    if self.slopes[n] != "POS":
+                        setup.append(f":EVEN{n}:SLOP {self.slopes[n]}")
         if gated:
             setup += [":FREQ:ARM:STAR:SOUR IMM", ":FREQ:ARM:STOP:SOUR TIM",
                       f":FREQ:ARM:STOP:TIM {self.gate_time:.3f}"]
@@ -54,10 +93,12 @@ class HP53131A(ScpiDevice):
             reply = self.transport.query(":READ?")
         except TimeoutError:
             self.transport.device_clear()  # the counter holds off commands until then
+            self.transport.write("*CLS")  # the clear leaves -230 "Data corrupt or stale"
             where = " and ".join(f"channel {n}" for n in re.findall(r"@(\d)", channels))
             raise CommandError(
                 f"no reading on {where or 'channel 1'}: is a signal connected and the "
-                "trigger level right?") from None
+                "trigger level right? Auto trigger needs more than 100 Hz and 100 mVpp; "
+                "below that, set a trigger level") from None
         finally:
             self.transport.set_timeout(self.base_timeout)
         try:
@@ -83,7 +124,8 @@ class HP53131A(ScpiDevice):
     def measure_time_interval(self) -> float:
         return self._read("TINT", "(@1),(@2)")
 
-    @command("Measure the phase of channel 2 relative to channel 1", unit="°")
+    @command("Measure the phase of channel 1 relative to channel 2 (positive when "
+             "channel 1 leads; one period of channel 2 is 360°)", unit="°")
     def measure_phase(self) -> float:
         return self._read("PHAS", "(@1),(@2)")
 
@@ -122,7 +164,8 @@ class HP53131A(ScpiDevice):
     def measure_peak_to_peak(self, channel: int = 1) -> float:
         return self._read("PTP", f"(@{channel})")
 
-    @command("Count the events on channel 1 during a time", unit="events",
+    @command("Count the events on channel 1 during a time. The counter does not "
+             "auto-trigger here: set a trigger level first", unit="events",
              params={"seconds": Param(unit="s", min=1e-3, max=MAX_GATE)})
     def measure_totalize(self, seconds: float) -> float:
         return self._read("TOT:TIM", f"{seconds:.3f},(@1)", wait=seconds)
@@ -153,20 +196,27 @@ class HP53131A(ScpiDevice):
     def set_filter(self, channel: int, on: bool) -> None:
         self._settings(f":INP{channel}:FILT {'ON' if on else 'OFF'}")
 
-    @command("Set a fixed trigger level on channel 1 or 2 (turns auto trigger off)",
+    @command("Set a fixed trigger level on channel 1 or 2 (turns auto trigger off) for "
+             "frequency, period, ratio, time interval, phase and totalize. Needed "
+             "below 100 Hz, where auto trigger does not work",
              params={"channel": CHANNEL, "volts": Param(unit="V", min=-MAX_LEVEL, max=MAX_LEVEL)})
     def set_trigger_level(self, channel: int, volts: float) -> None:
         self._settings(f":EVEN{channel}:LEV {volts:.3f}")
+        self.levels[channel] = volts
 
-    @command("Let the counter choose the trigger level of channel 1 or 2",
-             params={"channel": CHANNEL})
+    @command("Let the counter choose the trigger level of channel 1 or 2 (needs more "
+             "than 100 Hz and 100 mVpp)", params={"channel": CHANNEL})
     def set_auto_trigger(self, channel: int) -> None:
         self._settings(f":EVEN{channel}:LEV:AUTO ON")
+        self.levels[channel] = None
 
-    @command("Trigger on the rising or falling edge on channel 1 or 2",
+    @command("Trigger on the rising or falling edge on channel 1 or 2, for frequency, "
+             "period, ratio, time interval, phase and totalize",
              params={"channel": CHANNEL, "slope": Param(choices=("rising", "falling"))})
     def set_trigger_slope(self, channel: int, slope: str) -> None:
-        self._settings(f":EVEN{channel}:SLOP {'POS' if slope == 'rising' else 'NEG'}")
+        code = "POS" if slope == "rising" else "NEG"
+        self._settings(f":EVEN{channel}:SLOP {code}")
+        self.slopes[channel] = code
 
 
 # --- simulator ------------------------------------------------------------------------
@@ -186,6 +236,9 @@ class HP53131ASim(ScpiSimulator):
         self.gate = 0.1
         self.inputs = {n: {"COUP": "AC", "IMP": 1e6, "ATT": 1, "FILT": False,
                            "LEV": None, "SLOP": "POS"} for n in (1, 2)}
+
+    def device_clear(self) -> None:
+        self.errors.append('-230,"Data corrupt or stale"')  # as the real counter does
 
     def _value(self) -> float:
         first = self.SIGNALS.get(self.channels[0])
@@ -231,6 +284,8 @@ class HP53131ASim(ScpiSimulator):
                 if header == "TOT:TIM":
                     self.total_time = sim_number(text.split(",")[0], 1e-3, MAX_GATE)
                 self.function, self.channels = header, channels
+                for n in (1, 2):  # as on the real counter: back to auto, rising
+                    self.inputs[n]["LEV"], self.inputs[n]["SLOP"] = None, "POS"
             return handler
 
         def read(arg):

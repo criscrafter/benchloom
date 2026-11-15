@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- **HP 53131A / 53132A counter**, tried on a real 53131A with an FY6900:
+  `set_trigger_level` and `set_trigger_slope` now take effect. Every measurement
+  starts with `:CONFigure`, which set them back to auto and rising, so before
+  they were ignored. After a reading with no signal, the next measurement no
+  longer fails with `-230,"Data corrupt or stale"`. `measure_phase` is described
+  correctly as channel 1 relative to channel 2. The help says where auto
+  trigger stops working (below 100 Hz) and that totalize needs a set level. The
+  device is listed as 53131A / 53132A; the two take the same commands.
+- The update check now asks GitHub at every start instead of at most once a
+  day. Switch it off in Settings → General as before.
+- **Agilent 34970A**, checked again against the User's Guide: `open_channel` and
+  `open_all` refuse the RF cards (34905A/6A), which have no OPEN; measurements
+  say so when the internal multimeter is fitted but switched off; display text
+  counts a comma, period or semicolon as sharing the place before it. The
+  simulator follows the instrument's relay rules (one closed relay per
+  multiplexer while scanning, one on a 34908A, one per RF bank) and skips the
+  missing channels inside a range, so `open_all` on a 34904A works there too.
+  docs/INSTRUMENTS.md has the RS-232 factory settings and the corrected source
+  pages.
+- **Agilent 34970A measurement options and monitor:** the measure commands and
+  `scan` take `range`, `resolution`, `nplc` and (frequency, period) `aperture`;
+  before, every reading was autorange at 1 PLC. `start_monitor`, `read_monitor`
+  and `stop_monitor` read one channel over and over with the instrument's
+  Monitor function, without a new scan and relay switching for each reading.
+  After each measurement the scan list is emptied again, so multiplexers can
+  close several relays. From feedback by a tester on real hardware.
+
 ## 0.2.0 – Reference meters: Keysight 3458A and 34420A, Fluke 8508A, Wavetek 1281 and 4950
 
 - **Keysight 34420A nanovolt / micro-ohm meter** (`hp.34420a`): both voltage

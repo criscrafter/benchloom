@@ -67,6 +67,39 @@ def test_53131a_clears_the_counter_when_no_signal_arrives():
     assert sim.timeout == counter.base_timeout  # the long read timeout is undone
 
 
+def test_53131a_measures_again_after_a_missing_signal():
+    counter, sim = open_sim("hp.53131a")
+    with pytest.raises(CommandError, match="no reading on channel 3"):
+        counter.measure_frequency(3)  # the device clear leaves -230 in the queue
+    assert counter.measure_frequency(1) == pytest.approx(10e6, rel=1e-6)
+
+
+def test_53131a_sends_trigger_settings_again_after_configure():
+    counter, sim = open_sim("hp.53131a")
+    sent = []
+    original = sim.write
+    sim.write = lambda text: (sent.append(text), original(text))
+    counter.set_trigger_level(2, 1.5)
+    counter.set_trigger_slope(2, "falling")
+    counter.measure_frequency(2)  # :CONF resets level and slope, as on the counter
+    assert sent[sent.index(":CONF:FREQ (@2)") + 1:][:2] == [":EVEN2:LEV 1.500",
+                                                            ":EVEN2:SLOP NEG"]
+    assert sim.inputs[2]["LEV"] == 1.5 and sim.inputs[2]["SLOP"] == "NEG"
+    sent.clear()
+    counter.measure_frequency(1)  # channel 1 is still on auto trigger
+    assert not any(text.startswith(":EVEN") for text in sent)
+    counter.measure_time_interval()  # uses both channels
+    assert ":EVEN2:LEV 1.500" in sent
+    sent.clear()
+    counter.measure_pulse_width()  # keeps the counter's own 50 % levels
+    assert not any(text.startswith(":EVEN") for text in sent)
+    counter.set_auto_trigger(2)
+    counter.set_trigger_slope(2, "rising")
+    sent.clear()
+    counter.measure_frequency(2)
+    assert not any(text.startswith(":EVEN") for text in sent)
+
+
 # --- Hantek DSO5000P ------------------------------------------------------------------
 def test_hantek_framing():
     data = frame(0x01)

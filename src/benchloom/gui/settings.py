@@ -43,7 +43,7 @@ class GuiSettings:
     """Typed access to the desktop app's QSettings."""
 
     DEFAULTS = {"theme": "system", "projects_dir": "", "reopen_last": False,
-                "check_updates": True, "skipped_version": "", "last_update_check": "",
+                "check_updates": True, "skipped_version": "",
                 "editor_font_size": 11, "console_font_size": 10, "console_lines": 10000}
     LIMITS = {"editor_font_size": (6, 40), "console_font_size": (6, 40),
               "console_lines": (500, 1_000_000)}
@@ -122,7 +122,7 @@ class SettingsDialog(QDialog):
         form.addRow(self._hint("Where new projects go and where Open project starts."))
         form.addRow("", self.reopen_check)
         form.addRow("", self.updates_check)
-        form.addRow(self._hint("At most once a day, Benchloom asks GitHub for its latest "
+        form.addRow(self._hint("At every start, Benchloom asks GitHub for its latest "
                                "release and shows a bar if there is a newer one. Nothing "
                                "about you or your projects is sent. About → Check for "
                                "updates checks at any time."))

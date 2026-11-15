@@ -4,7 +4,7 @@
 
 The request goes to GitHub's public API and sends nothing but the usual
 connection details and ``User-Agent: Benchloom/<version>``. The desktop app asks
-at most once a day, and only while "Check for new versions" is on in Settings.
+at every start, and only while "Check for new versions" is on in Settings.
 """
 
 from __future__ import annotations

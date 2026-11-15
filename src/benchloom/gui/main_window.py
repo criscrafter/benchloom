@@ -8,7 +8,6 @@ import html
 import json
 import re
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -469,20 +468,12 @@ class MainWindow(QMainWindow):
             self.check_for_updates(automatic=False)
 
     # --- updates ----------------------------------------------------------
-    UPDATE_INTERVAL_S = 24 * 3600
-
     def check_for_updates(self, automatic: bool = True) -> bool:
-        """Ask GitHub whether a newer version is out. Automatic checks (at start) run
-        at most once a day, only while switched on in Settings, and stay quiet unless
-        there is something new; a check asked for in About always reports back."""
-        if automatic:
-            if not self.prefs.get("check_updates"):
-                return False
-            try:
-                if time.time() - float(self.prefs.get("last_update_check")) <                         self.UPDATE_INTERVAL_S:
-                    return False
-            except ValueError:
-                pass  # never checked
+        """Ask GitHub whether a newer version is out. Automatic checks run at every
+        start, only while switched on in Settings, and stay quiet unless there is
+        something new; a check asked for in About always reports back."""
+        if automatic and not self.prefs.get("check_updates"):
+            return False
         if not self.update_checker.start():
             return False
         self._update_automatic = automatic
@@ -498,7 +489,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Check for updates",
                                     f"Benchloom could not check for a new version: {error}")
             return
-        self.prefs.set("last_update_check", str(time.time()))
         if release.newer_than():
             if not (automatic and release.version == self.prefs.get("skipped_version")):
                 self.update_bar.show_release(release)
