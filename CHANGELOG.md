@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **HP 5384A / 5385A frequency counter** (`hp.5384a`), from the Operating and
+  Service Manual and tried on a real 5384A with an FY6900: frequency on
+  channels A and B, period A, the 10 MHz self-check, gate time, x20 attenuator,
+  100 kHz filter, manual level, display text and error numbers.
+- **Prologix / AR488:** `read_end=lf` (and `read_to_line_end()` for drivers)
+  ends reads at the line feed instead of EOI, for instruments that never send
+  EOI. The AR488 waits for EOI while `++eoi` is on, so this mode switches it off.
 - **HP 53131A / 53132A counter**, tried on a real 53131A with an FY6900:
   `set_trigger_level` and `set_trigger_slope` now take effect. Every measurement
   starts with `:CONFigure`, which set them back to auto and rising, so before

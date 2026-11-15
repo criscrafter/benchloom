@@ -281,6 +281,22 @@ def test_prologix_sets_the_adapters_read_timeout(monkeypatch):
     assert gpib.max_read_ms == 3000 and read_timeouts(prologix) == ["++read_tmo_ms 3000"]
 
 
+def test_prologix_reads_up_to_the_line_feed_for_instruments_without_eoi(monkeypatch):
+    ar488 = FakeAdapter("AR488 GPIB controller, ver. 0.53.46, 22/05/2026")
+    gpib = open_prologix(monkeypatch, ar488)
+    assert "++eoi 1" in ar488.sent and gpib.read_end == "eoi"
+    ar488.sent.clear()
+    gpib.read_to_line_end()  # the AR488 reads up to EOI while ++eoi is on
+    assert ar488.sent == ["++eoi 0"]
+    ar488.sent.clear()
+    with pytest.raises(TimeoutError):
+        gpib.read()
+    assert ar488.sent == ["++read 10"]
+    assert PrologixTransport("COM99", 4, read_end="lf").read_end == "lf"
+    with pytest.raises(TransportError, match="read_end must be eoi or lf"):
+        open_transport("prologix://COM99/4?read_end=cr")
+
+
 def test_prologix_waits_for_a_restarting_adapter_and_names_a_missing_one(monkeypatch):
     nano = FakeAdapter("AR488 GPIB controller, ver. 0.53.46", silent=2)
     assert open_prologix(monkeypatch, nano).adapter_version.startswith("AR488")

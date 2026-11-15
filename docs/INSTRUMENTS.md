@@ -358,6 +358,49 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   2006): phase (p. 2-15), auto trigger (pp. 2-44 to 2-45, input specifications
   p. 3-2), model differences (p. xvi).
 
+## HP 5384A / 5385A frequency counter (`hp.5384a`)
+
+- **Connection:** HP-IB, e.g. `prologix://COM17/4` through an AR488 (the factory
+  address is 3; the tested unit was set to 4), or `visa://`. Tried on a real
+  5384A with an FY6900 as the source; the 5385A takes the same commands and is
+  untested.
+- **Reads up to the line feed:** the counter measures all the time and, while
+  addressed to talk, sends one reading after another without EOI. A read up to
+  EOI never ends and blocks the adapter until the signal goes away. The driver
+  therefore switches a `prologix://` connection to reads that end at the line
+  feed (`++read 10` with `++eoi 0`, since the AR488 waits for EOI whenever
+  `++eoi` is on). Other instruments can use this with `?read_end=lf`.
+- **Commands:**
+    - Measurements: `measure_frequency(channel)` (`A`: 10 Hz to 100 MHz; `B`:
+      50 to 225 MHz on the 5384A, 90 to 1000 MHz on the 5385A, 50 Ω),
+      `measure_period` (channel A), `measure_check` (the internal 10 MHz).
+    - Settings: `set_gate_time` (0.1, 1 or 10 s), `set_attenuation` (x1, x20 on
+      A), `set_filter` (100 kHz low-pass on A), `set_manual_level` (the
+      front-panel knob sets A's trigger level, ±0.1 V, and B's attenuation),
+      `initialize`, `set_display_text` (12 characters), `clear_display_text`,
+      `get_error`.
+- **Connecting** sends a device clear and `IN`, so the counter starts at its
+  power-on state: frequency A, x1, no filter, automatic level, and the gate time
+  from the device setting.
+- **Each reading** starts with `RE`, so it is never older than the call: about
+  0.3 s at the 0.1 s gate, 1.5 s at 1 s, 10.3 s at 10 s.
+- **No signal:** the counter sends nothing; after the gate time ±15 %, one
+  period at 10 Hz and 1.5 s, the driver fails with "no reading on channel A".
+  The next reading works without a clear.
+- **Errors:** after each setting the driver asks `SE`. An illegal code puts the
+  counter in an error state (e.g. "Er 55" on the display) in which it stops
+  measuring; the driver sends a device clear and fails with the error text of
+  Table 3-2. An `SE` sent right after `FU5` went unanswered, so the driver waits
+  0.1 s first.
+- **Measured** from an FY6900 (1 Vpp sine): channel A 10 Hz to 60 MHz, 7 ppm
+  low (the generator's clock), 9.99965 Hz at 10 Hz; period 1.00000736 µs at
+  1 MHz; channel B 50, 55 and 60 MHz; check 10.000000 MHz; gate 10 s
+  999992.6192 Hz.
+- **Source:** HP 5384A/5385A Operating and Service Manual, part no. 05384-90006
+  (February 1987): command set (Table 3-9, p. 3-17), errors (Table 3-2, p. 3-3),
+  status byte (Table 3-8, p. 3-16), output format (p. 3-16), specifications
+  (Table 1-1, pp. 1-3 and 1-4).
+
 ## Agilent 34970A data acquisition / switch unit (`hp.34970a`)
 
 - **Connection:** GPIB, e.g. `prologix://COM17/1` through an AR488 (the factory

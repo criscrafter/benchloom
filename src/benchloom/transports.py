@@ -17,7 +17,8 @@ Common options: ``timeout`` (seconds), ``term`` (line ending for both
 directions, e.g. ``term=\\r\\n``), ``write_term``, ``read_term``.
 Serial options: ``baud``, ``bytesize``, ``parity`` (N, E, O), ``stopbits``,
 ``rtscts=1`` for RTS/CTS hardware handshake, ``dsrdtr=1`` for DTR/DSR (as the
-Keysight 34420A uses).
+Keysight 34420A uses). Prologix option: ``read_end=lf`` ends reads at the line
+feed instead of EOI, for instruments that never send EOI.
 """
 
 from __future__ import annotations
@@ -286,17 +287,37 @@ class PrologixTransport(SerialTransport):
     setting until it is unplugged, whatever program set it last. So the transport
     sets it from its own timeout, when opening and in :meth:`set_timeout`, as far as
     the adapter allows: 3 s on a Prologix, 32 s on an AR488.
+
+    Replies are read up to EOI (``read_end=eoi``, the default). Instruments older
+    than IEEE 488.2 may never send EOI, and some (the HP 5384A) keep talking while
+    addressed: a read up to EOI then never ends and blocks the adapter. With
+    ``read_end=lf`` (or :meth:`read_to_line_end`, which such a driver calls) a read
+    ends at the line feed. The AR488 reads up to EOI whenever ``++eoi`` is on, even
+    when told to stop at a character, so this mode also sends ``++eoi 0``; the
+    commands then go out without EOI on their last byte.
     """
 
     scheme = "prologix"
     MAX_READ_MS = {"prologix": 3000, "ar488": 32000}
     OPEN_ATTEMPTS = 3  # an Arduino Nano restarts when the port opens: ++ver may be lost
 
-    def __init__(self, port: str, address, *, baud=115200, eos=0, **options):
+    def __init__(self, port: str, address, *, baud=115200, eos=0, read_end="eoi", **options):
         super().__init__(port, baud=baud, **options)
         self.address = str(address)
         self.eos = int(eos)  # what the adapter appends on GPIB: 0=CR+LF 1=CR 2=LF 3=none
+        if read_end not in ("eoi", "lf"):
+            raise ValueError("read_end must be eoi or lf")
+        self.read_end = read_end
         self.adapter_version = ""  # the reply to ++ver, once open
+
+    def read_to_line_end(self) -> None:
+        """End reads at the line feed instead of EOI (see the class description)."""
+        self.read_end = "lf"
+        if self._serial is not None and self.adapter_version:
+            self._adapter("++eoi 0")
+
+    def _read_command(self) -> None:
+        self._adapter("++read eoi" if self.read_end == "eoi" else "++read 10")
 
     def _adapter(self, text: str) -> None:
         self._serial.write((text + "\n").encode("ascii"))
@@ -328,7 +349,8 @@ class PrologixTransport(SerialTransport):
         if not self.adapter_version:
             self.close()
             raise TransportError(f"no Prologix or AR488 adapter answers on {self.port}")
-        for line in ("++mode 1", "++auto 0", "++eoi 1", f"++eos {self.eos}",
+        eoi = 1 if self.read_end == "eoi" else 0
+        for line in ("++mode 1", "++auto 0", f"++eoi {eoi}", f"++eos {self.eos}",
                      "++eot_enable 0", f"++addr {self.address}"):
             self._adapter(line)
         self._set_read_timeout()
@@ -345,16 +367,16 @@ class PrologixTransport(SerialTransport):
         self._serial.write(prologix_escape(data) + b"\n")
 
     def read_until(self, term: bytes) -> bytes:
-        self._adapter("++read eoi")
+        self._read_command()
         return super().read_until(term)
 
     def read_raw(self, size: int) -> bytes:
         """Read a binary reply of known length (the instrument ends it with EOI)."""
-        self._adapter("++read eoi")
+        self._read_command()
         return super().read_raw(size)
 
     def read_some(self, size: int) -> bytes:
-        self._adapter("++read eoi")
+        self._read_command()
         return super().read_some(size)
 
 

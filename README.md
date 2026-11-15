@@ -254,6 +254,7 @@ the command line, controls have the values they had when last run in the app.
 | Wavetek 1281 selfcal multimeter | `wavetek.1281` | GPIB | not yet (from the manual) |
 | Wavetek 4950 multifunction transfer standard | `wavetek.4950` | GPIB | not yet (from the manual) |
 | HP / Agilent 53131A / 53132A universal counter | `hp.53131a` | GPIB | 53131A yes; 53132A not yet |
+| HP 5384A / 5385A frequency counter | `hp.5384a` | GPIB | 5384A yes; 5385A not yet |
 | Agilent 34970A data acquisition / switch unit | `hp.34970a` | GPIB, RS-232 | mainframe only (cards from the manual) |
 | Digitek DT-4000ZC multimeter (FS9721 chip) | `fs9721.dt4000zc` | optical serial cable | yes |
 | Any SCPI instrument | `generic.scpi` | serial, network, GPIB, VISA | – |

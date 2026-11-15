@@ -172,3 +172,22 @@ name = "check_errors"
 label = "Check for errors after each setting"
 type = "bool"
 default = true
+
+[[device]]
+id = "5384a"
+name = "HP 5384A / 5385A frequency counter"
+description = """Frequency counter with HP-IB (pre-SCPI codes): frequency and period on channel A (10 Hz to 100 MHz), frequency on channel B (5384A: 50 to 225 MHz; 5385A: 90 to 1000 MHz), gate 0.1, 1 or 10 s, x20 attenuator and 100 kHz filter on A, the 10 MHz self-check and display text. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed. Tried on a real 5384A; the 5385A is untested."""
+driver = "hp5384a:HP5384A"
+simulator = "hp5384a:HP5384ASim"
+transports = ["prologix", "visa", "sim"]
+default_name = "counter"
+category = "counter"
+
+[[device.setting]]
+name = "gate_time"
+label = "Gate time at the start (s)"
+type = "float"
+default = 0.1
+min = 0.1
+max = 10
+help = "0.1, 1 or 10 s. Longer gates give more digits."
