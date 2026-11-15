@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 – HP 5384A and 5334A/B counters, hardware status per device
 
 - **Tried on hardware:** every device type now says whether its driver was tried
   on a real instrument (`yes`, `partly` or `no`, with what was tried or is
