@@ -35,6 +35,18 @@ def test_builtin_plugins_are_discovered():
     assert "idn" in commands  # inherited from ScpiDevice
 
 
+def test_every_builtin_device_says_whether_it_was_tried_on_hardware():
+    devices = PluginRegistry.default().devices.values()
+    builtin = [d for d in devices if d.plugin.official]
+    assert builtin
+    for spec in builtin:
+        assert spec.tested_status in ("yes", "partly", "no"), spec.id
+        # "partly" and "no" say what is missing
+        assert spec.tested_status == "yes" or ":" in spec.tested, spec.id
+    counter = PluginRegistry.default().device("hp.5334a")
+    assert counter.tested_text == "Partly: a 5334B through an AR488; the 5334A not yet"
+
+
 def test_example_project_runs_and_logs(tmp_path):
     result, lines = run(make(tmp_path))
     assert result.status == "ok", result.error

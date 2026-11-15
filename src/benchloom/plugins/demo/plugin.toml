@@ -8,6 +8,7 @@ description = "Simulated instruments for trying Benchloom without hardware. Also
 id = "psu"
 name = "Demo power supply"
 description = "A 20 V / 5 A bench supply feeding a 10 ohm load."
+tested = "no: a simulated instrument only"
 driver = "driver:DemoPsu"
 simulator = "simulator:DemoPsuSim"
 transports = ["sim"]

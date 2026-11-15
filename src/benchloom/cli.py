@@ -156,6 +156,7 @@ def _describe(args) -> int:
     print(f"{spec.name} ({spec.id})")
     if spec.description:
         print(spec.description)
+    print(f"Tried on hardware: {spec.tested_text}")
     print(f"Connections: {', '.join(spec.transports) or 'any'}\n")
     for info in spec.load_driver().commands().values():
         params = []

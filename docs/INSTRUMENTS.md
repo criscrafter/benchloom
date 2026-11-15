@@ -4,17 +4,46 @@ Every plugin below ships a simulator, so a test can be written with
 `resource = "sim://"` and switched to the real instrument later by changing only
 the resource.
 
-The KP184, Chroma 6404, Hantek DSO5102P and Feeltech FY6900 drivers have been
-tried on real instruments (see below). **The HP, Fluke and Wavetek drivers have not been run against
-real hardware yet**, apart from the 34970A mainframe without cards. They are written from the manuals or protocol notes listed for each
-instrument and are tested against their simulators. Expect small fixes on first
-contact.
+Each device type says whether it was tried on a real instrument: **Tried on
+hardware** in the Add device dialog and the plugin manager, the `tested` line of
+its `plugin.toml`, and `benchloom describe`. Tried: the KP184, Chroma 6404,
+DT-4000ZC; partly (one model of a family, or without options): the FY6900,
+DSO5102P, 53131A, 5384A, 5334B and the 34970A mainframe without cards. **Not tried
+yet:** the 6655A, 3478A, 3458A, 34420A, Fluke 8508A and Wavetek 1281 and 4950.
+Those are written from the manuals listed for each instrument and tested against
+their simulators; expect small fixes on first contact.
 
 Sources, loads and AC sources switch their output off when a test ends,
 including when it fails or is stopped. To keep the output on, add
 `leave_output_on = true` to the device entry. A script that does not react to
 Stop within three seconds is left behind and its devices are shut down anyway;
 only a run whose process hangs completely, and is killed, cannot do this.
+
+## Demo power supply (`demo.psu`)
+
+- **Simulated only:** a 20 V / 5 A supply feeding a 10 Ω load, for trying
+  Benchloom without hardware. The example project uses it. Its only resource is
+  `sim://`.
+- **Commands:** `set_voltage` (0 to 20 V), `set_current_limit` (0 to 5 A),
+  `set_output`, `measure_voltage`, `measure_current`, plus the common SCPI
+  commands. The output is limited by the current limit into the 10 Ω load, and
+  readings carry a little noise.
+- It is also the reference example in [Writing a plugin](writing-plugins.md).
+
+## Generic instruments (`generic.scpi`, `generic.serial`)
+
+For an instrument that has no plugin yet.
+
+- **Generic SCPI instrument** (`generic.scpi`): any instrument that understands
+  SCPI / IEEE 488.2, over `serial://`, `tcp://`, `prologix://` or `visa://`. It
+  has the common SCPI commands only: `idn`, `reset`, `clear`, `get_error`,
+  `write`, `query` and `query_number`. It does not know the instrument's
+  outputs, so it switches nothing off when a test ends.
+- **Line-based serial device** (`generic.serial`): Arduino sketches and other
+  devices that exchange lines of text, over `serial://` or `tcp://`:
+  `write_line`, `read_line`, `read_number`, `query`, `query_number`.
+- **Simulators:** the SCPI one answers `*IDN?` and `0` to every other query; the
+  serial one sends every line back.
 
 ## Kunkin KP184 electronic load (`kunkin.kp184`)
 
@@ -23,8 +52,8 @@ only a run whose process hangs completely, and is killed, cannot do this.
 - **Device settings** (fields in the Add device dialog): Modbus address (set on
   the load, 1 by default); CRC high byte first (only if commands get no reply on
   newer firmware; some 2020+ firmware is reported to swap the CRC bytes); leave
-  the input on after a test. `timeout = 0.5` can be added to the device entry by
-  hand.
+  the input on after a test. The driver waits 0.5 s for a reply; another wait,
+  such as `timeout = 1.0`, can be added to the device entry by hand.
 - **RS-485:** use a USB-RS485 adapter on the load's A/B terminals. The protocol
   is the same as on RS-232.
     - **Several loads on one adapter:** give each load its own address on its
@@ -571,8 +600,10 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   finding three empty slots and the multimeter, the reading format and trigger
   settings, display text, the error queue, and the refusal of every channel
   command on empty slots all worked; `INIT` without a scan list gave the same
-  error (+113) as the simulator. Everything that needs a card is tested against
-  the simulator only.
+  error (+113) as the simulator. The measurement options and the monitor came
+  from a tester's feedback on a real unit with cards, who also saw the monitored
+  relay stay closed; apart from that, everything that needs a card is tested
+  against the simulator only.
 
 ## Hantek DSO5102P oscilloscope (`hantek.dso5000p`)
 

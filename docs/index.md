@@ -14,7 +14,7 @@ PASS/FAIL report behind.
   run, on simulators, without hardware.
 - **[Lua scripts](lua.md)**: everything a test script can use, with examples.
 - **[Visual tests](visual-tests.md)**: tests built from nodes and wires.
-- **[Front panel](front-panel.md)**: knobs, gauges, charts and tables for a
+- **[Front panel](front-panel.md)**: inputs, switches, gauges, charts and tables for a
   running test.
 - **[Instruments](INSTRUMENTS.md)**: the supported instruments and how to
   connect them.
@@ -30,7 +30,7 @@ PASS/FAIL report behind.
     outputs off when a test ends or is stopped, but that cannot replace a
     hardware limit. See [Safety and security](safety.md).
 
-!!! note "Status: early (0.1)"
+!!! note "Status: early (0.2)"
     Benchloom works and is used on a real bench, but it is young: it has been
     tested on Windows 10 only so far, and interfaces may still change. The
     [roadmap](PLAN.md) lists what is missing.

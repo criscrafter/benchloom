@@ -122,7 +122,8 @@ script, a node in a visual test.
 
 ## Start from a template
 
-**Start from** offers ready-made projects:
+**Start from** offers ready-made projects, besides **Example** and **Empty
+project** (no devices and an empty test):
 
 - **Bode plot:** gain and phase of a circuit against frequency, with a
   Feeltech FY6900 generator and a Hantek DSO5102P scope. Wire generator CH1 to

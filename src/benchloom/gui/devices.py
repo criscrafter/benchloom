@@ -316,6 +316,7 @@ class DeviceTypeInfo(QGroupBox):
         self.manufacturer_field, self.plugin_field = _Field(), _Field()
         self.connections_field, self.simulator_field = _Field(), _Field()
         self.resource_field = _Field()
+        self.tested_field = _TextField(2)
         self.settings_field = _TextField(3)
         self.description_field = _TextField(6)
         form = self.form = QFormLayout(self)
@@ -324,6 +325,7 @@ class DeviceTypeInfo(QGroupBox):
         form.addRow("Kind", self.kind_field)
         form.addRow("Manufacturer", self.manufacturer_field)
         form.addRow("Plugin", self.plugin_field)
+        form.addRow("Tried on hardware", self.tested_field)
         form.addRow("Connections", self.connections_field)
         form.addRow("Default address", self.resource_field)
         form.addRow("Simulator", self.simulator_field)
@@ -339,6 +341,7 @@ class DeviceTypeInfo(QGroupBox):
                           self.resource_field, self.simulator_field):
                 field.clear()
             self.settings_field.clear()
+            self.tested_field.clear()
             self.description_field.setPlainText("Choose a device type on the left.")
             for row in range(self.form.rowCount()):
                 self.form.setRowVisible(row, row == self.form.rowCount() - 1)
@@ -351,6 +354,7 @@ class DeviceTypeInfo(QGroupBox):
         where = SOURCES.get(plugin.source, plugin.source)
         self.plugin_field.show_text(f"{plugin.name} {plugin.version}"
                                     + (f" ({where})" if where else ""))
+        self.tested_field.setPlainText(spec.tested_text)
         self.connections_field.show_text(", ".join(spec.transports) or "any")
         self.resource_field.show_text(spec.default_resource)
         self.simulator_field.show_text("Yes" if spec.simulator else "No")

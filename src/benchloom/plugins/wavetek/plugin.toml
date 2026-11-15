@@ -14,6 +14,7 @@ Datron 1281: DC volts (100 mV to 1000 V) and, with its options, AC volts (option
 front input and rear channels A and B with ratio, difference and deviation, guard, \
 settling delay and input zero. Checks the fitted options with *OPT? before using a \
 function."""
+tested = "no: written from the manual"
 driver = "wavetek1281:Wavetek1281"
 simulator = "wavetek1281:Wavetek1281Sim"
 transports = ["prologix", "usbtmc", "visa", "sim"]
@@ -37,6 +38,7 @@ volts (1 mV to 1000 V in frequency bands from 10 Hz to 1 MHz), resistance (10 Ω
 band (zero, full or 190 %); readings outside the band are refused with the reason. \
 Gives the quality (standard error) and sample size of each measurement, the warm-up \
 time left, accuracy mode, certified or base corrections, input zero and selftest."""
+tested = "no: written from the manual"
 driver = "wavetek4950:Wavetek4950"
 simulator = "wavetek4950:Wavetek4950Sim"
 transports = ["prologix", "usbtmc", "visa", "sim"]

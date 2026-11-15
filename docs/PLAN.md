@@ -26,7 +26,7 @@
 | Running graphs | Graphs compile to Lua and run on the same engine as scripts; a line map ties runtime errors back to nodes |
 | Project mode | `lua` or `visual`, fixed per project. No two-way sync between them. A one-way "export graph as Lua" is possible later. |
 | Plugins | Folder with `plugin.toml` + Python driver; commands declared with `@command` carry types, units and ranges |
-| Instrument I/O | Core provides transports (serial, TCP, Prologix/AR488 GPIB, VISA). Vendor VISA and GPIB adapters are optional, never required. |
+| Instrument I/O | Core provides transports (serial, TCP, Prologix/AR488 GPIB, VISA, USBTMC including the xyphro UsbGpib adapter, raw USB bulk). Vendor VISA and GPIB adapters are optional, never required. |
 | Simulation | Plugins ship wire-level simulators so driver code is exercised without hardware |
 | Data | Every run gets a folder: `data.csv`, console log, script copy, metadata, `checks.csv`, `waveforms/` (CSV, SVG, PNG per saved waveform) and `report.html`. Images are drawn as SVG in pure Python; PNG copies come from a short Qt helper process at the end of the run, so the test process never loads Qt. |
 | Pass/fail | `check(name, value, low, high, unit)` in Lua and a Check node; a run passes only if every check passed. The verdict is in `run.json`, the status bar and the report. |
@@ -65,9 +65,13 @@
    do here: knobs, a full-window panel mode.
 5. **Device plugins**, each with a simulator. Done: Arduino line protocol
    (generic) · Kunkin KP184 (Modbus/serial, RS-485) · HP 6655A · HP 3478A
-   (pre-SCPI) · HP 53131A · Chroma 6404 · Hantek DSO 5102P (USB) · Feeltech
-   FY6900. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
-   VISA. Tried on hardware: KP184, 6404, DSO5102P and FY6900. See [INSTRUMENTS.md](INSTRUMENTS.md).
+   (pre-SCPI) · HP 53131A · HP 5384A · HP 5334A/B · Agilent 34970A · Keysight
+   3458A · Keysight 34420A · Chroma 6404 · Hantek DSO 5102P (USB) · Feeltech
+   FY6900 · Digitek DT-4000ZC (FS9721) · Fluke 8508A · Wavetek 1281 · Wavetek
+   4950. GPIB through the xyphro UsbGpib adapter (USBTMC) without a vendor
+   VISA. Tried on hardware: KP184, 6404, DT-4000ZC; partly: FY6900, DSO5102P,
+   53131A, 5384A, 5334B and the 34970A mainframe without cards. See
+   [INSTRUMENTS.md](INSTRUMENTS.md).
 6. **Packaging**: portable Windows build (done: a zip built with PyInstaller,
    self-tested and attached to each release by CI), then Linux, then Mac. Plugins
    install from a folder, a .zip or the online registry (`registry/index.json`,
@@ -75,15 +79,17 @@
 
 ## Not verified yet
 
-- The serial transport has been used with a real KP184 (CH340 adapter, Windows)
-  and a real FY6900 (115200 baud 8N2).
-  The USB transport has been used with a real DSO5102P. The TCP, Prologix, VISA
-  and USBTMC transports have not been run against real hardware.
-- The KP184 driver has been tried on a real load, up to 6 A and 130 W, and the
-  6404 driver on a real source with a 10 W lamp. The 6655A, 3478A and 53131A
-  drivers are written from manuals and are each tested against a simulator
-  written from the same sources, so a misread manual would not show up in the
-  tests.
+- The serial transport has been used with a real KP184 (CH340 and FTDI
+  RS-485 adapters, Windows), a real FY6900 (115200 baud 8N2), a Chroma 6404 and
+  a DT-4000ZC (CH340 adapters). The USB transport has been used with a real
+  DSO5102P. The Prologix transport has been used through an AR488 with a 6404,
+  53131A, 5384A, 5334B and 34970A. The TCP, VISA and USBTMC transports have not
+  been run against real hardware.
+- The KP184 driver has been tried on a real load, up to 9.4 A and 250 W, and the
+  6404 driver on a real source with a 10 W lamp. The 6655A, 3478A, 3458A,
+  34420A, 8508A, 1281 and 4950 drivers, and the 34970A's cards, are written from
+  manuals and are each tested against a simulator written from the same
+  sources, so a misread manual would not show up in the tests.
 - The desktop app is tested on Windows only, and its dialogs (new project,
   add device) are covered only partly by automated tests.
 - The node editor is tested through its functions (add, wire, delete, run),

@@ -12,6 +12,7 @@ commands: it sends its display twice a second, and the function is set on its di
 Reads volts, amps, ohms, capacitance, frequency and duty cycle as numbers in the base \
 unit. Press the meter's RS232 button so it sends. The cable's receiver is powered from \
 the serial port (DTR high, RTS low); the driver sets this and the 2400 baud itself."""
+tested = "yes: a DT-4000ZC with its cable on a CH340 USB-RS-232 adapter"
 driver = "meter:FS9721Meter"
 simulator = "meter:FS9721Sim"
 transports = ["serial", "sim"]

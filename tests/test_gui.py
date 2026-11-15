@@ -704,7 +704,8 @@ def test_device_dialog_describes_the_picked_type(app):
     dialog.set_device_type("hp.3478a")
     assert info.name_field.text() == "HP 3478A multimeter" and info.id_field.text() == "hp.3478a"
     assert info.kind_field.text() == "Multimeter" and info.manufacturer_field.text() == "HP"
-    assert info.plugin_field.text() == "HP / Agilent / Keysight 0.1.0 (Built-in)"
+    assert info.plugin_field.text() == "HP / Agilent / Keysight 0.2.0 (Built-in)"
+    assert info.tested_field.toPlainText() == "No: written from the manual"
     dialog.set_device_type("hp.34970a")  # the brand it was sold under, not the group
     assert info.manufacturer_field.text() == "Agilent"
     dialog.set_device_type("hp.3478a")
@@ -716,5 +717,6 @@ def test_device_dialog_describes_the_picked_type(app):
     assert info.kind_field.text() == "Other" and info.manufacturer_field.text() == "ACME instruments"
     assert info.plugin_field.text() == "ACME instruments 1.0 (Installed)"
     assert info.simulator_field.text() == "No" and info.connections_field.text() == "any"
+    assert info.tested_field.toPlainText() == "Not stated by the plugin"
     for field in (info.settings_field, info.description_field, info.resource_field):
         assert not info.form.isRowVisible(field)

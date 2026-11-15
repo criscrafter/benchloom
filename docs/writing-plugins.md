@@ -106,6 +106,7 @@ print(psu:measure_voltage())
 | `id` | `[plugin]` | the plugin's id, a short lower-case name; must be unique |
 | `name`, `version`, `description` | `[plugin]` | shown in the plugin manager |
 | `manufacturer` | `[plugin]` | optional: the maker of its devices, such as `"HP"`; the Add device dialog groups devices by it (the plugin's `name` if left out) |
+| `version` | `[plugin]` | raise it with every change users get: the last number for fixes, the middle one for new devices or commands |
 | `id` | `[[device]]` | the device's id; the device type is `<plugin id>.<device id>` |
 | `name`, `description` | `[[device]]` | shown in the Add device dialog, and searched by it |
 | `category` | `[[device]]` | optional: the kind of device, for the dialog's kind filter (see below) |
@@ -114,7 +115,7 @@ print(psu:measure_voltage())
 | `simulator` | `[[device]]` | `module:Class` of the simulator, used for `sim://` |
 | `transports` | `[[device]]` | the connections it supports, such as `["serial", "tcp", "visa", "sim"]` |
 | `default_name`, `default_resource` | `[[device]]` | offered when the device is added |
-
+| `tested` | `[[device]]` | whether the driver was tried on a real instrument: `yes`, `partly` or `no`, then optionally `:` and what was tried or is missing, e.g. `"partly: a 53131A; the 53132A not yet"`. Shown as "Tried on hardware" in the Add device dialog, the plugin manager and `benchloom describe`; "Not stated" when left out |
 ### Kind and manufacturer
 
 The Add device dialog lists device types by manufacturer and can show only
@@ -134,8 +135,9 @@ one kind of device. Give each device its kind in `category`:
 | `lcr` | LCR meter |
 | `other` | Other |
 
-Another word works too and becomes a kind of its own (`spectrum_analyzer` is
-shown as "Spectrum analyzer"). A device without a `category` counts as Other,
+Another word works too and becomes a kind of its own (the built-in plugins use
+`data_acquisition` for the 34970A and `transfer_standard` for the Wavetek 4950;
+`spectrum_analyzer` is shown as "Spectrum analyzer"). A device without a `category` counts as Other,
 and one without a `manufacturer` is listed under the plugin's name, so older
 plugins keep working unchanged.
 
@@ -219,6 +221,8 @@ def set_input(self, source: str = "front") -> None: ...   # optional, with a def
 | `write_raw(data)`, `read_raw(size)`, `read_until(term)` | bytes, for binary protocols |
 | `clear_input()` | drops anything unread |
 | `set_timeout(seconds)` | for one slow command |
+| `device_clear()` | the GPIB/USBTMC device clear, which aborts a measurement in progress; does nothing on serial and TCP |
+| `read_to_line_end()` | Prologix/AR488 only: end reads at the line feed instead of EOI, for instruments that never send EOI; check with `hasattr(self.transport, "read_to_line_end")` |
 
 `ScpiDevice` adds `send(text)` (write, then ask `SYST:ERR?` so a rejected
 command fails at once), `ask(text)` and `ask_number(text)`, and gives every

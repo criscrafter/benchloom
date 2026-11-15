@@ -8,7 +8,7 @@ command is `benchloom`.
 ```
 benchloom new my-test                    # a Lua project with the example
 benchloom new my-graph --mode visual     # a visual project
-benchloom new my-filter --template bode  # from a template
+benchloom new my-filter --template bode  # from a template (example, empty, bode)
 benchloom run my-test                    # run it; the run folder is printed
 benchloom gui                            # the desktop app
 ```
@@ -42,6 +42,9 @@ benchloom describe demo.psu          # the commands of one, with arguments and u
 benchloom usbgpib                    # xyphro UsbGpib adapters connected
 benchloom usbgpib "!ver?"            # a command to the adapter itself
 ```
+
+With several adapters connected, `--serial <serial number>` picks the one a
+command goes to.
 
 `--project <folder>` on `devices` and `describe` includes that project's own
 plugins. `devices` only reads their manifests. `describe` loads the driver's

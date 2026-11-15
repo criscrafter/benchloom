@@ -13,6 +13,7 @@ RS-232 (optional interface board). Over RS-232 use the baud rate and parity set 
 front panel (2400-19200 baud); the manual names RTS/CTS as signals in use, so add \
 `rtscts=1` to the resource if the cable carries them. Switches the output off when a \
 test ends unless `leave_output_on = true`."""
+tested = "yes: a 6404 (firmware B.02.20) over RS-232 and over GPIB through an AR488"
 driver = "chroma6404:Chroma6404"
 simulator = "chroma6404:Chroma6404Sim"
 transports = ["usbtmc", "prologix", "visa", "serial", "sim"]

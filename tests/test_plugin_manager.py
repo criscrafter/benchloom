@@ -93,6 +93,25 @@ def test_extra_plugin_folders_from_the_config(tmp_path):
     assert registry.plugins["acme"].source == "folder"
 
 
+def test_tested_must_say_yes_partly_or_no(tmp_path):
+    folder = make_plugin(user_plugin_dir() / "acme")
+    manifest = folder / "plugin.toml"
+    manifest.write_text(manifest.read_text().replace(
+        'driver = ', 'tested = "maybe: on a Tuesday"\ndriver = '), encoding="utf-8")
+    registry = PluginRegistry.default()
+    [(_, error)] = [b for b in registry.broken if b[0] == folder]
+    assert "tested must start with yes, partly or no" in str(error)
+    manifest.write_text(manifest.read_text().replace("maybe", "Partly"), encoding="utf-8")
+    spec = PluginRegistry.default().device("acme.meter")
+    assert spec.tested_status == "partly" and spec.tested_text == "Partly: on a Tuesday"
+
+
+def test_a_plugin_need_not_say_whether_it_was_tested(tmp_path):
+    make_plugin(user_plugin_dir() / "acme")
+    spec = PluginRegistry.default().device("acme.meter")
+    assert spec.tested_status == "" and spec.tested_text == "Not stated by the plugin"
+
+
 def test_broken_plugin_is_listed(tmp_path):
     bad = user_plugin_dir() / "bad"
     bad.mkdir(parents=True)

@@ -18,7 +18,7 @@ writing plugins.
 
 ![Benchloom running a Bode plot of an RC filter](docs/images/app.png)
 
-> **Status: early (0.1).** Benchloom works and is used on a real bench, but it
+> **Status: early (0.2).** Benchloom works and is used on a real bench, but it
 > is young: it has been tested on Windows 10 only so far, and interfaces may
 > still change. See [docs/PLAN.md](docs/PLAN.md) for what is missing.
 
@@ -52,12 +52,12 @@ benchloom gui
 git clone https://github.com/criscrafter/benchloom
 cd benchloom
 python -m venv .venv
-.venv\Scripts\pip install -e ".[gui]"    # Linux/Mac: .venv/bin/pip
+.venv\Scripts\pip install -e ".[gui,usb,dev]"    # Linux/Mac: .venv/bin/pip
 .venv\Scripts\benchloom gui
 ```
 
-`usb` adds USB instruments such as the Hantek scope (`".[gui,usb]"` from
-source), `visa` adds VISA instruments.
+`usb` adds USB instruments such as the Hantek scope, `visa` adds VISA
+instruments, and `dev` adds pytest for the tests.
 
 Choose **New project**, pick **Visual** or **Lua script**, then press **Run**
 (F5). The project starts with a simulated power supply and a voltage sweep, so
@@ -191,7 +191,7 @@ go on a second scale under **Right axis**, **Columns** hides curves, and
 how the plot starts out; changes made in the plot are kept per project.
 
 Scripts run in a sandbox. They have Lua's math, string, table, utf8 and
-coroutine libraries, `os.time`, `os.clock` and `os.date`, but no access to
+coroutine libraries, `os.time`, `os.clock`, `os.date` and `os.difftime`, but no access to
 files, other programs or other code on the computer (no `io`, `os.execute`,
 `require` and the like), and at most 1 GB of memory. A script can still command
 every instrument in its project, so read a project from someone else before

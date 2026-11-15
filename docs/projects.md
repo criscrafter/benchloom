@@ -20,6 +20,7 @@ leave `runs/` out if you do not want the results to travel with it.
 name = "my-test"
 mode = "lua"          # or "visual"; fixed when the project is created
 script = "main.lua"
+saved_with = "0.2.0"  # written by the app: the version that saved it last
 
 [devices.psu]         # the name the test uses for this instrument
 device = "demo.psu"   # the device type: plugin id and device id
@@ -69,7 +70,9 @@ Options go after a `?`, joined with `&`:
 | `term` | text instruments | line ending in both directions, such as `term=\r\n` |
 | `write_term`, `read_term` | text instruments | the line ending of one direction |
 | `baud`, `bytesize`, `parity`, `stopbits` | serial | port settings; `parity` is N, E or O |
-| `rtscts=1` | serial | hardware handshake |
+| `rtscts=1` | serial | RTS/CTS hardware handshake |
+| `dsrdtr=1` | serial | DTR/DSR hardware handshake (such as the Keysight 34420A) |
+| `read_end=lf` | prologix | end reads at the line feed instead of EOI, for instruments that never send EOI |
 
 For example `serial://COM3?baud=115200&term=\r\n&timeout=5`.
 

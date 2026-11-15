@@ -12,6 +12,7 @@ description = """150 V / 40 A / 400 W DC load, controlled over its RS-232 or RS-
 (Modbus RTU, 9600 baud 8N1 by default). Several loads can share one RS-485 adapter: \
 give each its own address on the load and in its device entry, with the same port. \
 Switches the load input off when a test ends unless told not to."""
+tested = "yes: a KP184 over RS-485 (FTDI adapter) and over RS-232 (CH340 adapter)"
 driver = "driver:KP184"
 simulator = "simulator:KP184Sim"
 transports = ["serial", "tcp", "sim"]

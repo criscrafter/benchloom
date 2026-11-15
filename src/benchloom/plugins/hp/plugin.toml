@@ -1,7 +1,7 @@
 [plugin]
 id = "hp"
 name = "HP / Agilent / Keysight"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hewlett-Packard and Agilent instruments."
 manufacturer = "HP"
 
@@ -11,6 +11,7 @@ name = "HP 6655A power supply"
 description = """120 V / 4 A / 500 W single-output DC supply with GPIB and SCPI. \
 Works with the other 665xA models too, within their own ratings. Switches the \
 output off when a test ends unless `leave_output_on = true`."""
+tested = "no: written from the manual"
 driver = "hp6655a:HP6655A"
 simulator = "hp6655a:HP6655ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
@@ -35,6 +36,7 @@ id = "3478a"
 name = "HP 3478A multimeter"
 description = """5½-digit bench multimeter with GPIB (pre-SCPI command set): DC/AC \
 volts, DC/AC current, 2- and 4-wire resistance."""
+tested = "no: written from the manual"
 driver = "hp3478a:HP3478A"
 simulator = "hp3478a:HP3478ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
@@ -52,7 +54,8 @@ max = 5
 [[device]]
 id = "53131a"
 name = "HP / Agilent 53131A / 53132A universal counter"
-description = """225 MHz two-channel counter with GPIB and SCPI: frequency, period, ratio, time interval, phase, pulse width, duty cycle, rise and fall time, peak voltages, totalize. The 53131A and 53132A take the same commands; the 53132A gives more digits. The gate time sets the resolution of frequency, period and ratio. Auto trigger needs more than 100 Hz; below that, set a trigger level. Tried on a real 53131A; the 53132A is untested."""
+description = """225 MHz two-channel counter with GPIB and SCPI: frequency, period, ratio, time interval, phase, pulse width, duty cycle, rise and fall time, peak voltages, totalize. The 53131A and 53132A take the same commands; the 53132A gives more digits. The gate time sets the resolution of frequency, period and ratio. Auto trigger needs more than 100 Hz; below that, set a trigger level."""
+tested = "partly: a 53131A (firmware 3944) through an AR488; the 53132A not yet"
 driver = "hp53131a:HP53131A"
 simulator = "hp53131a:HP53131ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
@@ -86,6 +89,7 @@ monitors one channel without a new scan per reading, switches relays on multiple
 matrix and RF cards, and drives the DACs, digital ports and totalizer of a 34907A. \
 Cards: 34901A, 34902A, 34903A, 34904A, 34905A/6A, 34907A, 34908A. Returns the cards \
 to their power-on state (relays open, DACs 0 V) when a test ends, unless told not to."""
+tested = "partly: the mainframe (firmware 9-1-2) with its internal multimeter and no cards; the cards are written from the manual"
 driver = "hp34970a:HP34970A"
 simulator = "hp34970a:HP34970ASim"
 transports = ["prologix", "usbtmc", "visa", "serial", "sim"]
@@ -113,6 +117,7 @@ the HP and Agilent 3458A: DC volts, AC and AC+DC volts, 2- and 4-wire resistance
 AC and AC+DC current, frequency and period. Integration time (NPLC), digits, \
 autozero, offset compensation, input impedance, AC method and bandwidth, series of \
 readings, internal temperature and autocal. Factory GPIB address 22."""
+tested = "no: written from the manual"
 driver = "hp3458a:HP3458A"
 simulator = "hp3458a:HP3458ASim"
 transports = ["usbtmc", "prologix", "visa", "sim"]
@@ -151,6 +156,7 @@ description = """7½-digit low-level meter with two DC voltage inputs (channel 1
 and Agilent 34420A: voltage per channel, ratio and difference of the channels, 2- and \
 4-wire resistance (1 Ω to 1 MΩ) with offset compensation, low power and voltage limit, \
 and temperature with RTDs, the 5 kΩ thermistor or thermocouples."""
+tested = "no: written from the manual"
 driver = "hp34420a:HP34420A"
 simulator = "hp34420a:HP34420ASim"
 transports = ["prologix", "usbtmc", "visa", "serial", "sim"]
@@ -176,7 +182,8 @@ default = true
 [[device]]
 id = "5384a"
 name = "HP 5384A / 5385A frequency counter"
-description = """Frequency counter with HP-IB (pre-SCPI codes): frequency and period on channel A (10 Hz to 100 MHz), frequency on channel B (5384A: 50 to 225 MHz; 5385A: 90 to 1000 MHz), gate 0.1, 1 or 10 s, x20 attenuator and 100 kHz filter on A, the 10 MHz self-check and display text. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed. Tried on a real 5384A; the 5385A is untested."""
+description = """Frequency counter with HP-IB (pre-SCPI codes): frequency and period on channel A (10 Hz to 100 MHz), frequency on channel B (5384A: 50 to 225 MHz; 5385A: 90 to 1000 MHz), gate 0.1, 1 or 10 s, x20 attenuator and 100 kHz filter on A, the 10 MHz self-check and display text. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed."""
+tested = "partly: a 5384A through an AR488, channel B up to 60 MHz; the 5385A not yet"
 driver = "hp5384a:HP5384A"
 simulator = "hp5384a:HP5384ASim"
 transports = ["prologix", "visa", "sim"]
@@ -195,7 +202,8 @@ help = "0.1, 1 or 10 s. Longer gates give more digits."
 [[device]]
 id = "5334a"
 name = "HP 5334A / 5334B universal counter"
-description = """100 MHz universal counter with HP-IB (pre-SCPI codes): frequency on A, B (and C with option 030), period, ratio A/B, time interval A to B, pulse width, rise and fall time, peak voltages, trigger levels and totalize; gate 1 ms to 99.999 s; coupling, impedance, attenuator, slope, filter, COM A, auto trigger or fixed trigger levels. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed. Tried on a real 5334B; the 5334A takes the same commands and is untested."""
+description = """100 MHz universal counter with HP-IB (pre-SCPI codes): frequency on A, B (and C with option 030), period, ratio A/B, time interval A to B, pulse width, rise and fall time, peak voltages, trigger levels and totalize; gate 1 ms to 99.999 s; coupling, impedance, attenuator, slope, filter, COM A, auto trigger or fixed trigger levels. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed."""
+tested = "partly: a 5334B through an AR488; the 5334A not yet"
 driver = "hp5334:HP5334"
 simulator = "hp5334:HP5334Sim"
 transports = ["prologix", "visa", "sim"]

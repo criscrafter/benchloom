@@ -1,7 +1,7 @@
 [plugin]
 id = "feeltech"
 name = "Feeltech"
-version = "0.1.0"
+version = "0.1.1"
 description = "Feeltech (FeelElec) function generators."
 manufacturer = "Feeltech"
 
@@ -14,7 +14,8 @@ cycle, phase and output per channel; modulates channel 1 (AM, FM, PM, FSK, ASK, 
 burst) and sweeps it; syncs channel 2 to channel 1; reads the counter on EXT IN. \
 Reads every setting back, because the generator clamps out-of-range values without \
 an error. Stops sweeps and switches both outputs off when a test ends unless told \
-not to. Tried on a real FY6900-60M; FY6800 support is untested."""
+not to."""
+tested = "partly: an FY6900-60M (firmware V1.8); the FY6800 not yet"
 driver = "fy6900:FY6900"
 simulator = "fy6900:FY6900Sim"
 transports = ["serial", "sim"]

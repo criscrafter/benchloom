@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Tried on hardware:** every device type now says whether its driver was tried
+  on a real instrument (`yes`, `partly` or `no`, with what was tried or is
+  missing), in a new `tested` field of `plugin.toml`. The Add device dialog and
+  the plugin manager show it as "Tried on hardware", and `benchloom describe`
+  prints it. A third-party device without it shows "Not stated by the plugin";
+  a value that does not start with yes, partly or no stops the plugin from
+  loading.
+- **Plugin versions:** HP / Agilent / Keysight 0.2.0 (it stayed at 0.1.0 while the
+  34970A, 3458A, 34420A, 5384A and 5334A drivers were added), Feeltech 0.1.1.
 - **Feeltech FY6900:** `set_phase` and the docs now say that a higher phase
   delays the channel (channel 2 lags channel 1 by the difference). They said
   "leads"; an HP 53131A and an HP 5334B both measured channel 2 at 90° as 25 µs

@@ -14,6 +14,7 @@ description = """8½-digit reference multimeter with GPIB (IEEE 488.2): DC and A
 Ohms (20 MΩ to 2 GΩ), PRT temperature with probes stored in the meter, front, rear, \
 ratio, difference and deviation inputs, guard, settling delay and input zero. Waits for \
 slow readings as long as the manual's read rates and delays say."""
+tested = "no: written from the manual"
 driver = "fluke8508a:Fluke8508A"
 simulator = "fluke8508a:Fluke8508ASim"
 transports = ["prologix", "usbtmc", "visa", "sim"]

@@ -321,6 +321,10 @@ class PluginInfo:
 
 SETTING_TYPES = ("int", "float", "bool", "text")
 
+# How far a device type was tried on a real instrument: the first word of a device's
+# `tested` field in plugin.toml, e.g. tested = "partly: 53131A yes, 53132A not yet"
+TESTED = {"yes": "Yes", "partly": "Partly", "no": "No"}
+
 
 @dataclass
 class SettingSpec:
@@ -354,6 +358,20 @@ class DeviceSpec:
     default_resource: str = ""  # offered when adding the device, e.g. "usb://049F:505A"
     category: str = ""  # a key of DEVICE_KINDS, or a kind of the plugin's own
     manufacturer: str = ""
+    tested: str = ""  # "yes", "partly" or "no", then ": details"; "" = not stated
+
+    @property
+    def tested_status(self) -> str:
+        """yes, partly, no, or "" when the plugin does not say."""
+        return self.tested.partition(":")[0].strip().lower()
+
+    @property
+    def tested_text(self) -> str:
+        """For people, e.g. "Partly: 53131A yes, 53132A not yet"."""
+        if not self.tested_status:
+            return "Not stated by the plugin"
+        note = self.tested.partition(":")[2].strip()
+        return TESTED[self.tested_status] + (f": {note}" if note else "")
 
     @property
     def kind(self) -> str:
@@ -388,6 +406,15 @@ def _setting(entry: dict) -> SettingSpec:
     )
 
 
+def _tested(dev: dict, manifest: Path) -> str:
+    text = str(dev.get("tested", "")).strip()
+    status = text.partition(":")[0].strip().lower()
+    if text and status not in TESTED:
+        raise PluginError(f"{manifest}: device '{dev.get('id')}': tested must start with "
+                          f"yes, partly or no, not {text!r}")
+    return text
+
+
 def read_manifest(folder: Path) -> PluginInfo:
     manifest = folder / "plugin.toml"
     try:
@@ -416,6 +443,7 @@ def read_manifest(folder: Path) -> PluginInfo:
                     default_resource=dev.get("default_resource", ""),
                     category=str(dev.get("category", "")).strip().lower(),
                     manufacturer=str(dev.get("manufacturer", "")).strip(),
+                    tested=_tested(dev, manifest),
                 )
             )
     except KeyError as exc:
