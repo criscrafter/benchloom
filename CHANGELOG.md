@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **HP 5334A / 5334B universal counter** (`hp.5334a`), from the Operating and
+  Programming Manual and tried on a real 5334B with an FY6900: frequency A, B and
+  C, period, ratio, time interval, pulse width, rise and fall time, peaks,
+  trigger levels, totalize, gate time, input settings, auto or fixed trigger
+  levels and the 100-gate average. The driver undoes the presets that rise/fall
+  and other modes leave behind (COM A, auto trigger) and says when an average
+  would take longer than the GPIB adapter waits.
 - **HP 5384A / 5385A frequency counter** (`hp.5384a`), from the Operating and
   Service Manual and tried on a real 5384A with an FY6900: frequency on
   channels A and B, period A, the 10 MHz self-check, gate time, x20 attenuator,

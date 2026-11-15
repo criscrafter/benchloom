@@ -401,6 +401,73 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   status byte (Table 3-8, p. 3-16), output format (p. 3-16), specifications
   (Table 1-1, pp. 1-3 and 1-4).
 
+## HP 5334A / 5334B universal counter (`hp.5334a`)
+
+- **Connection:** HP-IB, e.g. `prologix://COM17/9` through an AR488 (the factory
+  address is 3; the tested unit was set to 9), or `visa://`. Tried on a real
+  5334B with an FY6900 as the source; the 5334A takes the same commands (plus
+  math, setup memory and the DVM option, which the driver does not use) and is
+  untested. Like the 5384A, the counter keeps talking without EOI, so the driver
+  reads up to the line feed.
+- **Commands:**
+    - Measurements: `measure_frequency(channel)` (`A`, `B`: 0.001 Hz to 100 MHz;
+      `C`: option 030), `measure_period`, `measure_ratio` (A/B),
+      `measure_time_interval` (A to B), `measure_pulse_width(polarity)`,
+      `measure_rise_time`, `measure_fall_time`, `measure_peaks(channel)` (high
+      and low), `read_trigger_levels`, `measure_totalize(seconds)` or
+      `start_totalize` / `read_totalize` / `stop_totalize`.
+    - Settings: `set_gate_time` (0.001 to 99.999 s), `set_coupling`,
+      `set_impedance`, `set_attenuation` (only with auto trigger off),
+      `set_trigger_slope`, `set_filter` (100 kHz on A), `set_common` (COM A),
+      `set_auto_trigger`, `set_trigger_level`, `use_trigger_knob`,
+      `set_100_gate_average`, `initialize`, `get_error`.
+- **Connecting** sends a device clear and `IN`: frequency A, auto trigger, 0.3 s
+  gate (or the device setting).
+- **Each reading** starts with `RE`, so it is never older than the call. With auto
+  trigger on (the power-on state) a reading takes about 1.4 s at the 0.3 s gate,
+  2.3 s at 1 s; with a fixed level about 0.4 s.
+- **Auto trigger** works from 100 Hz (Table 1-1): at 10 Hz it gave no reading; with
+  `set_trigger_level("A", 0)` it read 10.0000335 Hz.
+- **Trigger levels:** the manual calls the remote levels (`TR1` with `AT`/`BT`)
+  "5334A only", but the tested 5334B took them: `AT1.5` and `BT-0.5` read back
+  as +1.50 and −0.50, and a level above the signal stopped the readings.
+  `use_trigger_knob` gives the levels back to the front-panel knob.
+- **Presets:** several functions set inputs themselves (Table 3-13): rise/fall time
+  turns COM A and auto trigger on, pulse width and peaks turn auto trigger on,
+  totalize, read levels and frequency C turn it off, and in these modes many
+  settings are refused (error 1.0). The counter keeps the preset afterwards: after
+  rise/fall, channel B showed channel A's signal. So the driver applies settings
+  from frequency A, and on leaving such a mode puts back COM A and the chosen
+  trigger mode (auto, knob or fixed levels).
+- **Rise or fall** follows the slope of channel A, which cannot change in rise/fall
+  mode; the driver leaves the mode to change it. A 1 kHz triangle around 0 V read
+  0.409 and 0.412 ms (0.4 ms expected), a 10 kHz sine 30.8 µs (29.5 µs); a 0-2 V
+  triangle (offset +1 V) gave no reading.
+- **100-gate average:** the counter pauses about 85 ms between gates with auto
+  trigger off and about 1 s with it on, so 100 gates of 0.01 s took 9.6 s, of
+  0.1 s 18.6 s. An AR488 waits at most 32 s (a Prologix 3 s) for a reading; the
+  driver says so at once when an average would take longer. Use averaging with
+  auto trigger off.
+- **Totalize** counts at the trigger level (auto trigger is off in this mode): set
+  one first. `measure_totalize(1.0)` at 1 kHz counted 970, because the time
+  between the start and stop commands is not exact.
+- **Errors:** after each setting the driver asks `TE`; an illegal code (e.g.
+  error 4.0, mnemonic not recognizable) stops the counter until a device clear,
+  which the driver sends before failing with the text of Table 3-3.
+- **Measured** from an FY6900 (1 Vpp sine, 1 MΩ): channel A 1 kHz to 60 MHz, 7 ppm
+  low (the generator's clock); period 1.00000674 ms at 1 kHz; pulse width
+  299.998 µs and 700.01 µs on a 30 % rectangle; peaks +1.04/−0.96 V on 2 Vpp
+  (+0.26/−0.22 V at 50 Ω). Channel B 1 kHz to 60 MHz, likewise; ratio 4.0 (1 MHz
+  / 250 kHz) and 10000.0 (10 MHz / 1 kHz). Time interval A to B at 10 kHz: 0.38 µs
+  with both channels in phase (the generator's skew between its outputs),
+  25.40 µs with channel 2 at 90° and 50.42 µs at 180°, 50.54 µs with slope B
+  falling. After a rise-time measurement channel B read its own 250 kHz again.
+- **Source:** HP 5334A/B Operating and Programming Manual, part no. 05334-90047
+  (December 1993): command set (Table 3-12, pp. 3-82 and 3-83), output format
+  (pp. 3-84 and 3-85), error handling (pp. 3-87 and 3-88), errors (Table 3-3,
+  p. 3-48), status byte (Table 3-11, p. 3-77), presets (Table 3-13, pp. 3-99 to
+  3-101), specifications (Table 1-1, pp. 1-2 to 1-4).
+
 ## Agilent 34970A data acquisition / switch unit (`hp.34970a`)
 
 - **Connection:** GPIB, e.g. `prologix://COM17/1` through an AR488 (the factory

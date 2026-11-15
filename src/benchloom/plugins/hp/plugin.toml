@@ -191,3 +191,22 @@ default = 0.1
 min = 0.1
 max = 10
 help = "0.1, 1 or 10 s. Longer gates give more digits."
+
+[[device]]
+id = "5334a"
+name = "HP 5334A / 5334B universal counter"
+description = """100 MHz universal counter with HP-IB (pre-SCPI codes): frequency on A, B (and C with option 030), period, ratio A/B, time interval A to B, pulse width, rise and fall time, peak voltages, trigger levels and totalize; gate 1 ms to 99.999 s; coupling, impedance, attenuator, slope, filter, COM A, auto trigger or fixed trigger levels. The counter never sends EOI, so over a Prologix or AR488 the driver reads up to the line feed. Tried on a real 5334B; the 5334A takes the same commands and is untested."""
+driver = "hp5334:HP5334"
+simulator = "hp5334:HP5334Sim"
+transports = ["prologix", "visa", "sim"]
+default_name = "counter"
+category = "counter"
+
+[[device.setting]]
+name = "gate_time"
+label = "Gate time at the start (s)"
+type = "float"
+default = 0.3
+min = 0.001
+max = 99.999
+help = "Longer gates give more digits. The counter starts at 0.3 s."
