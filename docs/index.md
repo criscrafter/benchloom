@@ -31,8 +31,8 @@ PASS/FAIL report behind.
     hardware limit. See [Safety and security](safety.md).
 
 !!! note "Status: early (0.2)"
-    Benchloom works and is used on a real bench, but it is young: it has been
-    tested on Windows 10 only so far, and interfaces may still change. The
+    Benchloom works and is used on a real bench, but it is young: it is used on
+    Windows 10, the Linux build is new, and interfaces may still change. The
     [roadmap](PLAN.md) lists what is missing.
 
 Benchloom is free software under the AGPL-3.0, provided without warranty; see

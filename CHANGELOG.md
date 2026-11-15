@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **Linux download:** `Benchloom-<version>-linux-x86_64.tar.gz` on the releases
+  page, built on Ubuntu 22.04 and self-tested like the Windows download. Unpack
+  it and start `Benchloom/Benchloom`; no installation and no root rights.
+- **App menu on Linux:** `benchloom desktop-entry` adds Benchloom to the app
+  menu with its icon (for the user only; `--remove` takes it out). The app's
+  windows have the Benchloom icon on every system, and on Wayland the taskbar
+  links them to the menu entry.
+- **USB instruments on Linux:** `benchloom udev-rules` prints udev rules that
+  give the logged-in user access to the USB instruments the plugins know
+  (Hantek DSO5102P), the xyphro UsbGpib adapter and any USBTMC instrument;
+  `--group` also allows a group, for test PCs used over SSH.
+- **Error messages on Linux:** a USB device that cannot be opened points to the
+  udev rules instead of the WinUSB driver, and a serial port without permission
+  names the group to join. The Add device dialog says what its system needs
+  for USB and shows `/dev/ttyUSB0` as the example port.
+- **Waveform PNGs on Linux** are drawn without a screen, so test PCs without a
+  desktop (SSH, CI) get them too.
+- **Building:** `packaging/build.py` (was `build_windows.py`) builds the
+  download for the system it runs on.
+
 ## 0.2.1 – HP 5384A and 5334A/B counters, hardware status per device
 
 - **Tried on hardware:** every device type now says whether its driver was tried

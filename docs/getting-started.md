@@ -14,6 +14,27 @@
 
     The folder also holds `benchloom-cli.exe`, the [command line](command-line.md).
 
+=== "Linux download"
+
+    Download `Benchloom-…-linux-x86_64.tar.gz` from the
+    [latest release](https://github.com/criscrafter/benchloom/releases/latest),
+    unpack it anywhere in your home folder and start it:
+
+    ```
+    tar xzf Benchloom-*-linux-x86_64.tar.gz
+    Benchloom/Benchloom
+    ```
+
+    No installation and no root rights are needed. `Benchloom/benchloom-cli
+    desktop-entry` adds Benchloom to the app menu, with its icon (run it again
+    after moving the folder; `--remove` takes it out again).
+    `benchloom-cli` is the [command line](command-line.md).
+
+    It needs a 64-bit Linux with glibc 2.35 or newer (Ubuntu 22.04, Debian 12,
+    Fedora 36 or newer). If it does not start on X11 and names the Qt platform
+    plugin "xcb", install `libxcb-cursor0` (Debian, Ubuntu) or
+    `xcb-util-cursor` (Fedora, Arch).
+
 === "pip"
 
     With Python 3.11 or newer, on Windows or Linux:
@@ -22,6 +43,8 @@
     pip install "benchloom[gui,usb]"
     benchloom gui
     ```
+
+    On Linux, `benchloom desktop-entry` adds the app to the app menu.
 
     The extras add parts you may not need:
 
@@ -47,12 +70,42 @@
     need no hardware. [CONTRIBUTING.md](https://github.com/criscrafter/benchloom/blob/main/CONTRIBUTING.md)
     has the rest.
 
+## Linux: serial and USB access
+
+Linux lets a user open instruments only with permission, which is set up once
+per PC:
+
+- **Serial ports** (`/dev/ttyUSB0`, `/dev/ttyACM0`, …, including Prologix and
+  AR488 adapters): add your user to the port's group, usually `dialout`
+  (`uucp` on Arch), then log out and in again:
+
+    ```
+    sudo usermod -aG dialout $USER
+    ```
+
+    On Ubuntu, the `brltty` package (for Braille displays) can take over CH340
+    adapters, so that the port vanishes right after plugging in. Remove it if
+    you do not use a Braille display.
+
+- **USB instruments** (the Hantek scope, USBTMC instruments, the xyphro UsbGpib
+  adapter): install Benchloom's udev rules, then plug the instrument in again.
+  No other driver is needed.
+
+    ```
+    benchloom udev-rules | sudo tee /etc/udev/rules.d/70-benchloom.rules
+    sudo udevadm control --reload-rules && sudo udevadm trigger
+    ```
+
+    With the download, use `Benchloom/benchloom-cli udev-rules`. The rules
+    give access to whoever is logged in at the PC; for a test PC used over SSH,
+    add `--group plugdev` (or another group you are in).
+
 ## Updates
 
 When Benchloom starts, it asks GitHub whether a newer version
 is out. If so, a bar under the toolbar says which one, and **What's new and
-download** opens its release page. For the Windows download, get the new zip
-there; installed with pip, update with `pip install --upgrade benchloom`. **Skip
+download** opens its release page. For the Windows or Linux download, get the
+new zip or .tar.gz there; installed with pip, update with `pip install --upgrade benchloom`. **Skip
 this version** stops the bar for that version; **Later** hides it until the next
 start.
 

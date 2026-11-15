@@ -126,6 +126,10 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   2. With the instrument switched on, use [Zadig](https://zadig.akeo.ie/) to
      install the WinUSB driver for the adapter (USB ID 03EB 2065). Zadig is a
      free download and needs no installation.
+- **Once per PC (Linux):** install Benchloom's udev rules
+  (`benchloom udev-rules`, see
+  [Getting started](getting-started.md#linux-serial-and-usb-access)). No other
+  driver is needed.
 - **Alternative:** with a VISA installed (the adapter's author recommends R&S
   VISA), use `visa://USB0::0x03EB::0x2065::<serial>::INSTR` instead.
 - **Instruments without `*IDN?`** (the HP 3478A): the adapter asks every
@@ -618,6 +622,10 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
 
   Hantek's own PC software no longer finds the scope after that, until its
   driver is put back in Device Manager.
+- **Once per PC (Linux):** install Benchloom's udev rules
+  (`benchloom udev-rules`, see
+  [Getting started](getting-started.md#linux-serial-and-usb-access)). No other
+  driver is needed.
 - **Commands:**
     - Channels: `set_channel`, `set_volts_per_div` (including the probe factor),
       `set_coupling`, `set_probe`, `set_position`, `set_bandwidth_limit`.

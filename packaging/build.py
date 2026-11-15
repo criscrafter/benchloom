@@ -1,22 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-"""Build the Windows download: build/Benchloom-<version>-windows-x64.zip.
+"""Build the download for this system:
+
+    Windows: build/Benchloom-<version>-windows-x64.zip
+    Linux:   build/Benchloom-<version>-linux-x86_64.tar.gz
 
     pip install -e ".[gui,usb,visa]" pyinstaller
-    python packaging/build_windows.py
+    python packaging/build.py
 
 It builds the folder with PyInstaller, adds the licence files, runs the self-test
-of the result (a test run on simulators, with waveform PNGs and a report) and zips
-it. The build fails if the self-test does.
+of the result (a test run on simulators, with waveform PNGs and a report) and packs
+it. The build fails if the self-test does. On Linux the files keep their execute
+permission in the .tar.gz (a zip would lose it). Build Linux on the oldest system
+it should run on: the result needs that glibc or a newer one.
 """
 
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -73,9 +80,37 @@ def write_version_info() -> None:
 """, encoding="utf-8")
 
 
+WINDOWS = sys.platform == "win32"
+
+
+def pack(app: Path) -> Path:
+    """The folder as the download: a zip on Windows, a .tar.gz elsewhere."""
+    if WINDOWS:
+        archive = BUILD / f"Benchloom-{VERSION}-windows-x64.zip"
+        archive.unlink(missing_ok=True)
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            for file in sorted(app.rglob("*")):
+                if file.is_file():
+                    z.write(file, Path("Benchloom") / file.relative_to(app))
+        return archive
+    system = platform.system().lower()
+    archive = BUILD / f"Benchloom-{VERSION}-{system}-{platform.machine()}.tar.gz"
+    archive.unlink(missing_ok=True)
+
+    def owned_by_nobody(info: tarfile.TarInfo) -> tarfile.TarInfo:
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        return info
+
+    with tarfile.open(archive, "w:gz", compresslevel=9) as tar:
+        tar.add(app, "Benchloom", filter=owned_by_nobody)
+    return archive
+
+
 def main() -> int:
     make_icon()
-    write_version_info()
+    if WINDOWS:
+        write_version_info()
     dist = BUILD / "dist"
     shutil.rmtree(dist, ignore_errors=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
@@ -85,21 +120,18 @@ def main() -> int:
     shutil.copy2(ROOT / "LICENSE", app / "LICENSE.txt")
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", app / "THIRD_PARTY_NOTICES.md")
     shutil.copy2(ROOT / "CHANGELOG.md", app / "CHANGELOG.md")
-    shutil.copy2(HERE / "README-Windows.txt", app / "README.txt")
+    readme = "README-Windows.txt" if WINDOWS else "README-Linux.txt"
+    shutil.copy2(HERE / readme, app / "README.txt")
 
     print("Self-test of the build ...", flush=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("QT_")}  # as users have it
-    result = subprocess.run([str(app / "benchloom-cli.exe"), "--selftest"], env=env)
+    cli = app / ("benchloom-cli.exe" if WINDOWS else "benchloom-cli")
+    result = subprocess.run([str(cli), "--selftest"], env=env)
     if result.returncode != 0:
-        print("The self-test failed; no zip was made.")
+        print("The self-test failed; no download was made.")
         return 1
 
-    archive = BUILD / f"Benchloom-{VERSION}-windows-x64.zip"
-    archive.unlink(missing_ok=True)
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for file in sorted(app.rglob("*")):
-            if file.is_file():
-                z.write(file, Path("Benchloom") / file.relative_to(app))
+    archive = pack(app)
     print(f"{archive} ({archive.stat().st_size / 1e6:.0f} MB)")
     return 0
 

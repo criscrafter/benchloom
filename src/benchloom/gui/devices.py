@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
@@ -21,10 +22,19 @@ from ..plugin import (
     kind_label,
 )
 from ..project import DeviceConfig, Project, device_name_problem
-from ..transports import USBGPIB_IDS, TransportError, find_usbtmc, parse_resource
+from ..transports import (
+    USBGPIB_IDS, TransportError, find_usbtmc, parse_resource, usb_access_hint,
+)
 from .plugins import _Field, _TextField, setting_text
 
 BAUD_RATES = ["9600", "19200", "38400", "57600", "115200"]
+EXAMPLE_PORT = "COM3" if sys.platform == "win32" else "/dev/ttyUSB0"
+
+
+def _note(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(True)
+    return label
 
 # (key, label, transport scheme)
 CONNECTIONS = [
@@ -401,15 +411,14 @@ class DeviceDialog(QDialog):
         self.visa_resource = QLineEdit()
         self.visa_resource.setPlaceholderText("GPIB0::5::INSTR")
         self.custom_resource = QLineEdit()
-        self.custom_resource.setPlaceholderText("serial://COM3?baud=9600&term=\\r\\n")
+        self.custom_resource.setPlaceholderText(f"serial://{EXAMPLE_PORT}?baud=9600&term=\\r\\n")
         self._add_page("sim", [(None, QLabel("Uses the plugin's built-in simulator."))])
         self._add_page("serial", [("Port", self.serial_port), ("Baud rate", self.serial_baud)])
         self._add_page("tcp", [("Host", self.tcp_host), ("Port", self.tcp_port)])
-        self._add_page("usbtmc", [("Device", self.usbtmc_device), (None, QLabel(
-            "Needs the WinUSB driver on Windows (install it once with Zadig), "
-            "or use VISA instead."))])
-        self._add_page("usb", [("USB ID", self.usb_id), (None, QLabel(
-            "Needs the WinUSB driver on Windows (install it once with Zadig)."))])
+        usb_note = usb_access_hint()
+        self._add_page("usbtmc", [("Device", self.usbtmc_device), (None, _note(
+            f"{usb_note} Or use VISA instead.".strip()))])
+        self._add_page("usb", [("USB ID", self.usb_id), (None, _note(usb_note))])
         self._add_page("prologix", [("Adapter port", self.gpib_port),
                                     ("GPIB address", self.gpib_address)])
         self._add_page("visa", [("Resource", self.visa_resource)])

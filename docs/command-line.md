@@ -2,8 +2,8 @@
 
 Everything the app does with a test also works without it: on a test PC
 without a screen, in a script, or from a scheduled task. With the Windows
-download, use `benchloom-cli.exe` in the same folder; after `pip install`, the
-command is `benchloom`.
+download, use `benchloom-cli.exe` in the same folder, with the Linux download
+`benchloom-cli`; after `pip install`, the command is `benchloom`.
 
 ```
 benchloom new my-test                    # a Lua project with the example
@@ -65,6 +65,21 @@ benchloom plugins entry my.zip --url URL  # the list entry for a plugin you publ
 
 See [Writing a plugin](writing-plugins.md) and
 [The plugin registry](plugin-registry.md).
+
+## Linux
+
+```
+benchloom desktop-entry              # Benchloom in the app menu, with its icon
+benchloom desktop-entry --remove     # and out again
+benchloom udev-rules                 # udev rules for USB instruments (print)
+benchloom udev-rules --group plugdev # also for that group, e.g. over SSH
+```
+
+`desktop-entry` writes `benchloom.desktop` and the icon to `~/.local/share`
+(or `$XDG_DATA_HOME`), for your user only. `udev-rules` prints rules for the
+USB instruments the plugins know, the xyphro UsbGpib adapter and any USBTMC
+instrument; install them as
+[Getting started](getting-started.md#linux-serial-and-usb-access) shows.
 
 ## Settings and folders
 

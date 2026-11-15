@@ -76,8 +76,11 @@ Options go after a `?`, joined with `&`:
 
 For example `serial://COM3?baud=115200&term=\r\n&timeout=5`.
 
-`usb`, `usbtmc` and `usbgpib` need the `usb` extra, and on Windows the device
-must use the WinUSB driver, which [Zadig](https://zadig.akeo.ie/) installs.
+`usb`, `usbtmc` and `usbgpib` need the `usb` extra. On Windows the device
+must use the WinUSB driver, which [Zadig](https://zadig.akeo.ie/) installs; on
+Linux your user needs access to it, which Benchloom's
+[udev rules](getting-started.md#linux-serial-and-usb-access) give.
+Serial ports are `serial:///dev/ttyUSB0` and the like on Linux.
 `visa` needs the `visa` extra; it uses a vendor VISA (NI-VISA, Keysight IO
 Libraries) when one is installed, and pyvisa-py otherwise.
 

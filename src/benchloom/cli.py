@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-"""Command line: ``benchloom gui | new | run | devices | describe | plugins | usbgpib``."""
+"""Command line: ``benchloom gui | new | run | devices | describe | plugins | usbgpib``,
+and for Linux ``desktop-entry | udev-rules``."""
 
 from __future__ import annotations
 
@@ -203,6 +204,34 @@ def _usbgpib(args) -> int:
     return 0
 
 
+def _desktop_entry(args) -> int:
+    from . import linux
+
+    if not sys.platform.startswith("linux"):
+        print("error: menu entries are written for Linux desktops only", file=sys.stderr)
+        return 2
+    if args.remove:
+        removed = linux.remove_desktop_entry()
+        for path in removed:
+            print(f"Removed {path}")
+        if not removed:
+            print("There was no Benchloom menu entry.")
+        return 0
+    entry, icon = linux.install_desktop_entry()
+    print(f"Wrote {entry}\nand {icon}.\nBenchloom is in the app menu now (some desktops show "
+          "it after logging in again). Remove it with: benchloom desktop-entry --remove")
+    return 0
+
+
+def _udev_rules(args) -> int:
+    from .linux import udev_rules
+
+    registry = PluginRegistry.default(Path(args.project) if args.project else None,
+                                      trust_project=True)
+    print(udev_rules(registry, args.group), end="")
+    return 0
+
+
 def _gui(args) -> int:
     from .gui import main as gui_main
 
@@ -272,6 +301,29 @@ def main(argv: list[str] | None = None) -> int:
     usbgpib.add_argument("commands", nargs="*")
     usbgpib.add_argument("--serial", help="the adapter's serial number, if there are several")
     usbgpib.set_defaults(func=_usbgpib)
+
+    desktop = sub.add_parser(
+        "desktop-entry", help="Linux: add Benchloom to the app menu, with its icon",
+        description="Writes benchloom.desktop and the icon to ~/.local/share (or "
+                    "$XDG_DATA_HOME), for this user only. Run it again after moving "
+                    "Benchloom's folder.")
+    desktop.add_argument("--remove", action="store_true", help="remove the menu entry again")
+    desktop.set_defaults(func=_desktop_entry)
+
+    udev = sub.add_parser(
+        "udev-rules", help="Linux: print udev rules that let you use USB instruments",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Prints rules that give the logged-in user access to the USB "
+                    "instruments plugins know (Hantek scope, UsbGpib) and to any USBTMC "
+                    "instrument. Install them once:\n\n"
+                    "  benchloom udev-rules | sudo tee /etc/udev/rules.d/70-benchloom.rules\n"
+                    "  sudo udevadm control --reload-rules && sudo udevadm trigger\n\n"
+                    "then plug the instrument in again. Serial ports need no rules, but "
+                    "membership of their group (usually dialout).")
+    udev.add_argument("--group", help="also allow this group, e.g. plugdev, for users "
+                                      "who are not logged in at the PC (SSH)")
+    udev.add_argument("--project", help="also include this project's plugins folder")
+    udev.set_defaults(func=_udev_rules)
 
     gui = sub.add_parser("gui", help="open the desktop app")
     gui.add_argument("path", nargs="?", help="project folder to open")

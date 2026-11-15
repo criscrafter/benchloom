@@ -4,7 +4,7 @@
 
     python packaging/release_notes.py v0.1.2 > notes.md
 
-The release workflow publishes them with the Windows download, so a release needs
+The release workflow publishes them with the downloads, so a release needs
 no editing by hand. Lines wrapped in CHANGELOG.md are joined again, because GitHub
 shows every line break in release notes.
 """

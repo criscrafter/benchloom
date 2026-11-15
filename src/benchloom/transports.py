@@ -23,12 +23,39 @@ feed instead of EOI, for instruments that never send EOI.
 
 from __future__ import annotations
 
+import errno
+import os
 import socket
+import sys
 from urllib.parse import parse_qsl
 
 
 class TransportError(Exception):
     pass
+
+
+def usb_access_hint() -> str:
+    """What a USB device needs before libusb may open it, on this system ("" if nothing)."""
+    if sys.platform == "win32":
+        return "On Windows it needs the WinUSB driver: install it once with Zadig."
+    if sys.platform.startswith("linux"):
+        return ("On Linux your user needs access to it: install Benchloom's udev rules once "
+                "(see: benchloom udev-rules --help), then plug it in again.")
+    return ""
+
+
+def serial_access_hint(port: str) -> str:
+    """For a serial port that may not be opened: which group to join (Linux)."""
+    if not sys.platform.startswith("linux"):
+        return ""
+    try:
+        import grp
+
+        group = grp.getgrgid(os.stat(port).st_gid).gr_name
+    except (ImportError, OSError, KeyError):
+        group = "dialout"
+    return (f" Your user may not use {port}: add it to the group '{group}' with "
+            f"'sudo usermod -aG {group} $USER', then log out and in again.")
 
 
 def _unescape(text: str) -> str:
@@ -185,7 +212,9 @@ class SerialTransport(Transport):
                 self._serial.baudrate = self.serial_options["baudrate"]
             except serial.SerialException:
                 self.close()
-                raise TransportError(f"cannot open serial port {self.port}: {exc}") from exc
+                hint = serial_access_hint(self.port) if getattr(
+                    exc, "errno", None) == errno.EACCES else ""
+                raise TransportError(f"cannot open serial port {self.port}: {exc}{hint}") from exc
         if self.lines:
             self.set_lines()
 
@@ -561,7 +590,8 @@ class UsbTmcTransport(Transport):
     ``usbtmc://03EB:2065/<serial>``; ``usbgpib://`` is short for the xyphro UsbGpib
     adapter (``usbgpib://`` or ``usbgpib://<serial>``). Needs pyusb and a libusb
     backend (``pip install "benchloom[usb]"``); on Windows the device must use the
-    WinUSB driver, which Zadig installs. With a vendor VISA installed instead, use
+    WinUSB driver, which Zadig installs, and on Linux the user needs access to it
+    (``benchloom udev-rules``). With a vendor VISA installed instead, use
     ``visa://USB0::0x03EB::0x2065::<serial>::INSTR``.
 
     One USBTMC message is one reply, so :meth:`read` needs no termination
@@ -609,9 +639,8 @@ class UsbTmcTransport(Transport):
                 serial = device.serial_number or ""
             except (ValueError, usb.core.USBError, NotImplementedError):
                 raise TransportError(
-                    f"{self.name} is connected but cannot be opened. On Windows it needs the "
-                    "WinUSB driver (install it once with Zadig), or use a VISA such as R&S "
-                    "VISA with a visa:// resource.") from None
+                    f"{self.name} is connected but cannot be opened. {usb_access_hint()} "
+                    "Or use a VISA such as R&S VISA with a visa:// resource.") from None
             if not self.serial or serial == self.serial:
                 chosen = device
                 break
@@ -699,7 +728,8 @@ class UsbBulkTransport(Transport):
     """A USB device with its own bulk protocol, through libusb (``usb://049F:505A``).
 
     Writes go out as one bulk transfer each; reads return what one or more bulk
-    transfers bring. On Windows the device needs the WinUSB driver (Zadig). Needs
+    transfers bring. On Windows the device needs the WinUSB driver (Zadig), on Linux
+    access for the user (``benchloom udev-rules``). Needs
     pyusb and libusb-package (``pip install "benchloom[usb]"``).
     """
 
@@ -750,8 +780,8 @@ class UsbBulkTransport(Transport):
             usb.util.claim_interface(device, self.interface)
         except (usb.core.USBError, NotImplementedError, ValueError) as exc:
             raise TransportError(
-                f"{self.name} is connected but cannot be opened ({exc}). On Windows it needs "
-                "the WinUSB driver: install it once with Zadig.") from None
+                f"{self.name} is connected but cannot be opened ({exc}). "
+                f"{usb_access_hint()}".rstrip()) from None
         iface = config[(self.interface, 0)]
         for ep in iface:
             if usb.util.endpoint_type(ep.bmAttributes) != usb.util.ENDPOINT_TYPE_BULK:
@@ -837,7 +867,7 @@ def find_usbtmc(vid: int | None = None, pid: int | None = None) -> list[tuple[in
         try:
             serial = device.serial_number or ""
         except (ValueError, usb.core.USBError, NotImplementedError):
-            serial = ""  # no WinUSB driver bound, or no permission
+            serial = ""  # no WinUSB driver bound, or no permission (udev rules on Linux)
         found.append((device.idVendor, device.idProduct, serial))
     return found
 

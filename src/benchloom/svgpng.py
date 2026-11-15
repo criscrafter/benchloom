@@ -15,6 +15,9 @@ from pathlib import Path
 def main(paths: list[str]) -> int:
     import os
 
+    if sys.platform.startswith("linux"):
+        # needs no screen: also works on a test PC without one (SSH, CI)
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     windows_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
     if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and windows_fonts.is_dir():
         # Qt's offscreen mode has no fonts of its own on Windows: text became boxes

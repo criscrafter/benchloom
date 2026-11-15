@@ -24,7 +24,7 @@ python -m venv .venv
 Python 3.11 or newer. The tests use the instruments' simulators, so no hardware
 is needed; the desktop app is tested offscreen.
 
-## Building the Windows download
+## Building the downloads
 
 ```
 .venv\Scripts\pip install -e ".[gui,usb]" pyinstaller
@@ -32,11 +32,13 @@ is needed; the desktop app is tested offscreen.
 ```
 
 This makes `build/Benchloom-<version>-windows-x64.zip` and runs a self-test of
-the packaged app first.
+the packaged app first. On Linux, the same with `.venv/bin/` makes
+`build/Benchloom-<version>-linux-x86_64.tar.gz`; it runs on the glibc of the
+build system or a newer one, so CI builds it on Ubuntu 22.04.
 
 To release a version: add its section to CHANGELOG.md (`## 1.2.3 – title`),
 set `__version__` in `src/benchloom/__init__.py`, and push the tag `v1.2.3`.
-GitHub then builds and self-tests the download and publishes the release with
+GitHub then builds and self-tests the downloads and publishes the release with
 that changelog section as its notes, then uploads the package to PyPI;
 nothing needs editing by hand. PyPI accepts it through trusted publishing
 (the `pypi` environment of this repository), so no token is stored anywhere.

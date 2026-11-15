@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-# PyInstaller recipe for the Windows download: python packaging/build_windows.py
+# PyInstaller recipe for the Windows and Linux downloads: python packaging/build.py
 #
 # A folder build (not one file): it starts faster, and the Qt and libusb libraries
 # stay separate files that users can replace, as their LGPL licence asks.
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
@@ -11,9 +12,11 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metada
 ROOT = Path(SPECPATH).parent
 SRC = ROOT / "src" / "benchloom"
 
-# Plugins and templates are read from disk at run time, so they go in as files.
+# Plugins, templates and the window icon are read from disk at run time, so they go
+# in as files.
 datas = [(str(SRC / "plugins"), "benchloom/plugins"),
-         (str(SRC / "templates"), "benchloom/templates")]
+         (str(SRC / "templates"), "benchloom/templates"),
+         (str(SRC / "gui" / "benchloom.png"), "benchloom/gui")]
 binaries = []
 hiddenimports = collect_submodules("benchloom") + [
     "random", "serial", "serial.tools.list_ports", "usb.core", "usb.util",
@@ -52,12 +55,15 @@ def analysis(script):
                     excludes=excludes, noarchive=False)
 
 
-icon = str(Path(SPECPATH) / "benchloom.ico")
+# The .exe files carry the icon and version; on Linux the app sets its window icon
+# itself and 'benchloom-cli desktop-entry' adds the menu entry.
+windows = {"icon": str(Path(SPECPATH) / "benchloom.ico"),
+           "version": str(Path(SPECPATH) / "version_info.txt")} if sys.platform == "win32" else {}
 app = analysis("app.py")
 cli = analysis("cli.py")
 app_exe = EXE(PYZ(app.pure), app.scripts, [], exclude_binaries=True, name="Benchloom",
-              console=False, icon=icon, version=str(Path(SPECPATH) / "version_info.txt"))
+              console=False, **windows)
 cli_exe = EXE(PYZ(cli.pure), cli.scripts, [], exclude_binaries=True, name="benchloom-cli",
-              console=True, icon=icon, version=str(Path(SPECPATH) / "version_info.txt"))
+              console=True, **windows)
 COLLECT(app_exe, app.binaries, app.datas, cli_exe, cli.binaries, cli.datas,
         name="Benchloom")

@@ -14,8 +14,8 @@ PASS/FAIL report behind. No licence fees, no accounts, no vendor runtime.
 ![Benchloom running a Bode plot of an RC filter](docs/images/app.png)
 
 > **Status: early (0.2).** Benchloom works and is used on a real bench, but it
-> is young: it has been tested on Windows 10 only so far, and interfaces may
-> still change. See the [roadmap](docs/PLAN.md).
+> is young: it is used on Windows 10, the Linux build is new, and interfaces
+> may still change. See the [roadmap](docs/PLAN.md).
 
 > **Safety:** Benchloom switches real power supplies, loads and generators. A
 > wrong script can apply a wrong voltage or current to your circuit. Set limits
@@ -29,6 +29,11 @@ PASS/FAIL report behind. No licence fees, no accounts, no vendor runtime.
 **Windows:** download `Benchloom-…-windows-x64.zip` from the
 [latest release](https://github.com/criscrafter/benchloom/releases/latest),
 unzip it and start `Benchloom.exe`. No installation and no Python needed.
+
+**Linux:** download `Benchloom-…-linux-x86_64.tar.gz` from the same page,
+unpack it and start `Benchloom/Benchloom`; `Benchloom/benchloom-cli
+desktop-entry` adds it to the app menu. See
+[Getting started](docs/getting-started.md) for USB and serial access.
 
 **With pip** (Python 3.11 or newer):
 

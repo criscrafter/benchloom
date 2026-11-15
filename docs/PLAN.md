@@ -72,8 +72,10 @@
    VISA. Tried on hardware: KP184, 6404, DT-4000ZC; partly: FY6900, DSO5102P,
    53131A, 5384A, 5334B and the 34970A mainframe without cards. See
    [INSTRUMENTS.md](INSTRUMENTS.md).
-6. **Packaging**: portable Windows build (done: a zip built with PyInstaller,
-   self-tested and attached to each release by CI), then Linux, then Mac. Plugins
+6. **Packaging**: portable Windows and Linux builds (done: a zip and a .tar.gz
+   built with PyInstaller, self-tested and attached to each release by CI; on
+   Linux a menu entry and udev rules for USB instruments come from the command
+   line), then Mac. Plugins
    install from a folder, a .zip or the online registry (`registry/index.json`,
    added to by pull request; downloads checked by SHA-256).
 
@@ -90,7 +92,9 @@
   34420A, 8508A, 1281 and 4950 drivers, and the 34970A's cards, are written from
   manuals and are each tested against a simulator written from the same
   sources, so a misread manual would not show up in the tests.
-- The desktop app is tested on Windows only, and its dialogs (new project,
-  add device) are covered only partly by automated tests.
+- The desktop app is used on Windows; on Linux its tests run in CI and the
+  download passes its self-test, but no instrument has been used from Linux
+  yet. Its dialogs (new project, add device) are covered only partly by
+  automated tests.
 - The node editor is tested through its functions (add, wire, delete, run),
   not by real mouse input.
