@@ -781,8 +781,11 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   same fault and gets the same treatment.
 - **Phase needs uplink off.** With uplink on (it was on, on the tested unit) the
   generator stores the phase but ignores it, so `set_phase` fails with a hint
-  to call `set_uplink(false)`. With uplink off, channel 2 leads channel 1 by the
-  difference of the two phases.
+  to call `set_uplink(false)`. With uplink off, a higher phase delays the
+  channel: channel 2 lags channel 1 by the difference of the two phases. With
+  channel 2 at 90° and 10 kHz, its edges came 25 µs after channel 1's on an HP
+  53131A (24.98 µs) and an HP 5334B (25.40 µs). (Earlier versions of this page
+  said "leads", from a misread oscilloscope check.)
 - **Duty cycle** applies to `rectangle` and the pulse waveforms; `square` is
   always 50 %.
 - **Not offered:**

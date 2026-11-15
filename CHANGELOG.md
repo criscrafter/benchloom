@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Feeltech FY6900:** `set_phase` and the docs now say that a higher phase
+  delays the channel (channel 2 lags channel 1 by the difference). They said
+  "leads"; an HP 53131A and an HP 5334B both measured channel 2 at 90° as 25 µs
+  behind at 10 kHz.
 - **HP 5334A / 5334B universal counter** (`hp.5334a`), from the Operating and
   Programming Manual and tried on a real 5334B with an FY6900: frequency A, B and
   C, period, ratio, time interval, pulse width, rise and fall time, peaks,

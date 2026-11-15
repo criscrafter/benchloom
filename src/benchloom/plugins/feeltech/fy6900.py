@@ -43,8 +43,12 @@ V1.8) with an oscilloscope on both outputs:
   and phase can be one count off, so those checks allow 1 mV and one count.
 - The duty cycle applies to rectangle (and pulse) waveforms; square stays at 50 %.
 - With uplink on (it was, on the tested unit) the generator ignores the phase
-  setting. With uplink off, a phase of 90° on channel 2 put it 86° ahead of
-  channel 1 (about 4° of that is the scope).
+  setting. With uplink off, a higher phase delays a channel: with channel 1 at
+  0° and channel 2 at 90° (10 kHz), channel 2's rising edge came 25 µs (90°)
+  after channel 1's on an HP 53131A (time interval 24.98 µs, phase +90.02°,
+  which its manual defines as channel 1 leading) and an HP 5334B (25.40 µs);
+  180° gave 50.4 µs, 0° 0.38 µs. A first check with an oscilloscope had read
+  channel 2 as 86° ahead; both counters show it behind.
 - Writing a modulation type starts modulation of channel 1; writing the output
   state again ends it. AM, FM, PM, FSK, ASK, PSK and burst were seen on the scope
   with channel 2 as the modulating signal; the FM deviation is the total swing
@@ -293,8 +297,9 @@ class FY6900(Device):
     def get_duty_cycle(self, channel: int) -> float:
         return int(self._get(self._channel(channel), "D")) / 1000
 
-    @command("Set the phase. Channel 2 leads channel 1 by the difference of their "
-             "phases. Needs uplink off (set_uplink), else the generator ignores it",
+    @command("Set the phase. A higher phase delays the channel: channel 2 lags "
+             "channel 1 by the difference of their phases. Needs uplink off "
+             "(set_uplink), else the generator ignores it",
              params={"channel": CHANNEL, "degrees": Param(unit="°", min=0, max=360)})
     def set_phase(self, channel: int, degrees: float) -> None:
         self._channel(channel)
