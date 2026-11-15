@@ -116,6 +116,7 @@ print(psu:measure_voltage())
 | `transports` | `[[device]]` | the connections it supports, such as `["serial", "tcp", "visa", "sim"]` |
 | `default_name`, `default_resource` | `[[device]]` | offered when the device is added |
 | `tested` | `[[device]]` | whether the driver was tried on a real instrument: `yes`, `partly` or `no`, then optionally `:` and what was tried or is missing, e.g. `"partly: a 53131A; the 53132A not yet"`. Shown as "Tried on hardware" in the Add device dialog, the plugin manager and `benchloom describe`; "Not stated" when left out |
+
 ### Kind and manufacturer
 
 The Add device dialog lists device types by manufacturer and can show only
