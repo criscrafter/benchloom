@@ -162,6 +162,7 @@ def test_plugin_manager_switches_off_installs_and_removes(app, tmp_path, monkeyp
     assert details.device_type.text() == "hp.53131a"
     assert details.device_default_name.text() == "counter"
     assert "Gate time" in details.device_settings.toPlainText()
+    assert details.device_tested.toPlainText().startswith("Partly: a 53131A")
     dialog.tree.setCurrentItem(dialog.item_for("hantek"))
     assert details.device_resource.text() == "usb://049F:505A"
     assert details.device_connections.text() == "usb, sim"
@@ -696,6 +697,29 @@ def test_device_picker_shows_the_edited_device_type(app):
     assert dialog.config().device == "kunkin.kp184"
     # without third-party plugins that section is left out
     assert dialog.type_picker.sections["third_party"].isHidden()
+
+
+def test_info_text_boxes_are_as_tall_as_their_text(app):
+    from benchloom.gui.plugins import _TextField
+
+    dialog = DeviceDialog(picker_registry(), set())
+    dialog.show()
+    info = dialog.type_info
+    boxes = (info.tested_field, info.settings_field, info.description_field)
+    for width in (900, 600):  # narrower: more lines, taller boxes, still no scrolling
+        dialog.resize(width, 680)
+        for device in ("hp.34970a", "hp.5334a", "feeltech.fy6900", "hp.3478a"):
+            dialog.set_device_type(device)
+            for _ in range(3):  # the new heights are laid out in later passes
+                app.processEvents()
+            for box in boxes:
+                if box.isVisible():
+                    assert box.verticalScrollBar().maximum() == 0, (width, device)
+    short, long = _TextField(), _TextField()
+    short.setPlainText("Yes")
+    long.setPlainText("\n".join(f"line {n}" for n in range(12)))
+    assert long.height() > short.height()
+    dialog.close()
 
 
 def test_device_dialog_describes_the_picked_type(app):

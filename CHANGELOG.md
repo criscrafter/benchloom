@@ -9,6 +9,10 @@
   prints it. A third-party device without it shows "Not stated by the plugin";
   a value that does not start with yes, partly or no stops the plugin from
   loading.
+- **Plugin manager and Add device:** the text boxes of the info panel (tried on
+  hardware, settings, description) are as tall as their text, so they never
+  scroll; the plugin manager lists all of a plugin's devices instead of four.
+  When the whole panel is taller than the window, it scrolls as one.
 - **Plugin versions:** HP / Agilent / Keysight 0.2.0 (it stayed at 0.1.0 while the
   34970A, 3458A, 34420A, 5384A and 5334A drivers were added), Feeltech 0.1.1.
 - **Feeltech FY6900:** `set_phase` and the docs now say that a higher phase

@@ -601,9 +601,9 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   settings, display text, the error queue, and the refusal of every channel
   command on empty slots all worked; `INIT` without a scan list gave the same
   error (+113) as the simulator. The measurement options and the monitor came
-  from a tester's feedback on a real unit with cards, who also saw the monitored
-  relay stay closed; apart from that, everything that needs a card is tested
-  against the simulator only.
+  from a tester's feedback on a real unit, who also saw the monitored relay stay
+  closed; apart from that, everything that needs a card is tested against the
+  simulator only.
 
 ## Hantek DSO5102P oscilloscope (`hantek.dso5000p`)
 

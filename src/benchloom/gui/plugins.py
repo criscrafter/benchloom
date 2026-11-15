@@ -12,8 +12,8 @@ from PySide6.QtCore import QFile, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
-    QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTreeWidget, QTreeWidgetItem,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTextEdit, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -43,13 +43,35 @@ class _Field(QLineEdit):
         self.setToolTip(text if len(text) > 40 else "")
 
 
-class _TextField(QPlainTextEdit):
-    """A read-only multi-line field for descriptions."""
+class _TextField(QTextEdit):
+    """A read-only multi-line field for descriptions. It is as tall as its wrapped
+    text, at any width, so it never needs a scroll bar."""
 
-    def __init__(self, lines: int = 4):
+    def __init__(self, lines: int = 1):
         super().__init__(readOnly=True)
-        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
-        self.setFixedHeight(self.fontMetrics().lineSpacing() * lines + 12)
+        self.setAcceptRichText(False)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._min_lines = lines
+        self._width = -1
+        self.document().contentsChanged.connect(self._fit)
+        self._fit()
+
+    def _fit(self) -> None:
+        document = self.document()
+        document.setTextWidth(self.viewport().width())
+        lines = self.fontMetrics().lineSpacing() * self._min_lines
+        text = max(document.size().height(), lines + 2 * document.documentMargin())
+        margins = self.contentsMargins()
+        self.setFixedHeight(round(text) + margins.top() + margins.bottom())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self.viewport().width() != self._width:  # new wrapping, new height
+            self._width = self.viewport().width()
+            self._fit()
 
 
 def setting_text(spec) -> str:
@@ -77,7 +99,7 @@ class PluginDetails(QWidget):
         self.plugin_box = QGroupBox("Plugin")
         self.name_field, self.version_field, self.id_field = _Field(), _Field(), _Field()
         self.status_field, self.source_field, self.folder_field = _Field(), _Field(), _Field()
-        self.description_field = _TextField(3)
+        self.description_field = _TextField()
         self.open_folder_button = QPushButton("Open")
         self.open_folder_button.clicked.connect(self._open_folder)
         folder = QHBoxLayout()
@@ -99,11 +121,13 @@ class PluginDetails(QWidget):
         self.device_name, self.device_type = _Field(), _Field()
         self.device_connections, self.device_default_name = _Field(), _Field()
         self.device_resource, self.device_simulator = _Field(), _Field()
-        self.device_settings = _TextField(3)
-        self.device_description = _TextField(4)
+        self.device_tested = _TextField()
+        self.device_settings = _TextField()
+        self.device_description = _TextField()
         device_form = self.device_form = QFormLayout()
         device_form.addRow("Name", self.device_name)
         device_form.addRow("Device type", self.device_type)
+        device_form.addRow("Tried on hardware", self.device_tested)
         device_form.addRow("Connections", self.device_connections)
         device_form.addRow("Default name", self.device_default_name)
         device_form.addRow("Default address", self.device_resource)
@@ -160,7 +184,7 @@ class PluginDetails(QWidget):
             item = QListWidgetItem(device.name)
             item.setData(Qt.ItemDataRole.UserRole, device)
             self.device_list.addItem(item)
-        rows = min(max(len(info.devices), 1), 4)
+        rows = max(len(info.devices), 1)  # every device in view, without scrolling
         self.device_list.setFixedHeight(rows * self.device_list.sizeHintForRow(0)
                                         + 2 * self.device_list.frameWidth() + 2)
         if info.devices:
@@ -194,6 +218,7 @@ class PluginDetails(QWidget):
             return
         self.device_name.show_text(device.name)
         self.device_type.show_text(device.id)
+        self.device_tested.setPlainText(device.tested_text)
         self.device_connections.show_text(", ".join(device.transports) or "any")
         self.device_default_name.show_text(device.default_name)
         self.device_resource.show_text(device.default_resource)
