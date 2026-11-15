@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 – Reference meters: Keysight 3458A and 34420A, Fluke 8508A, Wavetek 1281 and 4950
+## 0.2.0 – Reference meters: Keysight 3458A and 34420A, Fluke 8508A, Wavetek 1281 and 4950
 
 - **Keysight 34420A nanovolt / micro-ohm meter** (`hp.34420a`): both voltage
   channels, ratio and difference, 2- and 4-wire ohms with offset compensation, low
