@@ -32,6 +32,17 @@ UNITS = {"dc_volts": "V", "ac_volts": "V", "ohms_2wire": "Ω", "ohms_4wire": "Ω
          "dc_amps": "A", "ac_amps": "A", "ohms_extended": "Ω"}
 OVERLOAD = 9.99999e9
 DIGIT_CODES = {5: 1, 4: 2, 3: 3}  # digits -> bits 1,0 of status byte 1
+# The range field of status byte 1 counts from 1 at each function's smallest range:
+# field = R code + offset (DC volts R-2 = 1, AC volts and amps R-1 = 1, ohms R1 = 1).
+# Cross-checked with pymeasure's hp3478A driver; not yet confirmed on the meter.
+RANGE_OFFSETS = {1: 3, 2: 2, 3: 0, 4: 0, 5: 2, 6: 2, 7: 0}
+PREFIXES = ((1e6, "M"), (1e3, "k"), (1.0, ""), (1e-3, "m"))
+
+
+def format_range(full_scale: float, unit: str) -> str:
+    """A range as text, e.g. 30 mV or 3 kΩ."""
+    factor, prefix = next((f, p) for f, p in PREFIXES if full_scale >= f or f == 1e-3)
+    return f"{full_scale / factor:g} {prefix}{unit}"
 
 
 def format_reading(value: float) -> str:
@@ -174,18 +185,30 @@ class HP3478A(Device):
         names = ["calibration", "RAM", "ROM", "A/D slope", "A/D self-test", "A/D link"]
         return ", ".join(name for i, name in enumerate(names) if bits & (1 << i))
 
-    @command("Settings as the meter reports them, e.g. 'dc_volts, 5½ digits, autorange'")
+    @command("Settings as the meter reports them, e.g. 'dc_volts, 5½ digits, range 30 V'")
     def get_status(self) -> str:
         self.transport.write("B")
         status = self.transport.read_raw(5)
         function = (status[0] >> 5) & 0x07
         digits = {1: "5½", 2: "4½", 3: "3½"}.get(status[0] & 0x03, "?")
         names = {f_code: name for name, (f_code, _) in FUNCTIONS.items()}
-        parts = [names.get(function, f"function {function}"), f"{digits} digits",
-                 "autorange" if status[1] & 0x02 else f"range {(status[0] >> 2) & 0x07}",
+        name = names.get(function)
+        parts = [name or f"function {function}", f"{digits} digits",
+                 "autorange" if status[1] & 0x02 else self._range_text(function, status[0]),
                  "autozero on" if status[1] & 0x04 else "autozero off",
                  "front terminals" if status[1] & 0x10 else "rear terminals"]
         return ", ".join(parts)
+
+    @staticmethod
+    def _range_text(function: int, byte1: int) -> str:
+        field = (byte1 >> 2) & 0x07
+        name = next((n for n, (f, _) in FUNCTIONS.items() if f == function), None)
+        if name is not None and function in RANGE_OFFSETS:
+            code = field - RANGE_OFFSETS[function]
+            full_scale = dict(FUNCTIONS[name][1]).get(code)
+            if full_scale is not None:
+                return "range " + format_range(full_scale, UNITS[name])
+        return f"range field {field}"
 
     def identify(self) -> str:
         return "HP 3478A: " + self.get_status()
@@ -223,7 +246,7 @@ class HP3478ASim(SimTransport):
         return format_reading(value)
 
     def _status(self) -> bytes:
-        range_index = 0 if self.range is None else self.range + 3
+        range_index = 0 if self.range is None else self.range + RANGE_OFFSETS[self.function]
         byte1 = (self.function << 5) | ((range_index & 0x07) << 2) | DIGIT_CODES[self.digits]
         byte2 = ((self.trigger == 1) | (self.range is None) << 1 | self.autozero << 2 | 1 << 4)
         return bytes([byte1, byte2, 0, 0, 32])

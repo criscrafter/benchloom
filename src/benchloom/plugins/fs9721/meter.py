@@ -86,6 +86,25 @@ def is_packet(data: bytes) -> bool:
     return len(data) == PACKET_SIZE and all(b >> 4 == i + 1 for i, b in enumerate(data))
 
 
+def inconsistency(data: bytes) -> str | None:
+    """Why a packet cannot be a real display, or None. A flipped bit keeps the
+    position nibbles intact, so these are checked too (the same checks as sigrok's
+    FS9721 parser): the RS232 symbol, AC and DC together, several prefixes, units."""
+    def on(name: str) -> bool:
+        i, bit = FLAGS[name]
+        return bool(data[i] >> bit & 1)
+
+    if not on("RS232"):
+        return "no RS232 symbol"
+    if on("AC") and on("DC"):
+        return "both AC and DC"
+    if sum(on(p) for p in PREFIXES) > 1:
+        return "more than one prefix"
+    if sum(on(u) for u in ("V", "A", "Ω", "F", "Hz", "%")) > 1:
+        return "more than one unit"
+    return None
+
+
 def decode(data: bytes) -> Reading:
     """Decode one 14-byte packet."""
     if not is_packet(data):
@@ -178,7 +197,7 @@ class FS9721Meter(Device):
                 if len(buffer) < PACKET_SIZE:
                     break
                 packet = bytes(buffer[:PACKET_SIZE])
-                if is_packet(packet):
+                if is_packet(packet) and inconsistency(packet) is None:
                     try:
                         return decode(packet)
                     except ValueError as exc:
@@ -266,7 +285,7 @@ class FS9721Sim(SimTransport):
         while len(self._out) < size:
             if not self.lines.get("dtr") or self.lines.get("rts"):
                 raise TimeoutError("the cable's receiver has no power")
-            self._out += encode(self.display, self.flags)
+            self._out += encode(self.display, {"RS232", *self.flags})  # shown while sending
         return super().read_raw(size)
 
     def read_some(self, size: int) -> bytes:

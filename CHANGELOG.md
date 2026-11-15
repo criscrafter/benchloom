@@ -21,6 +21,12 @@
   desktop (SSH, CI) get them too.
 - **Building:** `packaging/build.py` (was `build_windows.py`) builds the
   download for the system it runs on.
+- **HP 3478A:** `get_status` names a fixed range as a value (`range 30 V`)
+  instead of the meter's raw range number, and the simulator numbers the ranges
+  as the meter does for every function.
+- **DT-4000ZC (FS9721):** a packet that cannot be a real display (no RS232
+  symbol, AC and DC together, more than one prefix or unit) is skipped as
+  garbled instead of being read.
 
 ## 0.2.1 – HP 5384A and 5334A/B counters, hardware status per device
 

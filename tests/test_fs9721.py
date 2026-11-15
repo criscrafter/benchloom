@@ -6,7 +6,7 @@ import pytest
 
 from benchloom.engine import open_device
 from benchloom.plugin import CommandError, PluginRegistry
-from benchloom.plugins.fs9721.meter import decode, encode, is_packet
+from benchloom.plugins.fs9721.meter import decode, encode, inconsistency, is_packet
 from benchloom.project import DeviceConfig
 from benchloom.transports import SerialTransport
 
@@ -104,8 +104,41 @@ def test_driver_reads_and_checks_the_dial():
 def test_driver_finds_packets_in_a_stream_that_starts_mid_packet():
     meter, sim = open_sim()
     sim.read_raw = None  # use the stream below instead of the simulator's packets
-    packet = encode("1.234", {"DC", "V"})
+    packet = encode("1.234", {"DC", "V", "RS232"})
     stream = bytearray(packet[5:] + b"\x00\x13" + packet)
+
+    def read_some(size):
+        data = bytes(stream[:size])
+        del stream[:size]
+        return data
+
+    sim.read_some, sim.clear_input = read_some, lambda: None
+    assert meter.call("read") == pytest.approx(1.234)
+
+
+@pytest.mark.parametrize("flags, problem", [
+    ({"DC", "V"}, "no RS232 symbol"),
+    ({"RS232", "AC", "DC", "V"}, "both AC and DC"),
+    ({"RS232", "k", "M", "Ω"}, "more than one prefix"),
+    ({"RS232", "DC", "V", "A"}, "more than one unit"),
+])
+def test_inconsistent_packets(flags, problem):
+    assert inconsistency(encode("1.234", flags)) == problem
+
+
+def test_real_packets_are_consistent():
+    for packet in ("17 28 35 47 5e 63 7f 8f 9e a0 b8 c0 d4 e8",
+                   "11 20 35 43 5f 65 7b 89 9f a0 b1 c4 d0 e8",  # continuity: beep + Ω
+                   "11 20 30 4f 5d 66 78 80 90 a1 b0 c0 d4 e8",  # diode: diode + V
+                   "13 2f 3d 47 5d 62 77 8b 9e a0 b0 c0 d0 e4"):  # °C
+        assert inconsistency(bytes.fromhex(packet.replace(" ", ""))) is None
+
+
+def test_driver_skips_an_inconsistent_packet():
+    meter, sim = open_sim()
+    sim.read_raw = None
+    stream = bytearray(encode("8.888", {"RS232", "DC", "V", "A"})
+                       + encode("1.234", {"RS232", "DC", "V"}))
 
     def read_some(size):
         data = bytes(stream[:size])

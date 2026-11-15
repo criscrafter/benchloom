@@ -178,8 +178,11 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
   add `?timeout=5` to the resource if readings time out.
 - **Source:** HP 3478A quick reference card and technical manual
   (TM 11-6625-3071-14).
-- **Uncertain:** the range field of `get_status` is shown as the meter's raw
-  range number.
+- **`get_status`** names a fixed range as a value, e.g. `range 30 V`. The meter's
+  range field counts from 1 at each function's smallest range (DC volts 30 mV,
+  AC volts and current 300 mV / 300 mA, ohms 30 Ω).
+- **Uncertain:** that range numbering is not in the quick reference card; it is
+  taken from pymeasure's 3478A driver and not yet confirmed on the meter.
 
 ## Keysight 3458A multimeter (`hp.3458a`)
 
@@ -730,7 +733,10 @@ USB instrument (USBTMC). Benchloom can talk to it without a vendor VISA.
       `measure_temperature`: like `read()` with a unit, but fail when the dial
       is set to something else.
 - **Garbled data:** if bytes arrive but none forms a valid packet, reading
-  fails with "garbled" instead of returning a wrong number.
+  fails with "garbled" instead of returning a wrong number. A packet also counts
+  as garbled when it cannot be a real display: no RS232 symbol, AC and DC
+  together, or more than one prefix or unit (the same checks as sigrok's). Such
+  a packet is skipped and the next one is read.
 - **Cable fix for USB serial adapters:** the cable's phototransistor drives the
   line up quickly, but only the adapter's input (a few kΩ) pulls it back down,
   so the line falls too slowly: every 1 bit right after a 0 arrives as 0. A

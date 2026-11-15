@@ -298,6 +298,22 @@ def test_3478a_status_and_display():
     assert dmm.get_errors() == ""
 
 
+@pytest.mark.parametrize("function, value, text", [
+    ("dc_volts", 0.02, "range 30 mV"),
+    ("dc_volts", 20, "range 30 V"),
+    ("ac_volts", 2, "range 3 V"),
+    ("ohms_2wire", 2000, "range 3 kΩ"),
+    ("ohms_4wire", 2e7, "range 30 MΩ"),
+    ("dc_amps", 0.2, "range 300 mA"),
+    ("ac_amps", 2, "range 3 A"),
+])
+def test_3478a_status_names_the_fixed_range(function, value, text):
+    dmm, sim = open_sim("hp.3478a")
+    dmm.set_function(function)
+    dmm.set_range(value)
+    assert dmm.get_status().split(", ")[2] == text
+
+
 # --- Chroma 6404 -----------------------------------------------------------------------
 def test_6404_output_and_measurements():
     ac, sim = open_sim("chroma.6404")
