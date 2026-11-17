@@ -36,6 +36,7 @@ leave_output_on = false
 x = "set_V"           # the column for the X axis
 log_x = false         # a log scale for X, for frequency sweeps
 right = ["I"]         # columns on the right-hand scale
+align_zero = false    # 0 at the same height on the left and right scale
 hide = ["time_s"]     # columns not drawn
 columns = ["set_V", "V", "I"]  # the order of the logged columns
 ```
@@ -104,9 +105,14 @@ are common:
 The plot draws every logged column live, against the column chosen as X axis
 (time by default). **Right axis** puts columns of very different size on a
 second scale, such as 230 V and 10 W; **Columns** hides curves; **Log X** puts
-the X axis on a log scale. The `[plot]` section sets how the plot starts out
+the X axis on a log scale. **Align 0** puts 0 of the left and the right scale at
+the same height, so a current that crosses zero does so where the voltage
+does. Zooming or panning in the plot moves both scales together; the wheel or
+a right-button drag on one axis scales only that scale, around 0. The A button
+in the corner fits both again. The `[plot]` section sets how the plot starts out
 when the project is opened; changes made in the plot are remembered per
-project on this computer. The report's chart follows the `[plot]` section.
+project on this computer. The report's chart follows the `[plot]` section
+(except `align_zero`, which only the app uses).
 
 `columns` sets the order of the logged columns in `data.csv`, the plot, the
 **Data** tab and the report: the ones listed first, in that order, then any

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Report:** the page has a white background of its own, so it stays readable
+  in a browser set to dark mode.
+- **Align 0 in the plot:** with columns on the right axis, **Align 0** puts 0
+  of the left and the right scale at the same height. Zooming or panning in
+  the plot moves both scales together; the wheel or a right-button drag on one
+  axis scales only that scale, around 0. It is remembered per project, and
+  `align_zero = true` under `[plot]` turns it on from the start.
 - **Linux download:** `Benchloom-<version>-linux-x86_64.tar.gz` on the releases
   page, built on Ubuntu 22.04 and self-tested like the Windows download. Unpack
   it and start `Benchloom/Benchloom`; no installation and no root rights.

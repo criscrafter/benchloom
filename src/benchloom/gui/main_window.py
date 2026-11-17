@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         self.plot = PlotPanel()
         self.plot.right_columns_changed.connect(self._right_columns_changed)
         self.plot.log_x_changed.connect(self._log_x_changed)
+        self.plot.align_zero_changed.connect(self._align_zero_changed)
         self.plot.hidden_columns_changed.connect(self._hidden_columns_changed)
         self.panel_view = PanelView()
         self.waveforms = WaveformPanel()
@@ -543,6 +544,10 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             self.settings.setValue(self._plot_key("plot_log_x"), on)
 
+    def _align_zero_changed(self, on: bool) -> None:
+        if self.project is not None:
+            self.settings.setValue(self._plot_key("plot_align_zero"), on)
+
     def _hidden_columns_changed(self, columns: list) -> None:
         if self.project is not None:
             self.settings.setValue(self._plot_key("plot_hidden"), columns)
@@ -553,6 +558,7 @@ class MainWindow(QMainWindow):
         right = prefs.get("right", [])
         hide = prefs.get("hide", [])
         log_x = bool(prefs.get("log_x", False))
+        align_zero = bool(prefs.get("align_zero", False))
         if project is not None:
             if self.settings.contains(self._plot_key()):
                 right = self.settings.value(self._plot_key(), [])
@@ -560,10 +566,14 @@ class MainWindow(QMainWindow):
                 hide = self.settings.value(self._plot_key("plot_hidden"), [])
             if self.settings.contains(self._plot_key("plot_log_x")):
                 log_x = str(self.settings.value(self._plot_key("plot_log_x"))).lower() == "true"
+            if self.settings.contains(self._plot_key("plot_align_zero")):
+                align_zero = str(self.settings.value(
+                    self._plot_key("plot_align_zero"))).lower() == "true"
         self.plot.preferred_x = prefs.get("x") if isinstance(prefs.get("x"), str) else None
         self.plot.hidden = {str(c) for c in ([hide] if isinstance(hide, str) else hide or [])}
         self.plot.set_right_columns([right] if isinstance(right, str) else list(right or []))
         self.plot.set_log_x(log_x)
+        self.plot.set_align_zero(align_zero)
 
     # --- project handling -------------------------------------------------
     def _recent_entries(self) -> list[str]:
@@ -735,7 +745,7 @@ class MainWindow(QMainWindow):
         recent = [new_path if p == old else p for p in self._recent_entries()]
         self.settings.setValue("recent", recent[:MAX_RECENT])
         self.settings.setValue("pinned", [new_path if p == old else p for p in self._pinned()])
-        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden"):
+        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden", "plot_align_zero"):
             old_key, new_key = _plot_key(kind, old), _plot_key(kind, new_path)
             if self.settings.contains(old_key):
                 self.settings.setValue(new_key, self.settings.value(old_key))
@@ -750,7 +760,7 @@ class MainWindow(QMainWindow):
     def _forget_project(self, path: str) -> None:
         self.settings.setValue("recent", [p for p in self._recent_entries() if p != path])
         self.settings.setValue("pinned", [p for p in self._pinned() if p != path])
-        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden"):
+        for kind in ("plot_right_axis", "plot_log_x", "plot_hidden", "plot_align_zero"):
             self.settings.remove(_plot_key(kind, path))
         config = AppConfig.load()
         if config.trusts(path):

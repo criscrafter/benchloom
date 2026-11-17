@@ -23,6 +23,7 @@ MAX_TABLE_ROWS = 500
 
 STYLE = """
 body { font-family: Segoe UI, Helvetica, Arial, sans-serif; color: #111827; margin: 24px auto;
+       background: #ffffff;
        max-width: 960px; padding: 0 16px; line-height: 1.4; }
 h1 { font-size: 22px; margin-bottom: 4px; }
 h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }

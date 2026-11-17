@@ -6,15 +6,18 @@ Columns are drawn against the column chosen as X axis, on the left value scale
 or, when ticked under "Right axis", on a second scale on the right. That keeps
 columns of very different size readable together, such as 230 V and 10 W.
 "Columns" hides curves, and "Log X" puts the X axis on a log scale, for
-frequency sweeps. Another run can be drawn next to the current one, dashed, for
-comparison (see :meth:`PlotPanel.set_reference`).
+frequency sweeps. "Align 0" puts 0 of both scales at the same height, so a
+reading on the left and one on the right cross zero at the same place.
+Another run can be drawn next to the current one, dashed, for comparison
+(see :meth:`PlotPanel.set_reference`).
 """
 
 from __future__ import annotations
 
+import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QTransform
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget,
 )
@@ -27,6 +30,61 @@ COLORS = ["#3b82f6", "#f97316", "#10b981", "#e11d48", "#8b5cf6", "#eab308", "#06
 
 def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def aligned_ranges(left: list[float], right: list[float],
+                   pad: float = 0.02) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Y ranges for the left and right scale that hold their values and 0, with 0
+    at the same height on both."""
+    spans = []
+    for ys in (left, right):
+        lo, hi = min(min(ys), 0.0), max(max(ys), 0.0)
+        if hi == lo:
+            hi = 1.0  # only zeros
+        spans.append((lo, hi))
+    below = [-lo / (hi - lo) for lo, hi in spans]  # share of each scale below 0
+    if all(f == 1.0 for f in below):
+        share = 1.0
+    elif all(f == 0.0 for f in below):
+        share = 0.0
+    else:
+        share = max(f for f in below if f < 1.0)
+        if share == 0.0:  # one scale only below 0, the other only above
+            share = 0.5
+    out = []
+    for lo, hi in spans:
+        size = max(-lo / share if share > 0 else 0.0, hi / (1 - share) if share < 1 else 0.0)
+        out.append((-(share + pad) * size, (1 - share + pad) * size))
+    return out[0], out[1]
+
+
+class ZeroAxis(pg.AxisItem):
+    """A value axis that, while 0 is aligned, scales its own scale around 0 on the
+    wheel or a right-button drag, instead of the view shared by both scales."""
+
+    def __init__(self, orientation: str):
+        super().__init__(orientation)
+        self.scale_around_zero = None  # set by the plot: (orientation, factor) -> handled
+
+    def _scaled(self, factor: float) -> bool:
+        return bool(self.scale_around_zero and self.scale_around_zero(self.orientation, factor))
+
+    def wheelEvent(self, event):
+        lv = self.linkedView()
+        if lv is not None and not lv.sceneBoundingRect().contains(event.scenePos()) \
+                and self._scaled(1.02 ** (event.delta() * lv.state["wheelScaleFactor"])):
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    def mouseDragEvent(self, event):
+        lv = self.linkedView()
+        if lv is not None and event.button() == Qt.MouseButton.RightButton \
+                and not lv.sceneBoundingRect().contains(event.buttonDownScenePos()):
+            if self._scaled(1.02 ** (event.screenPos().y() - event.lastScreenPos().y())):
+                event.accept()
+                return
+        super().mouseDragEvent(event)
 
 
 def style_plot(plot: pg.PlotWidget, palette, axes=("left", "bottom")) -> None:
@@ -42,6 +100,7 @@ def style_plot(plot: pg.PlotWidget, palette, axes=("left", "bottom")) -> None:
 class PlotPanel(QWidget):
     right_columns_changed = Signal(list)  # the columns on the right scale
     log_x_changed = Signal(bool)
+    align_zero_changed = Signal(bool)
     hidden_columns_changed = Signal(list)
 
     def __init__(self, parent=None):
@@ -55,6 +114,7 @@ class PlotPanel(QWidget):
         self.reference: list[dict] = []  # rows of another run, drawn dashed
         self.reference_label = ""
         self._ref_curves: dict[str, tuple[pg.PlotDataItem, str]] = {}
+        self._zero_ratio = 1.0  # right scale / left scale while 0 is aligned
 
         self.x_axis = QComboBox()
         self.x_axis.setMinimumWidth(120)
@@ -72,6 +132,9 @@ class PlotPanel(QWidget):
         self.log_x = QCheckBox("Log X")
         self.log_x.setToolTip("Show the X axis on a log scale")
         self.log_x.toggled.connect(self._log_x_toggled)
+        self.align_zero = QCheckBox("Align 0")
+        self.align_zero.setToolTip("Put 0 of the left and the right scale at the same height")
+        self.align_zero.toggled.connect(self._align_zero_toggled)
         top = QHBoxLayout()
         top.addWidget(QLabel("X axis"))
         top.addWidget(self.x_axis)
@@ -81,9 +144,11 @@ class PlotPanel(QWidget):
         top.addWidget(self.columns_button)
         top.addSpacing(12)
         top.addWidget(self.log_x)
+        top.addSpacing(12)
+        top.addWidget(self.align_zero)
         top.addStretch()
 
-        self.plot = pg.PlotWidget()
+        self.plot = pg.PlotWidget(axisItems={side: ZeroAxis(side) for side in ("left", "right")})
         self.plot.showGrid(x=True, y=True, alpha=0.2)
         item = self.plot.getPlotItem()
         self.right_view = pg.ViewBox()
@@ -92,6 +157,9 @@ class PlotPanel(QWidget):
         item.getAxis("right").linkToView(self.right_view)
         self.right_view.setXLink(item)
         item.vb.sigResized.connect(self._sync_views)
+        for side in ("left", "right"):
+            item.getAxis(side).scale_around_zero = self._scale_around_zero
+        item.autoBtn.clicked.connect(lambda *_: self._fit_zero())  # after the plot's own
         self.legend = self.plot.addLegend(offset=(10, 10))
         self._apply_palette()
 
@@ -140,6 +208,85 @@ class PlotPanel(QWidget):
             curve.setLogMode(on, False)
         self.plot.getPlotItem().vb.enableAutoRange()
         self.right_view.enableAutoRange()
+
+    # --- 0 aligned on both scales ----------------------------------------
+    def set_align_zero(self, on: bool) -> None:
+        self.align_zero.blockSignals(True)
+        self.align_zero.setChecked(on)
+        self.align_zero.blockSignals(False)
+        self._apply_align_zero()
+
+    def _align_zero_toggled(self, on: bool) -> None:
+        self._apply_align_zero()
+        self.align_zero_changed.emit(on)
+
+    def _apply_align_zero(self) -> None:
+        """With 0 aligned, the right curves are drawn in the left view, squeezed by
+        the ratio of the scales, and the right axis labels that view times the
+        ratio. One view means zoom and pan can never pull the scales apart.
+        The curves are taken out here and added again by _redraw where they belong."""
+        for key in list(self._curves):
+            self._remove_curve(key)
+        for key in list(self._ref_curves):
+            self._remove_ref_curve(key)
+        on = self.align_zero.isChecked()
+        item = self.plot.getPlotItem()
+        self.right_view.setVisible(not on)  # else it would take the mouse
+        self._sync_views()
+        item.getAxis("right").linkToView(item.vb if on else self.right_view)
+        self._set_zero_ratio(1.0)
+        self._redraw()
+        item.vb.enableAutoRange()
+        self.right_view.enableAutoRange()
+        self._fit_zero()
+
+    def _side_values(self, side: str) -> list[float]:
+        curves = [c for k, c in self._curves.items() if self._curve_side[k] == side]
+        curves += [c for c, s in self._ref_curves.values() if s == side]
+        values = []  # the lowest and highest of each curve are enough
+        for curve in curves:
+            _, ys = curve.getData()
+            if ys is not None and len(ys) and not np.isnan(ys).all():
+                values += [float(np.nanmin(ys)), float(np.nanmax(ys))]
+        return values
+
+    def _fit_zero(self) -> None:
+        """Choose the ratio of the scales so that both sides fill the plot. Only
+        while the plot fits itself to the data: never under a zoom set by hand."""
+        main = self.plot.getPlotItem().vb
+        if not self.align_zero.isChecked() or not main.state["autoRange"][1]:
+            return
+        left, right = self._side_values("left"), self._side_values("right")
+        if left and right:
+            (l_lo, l_hi), (r_lo, r_hi) = aligned_ranges(left, right)
+            self._set_zero_ratio((r_hi - r_lo) / (l_hi - l_lo))
+            main.updateAutoRange()
+
+    def _scale_around_zero(self, side: str, factor: float) -> bool:
+        """Scale one scale by this factor around 0, leaving the other as it is.
+        Only while 0 is aligned; otherwise the axis zooms as usual."""
+        if not self.align_zero.isChecked():
+            return False
+        main = self.plot.getPlotItem().vb
+        main.enableAutoRange(y=False)  # a scale set by hand stays until the A button
+        if side == "right":
+            self._set_zero_ratio(self._zero_ratio * factor)
+        else:  # the view grows, the right scale shrinks by as much: it stays put
+            self._set_zero_ratio(self._zero_ratio / factor)
+            main.scaleBy(y=factor, center=QPointF(0, 0))
+        return True
+
+    def _set_zero_ratio(self, ratio: float) -> None:
+        on = self.align_zero.isChecked()
+        self._zero_ratio = ratio if on else 1.0
+        squeeze = QTransform.fromScale(1.0, 1.0 / self._zero_ratio)
+        for key, curve in self._curves.items():
+            if self._curve_side[key] == "right":
+                curve.setTransform(squeeze)
+        for curve, side in self._ref_curves.values():
+            if side == "right":
+                curve.setTransform(squeeze)
+        self.plot.getPlotItem().getAxis("right").setScale(self._zero_ratio)
 
     # --- right axis -------------------------------------------------------
     def set_right_columns(self, columns) -> None:
@@ -200,6 +347,8 @@ class PlotPanel(QWidget):
         item.getAxis("right").setStyle(showValues=bool(right))
         item.getAxis("right").setLabel(", ".join(right) if right else None)
         item.getAxis("left").setLabel(", ".join(left) if right and left else None)
+        self.align_zero.setEnabled(bool(right and left) or self.align_zero.isChecked())
+        self._fit_zero()
 
     # --- data -------------------------------------------------------------
     def clear(self) -> None:
@@ -246,7 +395,7 @@ class PlotPanel(QWidget):
     def _remove_ref_curve(self, key: str) -> None:
         curve, side = self._ref_curves.pop(key)
         self.legend.removeItem(curve)
-        self._view(side).removeItem(curve)
+        curve.getViewBox().removeItem(curve)
 
     def add_row(self, row: dict) -> None:
         self.rows.append(row)
@@ -274,18 +423,26 @@ class PlotPanel(QWidget):
             curve = pg.PlotDataItem(name=label,
                                     pen=pg.mkPen(color, width=1.5, style=Qt.PenStyle.DashLine))
             curve.setLogMode(self.log_x.isChecked(), False)
+            self._squeeze(curve, side)
             self._view(side).addItem(curve)
             self.legend.addItem(curve, label)
             self._ref_curves[key] = (curve, side)
         self._ref_curves[key][0].setData([p[0] for p in points], [p[1] for p in points])
 
     def _view(self, side: str) -> pg.ViewBox:
-        return self.right_view if side == "right" else self.plot.getPlotItem().vb
+        if side == "right" and not self.align_zero.isChecked():
+            return self.right_view
+        return self.plot.getPlotItem().vb
+
+    def _squeeze(self, curve: pg.PlotDataItem, side: str) -> None:
+        if side == "right" and self.align_zero.isChecked():
+            curve.setTransform(QTransform.fromScale(1.0, 1.0 / self._zero_ratio))
 
     def _remove_curve(self, key: str) -> None:
         curve = self._curves.pop(key)
         self.legend.removeItem(curve)
-        self._view(self._curve_side.pop(key)).removeItem(curve)
+        self._curve_side.pop(key)
+        curve.getViewBox().removeItem(curve)
 
     def _redraw(self) -> None:
         x_key = self.x_axis.currentText()
@@ -316,6 +473,7 @@ class PlotPanel(QWidget):
                     symbol="o", symbolSize=5, symbolBrush=color, symbolPen=color,
                 )
                 curve.setLogMode(self.log_x.isChecked(), False)
+                self._squeeze(curve, side)
                 self._view(side).addItem(curve)  # not PlotItem.addItem: legend is ours
                 self.legend.addItem(curve, f"{key} (right)" if side == "right" else key)
                 self._curves[key], self._curve_side[key] = curve, side

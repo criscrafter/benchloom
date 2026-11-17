@@ -69,8 +69,9 @@ class Project:
     mode: str
     script: str
     devices: dict[str, DeviceConfig]
-    # How the plot shows the logged rows: x (column), log_x (bool), right, hide and
-    # columns (lists of columns; columns also orders data.csv, the table and the report).
+    # How the plot shows the logged rows: x (column), log_x and align_zero (bool), right,
+    # hide and columns (lists of columns; columns also orders data.csv, the table and the
+    # report).
     plot: dict[str, Any] = field(default_factory=dict)
     saved_with: str = ""  # the Benchloom version that saved the project last; "" if unknown
 
