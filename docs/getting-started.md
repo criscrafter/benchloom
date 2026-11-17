@@ -162,6 +162,26 @@ right describes the type picked: its connections, settings and description.
 Pick one, give it a name (the name the test uses, such as `psu`) and
 a resource: where the instrument is connected, such as `serial://COM3` or
 `prologix://COM4/5`. **Test connection** asks the instrument who it is.
+
+**Find…** next to it looks for connected instruments. It first only lists the
+ports and recognizes USB devices by their ids, sending nothing. Tick the ports
+with instruments on them and press **Ask ticked ports** to find out what is
+there; every line sent is shown. Pick a device type under something found and
+press **Add device…**: the Add device dialog opens with the type and resource
+filled in. What asking a port can do to an instrument is in
+[Safety](safety.md#finding-devices).
+
+To switch a device from the simulator to the real instrument, open it with
+**Edit** and press **Find…** in the device dialog. It looks for that device type
+only: USB devices are recognized at once, and **Search ticked ports** asks the
+serial ports with nothing but that type's own query, which the dialog lists.
+The ports start ticked; untick any with something on it that must not be
+disturbed. Ports other devices of the project use are left alone, except a
+GPIB adapter: other instruments can share its bus, so it is still searched,
+skipping the addresses the project's instruments have. If more than
+one is found, all are listed: pick one and press **Use this one**, then
+**Test connection**. The button is off for device types whose plugin does not
+say how to recognize them.
 [Projects](projects.md#resources) lists every kind of resource, and
 [Instruments](INSTRUMENTS.md) the settings each instrument needs.
 

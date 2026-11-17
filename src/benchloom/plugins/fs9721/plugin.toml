@@ -20,3 +20,7 @@ default_name = "dmm"
 category = "dmm"
 manufacturer = "Digitek"
 default_resource = "serial://COM1?baud=2400"
+
+# "Find devices": listen only (nothing is sent), the cable powered as the driver does
+[device.discovery]
+listen = { baud = 2400, dtr = true, rts = false, recognize = "meter:recognize" }

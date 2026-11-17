@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Find devices:** **Find…** in the Devices panel (and `benchloom discover`)
+  lists the serial ports and USB instruments and recognizes the Hantek scope by
+  its USB id, sending nothing. Ticked ports are then asked what is on them: it
+  listens for FS9721 meters, finds AR488 GPIB adapters and the instruments on
+  their bus (old HP instruments by the readings they send unasked, others by
+  `*IDN?`), asks Feeltech generators their model and reads the input state of a
+  Kunkin KP184 at Modbus address 1. A device found opens the
+  Add device dialog with its type and resource filled in. Bluetooth ports and
+  ports the project uses are left alone (on a GPIB adapter the project uses,
+  only its instruments' addresses), and networks are never scanned. Plugins
+  declare what their devices are recognized by in a `[device.discovery]` table.
+  **Find…** in the device dialog looks for just the device type being edited,
+  lists every one it finds and takes the connection of the one picked: the
+  quick way from the simulator to the real instrument.
 - **Linux download:** `Benchloom-<version>-linux-x86_64.tar.gz` on the releases
   page, built on Ubuntu 22.04 and self-tested like the Windows download. Unpack
   it and start `Benchloom/Benchloom`; no installation and no root rights.

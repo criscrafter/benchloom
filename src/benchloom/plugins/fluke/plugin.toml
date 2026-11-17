@@ -21,6 +21,9 @@ transports = ["prologix", "usbtmc", "visa", "sim"]
 default_name = "dmm"
 category = "dmm"
 
+[device.discovery]
+idn = '8508'  # the driver's own *IDN? check
+
 [[device.setting]]
 name = "check_errors"
 label = "Check for errors after each setting"

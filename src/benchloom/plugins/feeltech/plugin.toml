@@ -23,6 +23,10 @@ default_name = "gen"
 category = "generator"
 default_resource = "serial://COM1?baud=115200"
 
+# "Find devices": the model query the driver starts with, at the fixed 115200 8N2
+[device.discovery]
+serial = { baud = 115200, stopbits = 2, query = "UMO", reply = '^FY(6900|6800)' }
+
 [[device.setting]]
 name = "leave_output_on"
 label = "Leave the outputs on after a test"

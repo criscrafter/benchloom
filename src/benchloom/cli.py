@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Friedrich-Christer Rosenthal
-"""Command line: ``benchloom gui | new | run | devices | describe | plugins | usbgpib``,
+"""Command line: ``benchloom gui | new | run | devices | discover | describe | plugins |
+usbgpib``,
 and for Linux ``desktop-entry | udev-rules``."""
 
 from __future__ import annotations
@@ -179,6 +180,61 @@ def _describe(args) -> int:
     return 0
 
 
+def _discover(args) -> int:
+    from .discovery import ask, look
+    from .project import Project
+    from .transports import TransportError
+
+    project_dir = Path(args.project) if args.project else None
+    registry = PluginRegistry.default(project_dir)
+    resources = {}
+    if project_dir is not None:
+        resources = {d.name: d.resource for d in Project.load(project_dir).devices.values()}
+    result = look(registry, resources)
+    for note in result.notes:
+        print(f"note: {note}")
+    print("Ports (nothing sent):")
+    for port in result.ports:
+        text = f"  {port.name}  {port.description}"
+        text += f"  [{port.usb_id}]" if port.usb_id else ""
+        print(text + (f"  (not asked: {port.why_not})" if port.why_not
+                      else f"  ({port.note})" if port.note else ""))
+    if not result.ports:
+        print("  none")
+    found = list(result.found)
+    if args.ask_all:
+        wanted = {p.name for p in result.ports if not p.why_not and p.kind == "serial"}
+    else:
+        wanted = set(args.ask or ())
+    log = (lambda line: print(f"  {line}")) if args.verbose else (lambda _: None)
+    by_name = {p.name: p for p in result.ports}
+    for name in sorted(wanted):
+        port = by_name.get(name)
+        if port is None:
+            print(f"error: no port {name}", file=sys.stderr)
+            return 2
+        if port.why_not:
+            print(f"{name}: not asked: {port.why_not}")
+            continue
+        print(f"Asking {name}...")
+        try:
+            found += ask(port, registry, ask_idn=not args.no_idn, log=log)
+        except TransportError as exc:
+            print(f"  {exc}")
+    print("Found:" if found else "Nothing recognized.")
+    for item in found:
+        reply = f" {item.reply!r}" if item.reply else ""
+        print(f"  {item.where}: {item.how}{reply}")
+        print(f"    resource = \"{item.resource}\"")
+        for match in item.matches:
+            print(f"    device = \"{match.device_id}\"  # {match.name}: {match.reason}")
+    if not wanted and any(not p.why_not for p in result.ports):
+        print("\nTo ask a port what is connected, run e.g.: benchloom discover --ask "
+              f"{next(p.name for p in result.ports if not p.why_not)}  (sends to it; see "
+              "benchloom discover --help)")
+    return 0
+
+
 def _usbgpib(args) -> int:
     from .transports import TransportError, find_usbtmc, open_transport
 
@@ -264,6 +320,28 @@ def main(argv: list[str] | None = None) -> int:
     devices = sub.add_parser("devices", help="list the device types plugins provide")
     devices.add_argument("--project", help="also include this project's plugins folder")
     devices.set_defaults(func=_devices)
+
+    discover = sub.add_parser(
+        "discover", help="find connected instruments",
+        description="Without options: list serial ports and USB instruments and recognize "
+                    "USB devices by their ids; nothing is sent. --ask PORT talks to a "
+                    "port: it listens, asks for a GPIB adapter (++ver) and, on an AR488, "
+                    "for the instruments on its bus (listening first, then *IDN?), then "
+                    "sends the queries plugins declare (e.g. UMO for a Feeltech). Old "
+                    "instruments may show an error after an unknown command; see the "
+                    "documentation. Networks are never scanned.")
+    discover.add_argument("--ask", nargs="+", metavar="PORT",
+                          help="ports to ask, e.g. COM17 or 03EB:2065/<serial>")
+    discover.add_argument("--ask-all", action="store_true",
+                          help="ask every serial port, except Bluetooth ones and ports the "
+                               "project uses")
+    discover.add_argument("--no-idn", action="store_true",
+                          help="do not send *IDN? to GPIB instruments that stay silent")
+    discover.add_argument("--project", help="mark the ports this project uses, and include "
+                                            "its plugins if they were allowed to load")
+    discover.add_argument("-v", "--verbose", action="store_true",
+                          help="show every line sent")
+    discover.set_defaults(func=_discover)
 
     describe = sub.add_parser("describe", help="show the commands of a device type")
     describe.add_argument("device", help="device type, e.g. demo.psu")

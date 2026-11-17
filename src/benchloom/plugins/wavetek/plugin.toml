@@ -21,6 +21,9 @@ transports = ["prologix", "usbtmc", "visa", "sim"]
 default_name = "dmm"
 category = "dmm"
 
+[device.discovery]
+idn = '^[^,]*,\s*(1281|1271)\s*(,|$)'  # the driver's *IDN? check (model field)
+
 [[device.setting]]
 name = "check_errors"
 label = "Check for errors after each setting"
@@ -44,6 +47,9 @@ simulator = "wavetek4950:Wavetek4950Sim"
 transports = ["prologix", "usbtmc", "visa", "sim"]
 default_name = "mts"
 category = "transfer_standard"
+
+[device.discovery]
+idn = '^[^,]*,\s*4950\s*(,|$)'  # the driver's *IDN? check (model field)
 
 [[device.setting]]
 name = "accuracy"
