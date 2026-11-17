@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 – Find devices, Align 0 in the plot, Linux download
+
+### New
 
 - **Find devices:** **Find…** in the Devices panel (and `benchloom discover`)
   lists the serial ports and USB instruments and recognizes the Hantek scope by
@@ -13,16 +15,15 @@
   ports the project uses are left alone (on a GPIB adapter the project uses,
   only its instruments' addresses), and networks are never scanned. Plugins
   declare what their devices are recognized by in a `[device.discovery]` table.
-  **Find…** in the device dialog looks for just the device type being edited,
-  lists every one it finds and takes the connection of the one picked: the
-  quick way from the simulator to the real instrument.
+- **Find in the device dialog:** **Find…** next to **Test connection** looks
+  for just the device type being edited, lists every one it finds and takes the
+  connection of the one picked: the quick way from the simulator to the real
+  instrument.
 - **Align 0 in the plot:** with columns on the right axis, **Align 0** puts 0
   of the left and the right scale at the same height. Zooming or panning in
   the plot moves both scales together; the wheel or a right-button drag on one
   axis scales only that scale, around 0. It is remembered per project, and
   `align_zero = true` under `[plot]` turns it on from the start.
-- **Report:** the page has a white background of its own, so it stays readable
-  in a browser set to dark mode.
 - **Linux download:** `Benchloom-<version>-linux-x86_64.tar.gz` on the releases
   page, built on Ubuntu 22.04 and self-tested like the Windows download. Unpack
   it and start `Benchloom/Benchloom`; no installation and no root rights.
@@ -38,14 +39,19 @@
   udev rules instead of the WinUSB driver, and a serial port without permission
   names the group to join. The Add device dialog says what its system needs
   for USB and shows `/dev/ttyUSB0` as the example port.
-- **Waveform PNGs on Linux** are drawn without a screen, so test PCs without a
-  desktop (SSH, CI) get them too.
+- **Waveform PNGs on Linux:** they are drawn without a screen, so test PCs
+  without a desktop (SSH, CI) get them too.
 - **Building:** `packaging/build.py` (was `build_windows.py`) builds the
   download for the system it runs on.
-- **HP 3478A:** `get_status` names a fixed range as a value (`range 30 V`)
+
+### Bug fixes
+
+- **Report in dark mode:** the page has a white background of its own, so it
+  stays readable in a browser set to dark mode.
+- **HP 3478A range in the status:** `get_status` names a fixed range as a value (`range 30 V`)
   instead of the meter's raw range number, and the simulator numbers the ranges
   as the meter does for every function.
-- **DT-4000ZC (FS9721):** a packet that cannot be a real display (no RS232
+- **Garbled DT-4000ZC (FS9721) readings:** a packet that cannot be a real display (no RS232
   symbol, AC and DC together, more than one prefix or unit) is skipped as
   garbled instead of being read.
 
