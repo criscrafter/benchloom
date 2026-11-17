@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
+from ..discovery import findable
 from ..engine import open_device
 from ..plugin import (
     DEVICE_KINDS, SOURCES, CommandInfo, DeviceSpec, PluginError, PluginRegistry, SettingSpec,
@@ -379,13 +380,19 @@ class DeviceTypeInfo(QGroupBox):
 
 class DeviceDialog(QDialog):
     def __init__(self, registry: PluginRegistry, taken_names: set[str],
-                 config: DeviceConfig | None = None, parent=None):
+                 config: DeviceConfig | None = None, parent=None,
+                 preset: DeviceConfig | None = None,
+                 resources: dict[str, str] | None = None):
+        """``config`` is the entry to edit; ``preset`` the type and resource a new
+        device starts with (from "Find devices"); ``resources`` those of the project's
+        other devices, whose ports Find leaves alone."""
         super().__init__(parent)
         self.setWindowTitle("Edit device" if config else "Add device")
         self.setMinimumWidth(560)
         self.resize(900, 680)
         self.registry = registry
         self.taken_names = taken_names
+        self.other_resources = resources or {}
         self.settings = dict(config.settings) if config else {}
 
         self.type_picker = DeviceTypePicker(registry)
@@ -431,9 +438,12 @@ class DeviceDialog(QDialog):
 
         self.test_button = QPushButton("Test connection")
         self.test_button.clicked.connect(self._test)
+        self.find_button = QPushButton("Find…")
+        self.find_button.clicked.connect(self._find)
         self.test_result = QLabel()
         self.test_result.setWordWrap(True)
         test_row = QHBoxLayout()
+        test_row.addWidget(self.find_button)
         test_row.addWidget(self.test_button)
         test_row.addWidget(self.test_result, 1)
 
@@ -476,11 +486,11 @@ class DeviceDialog(QDialog):
             self.type_picker.set_current(config.device)
             self.name_edit.setText(config.name)
         else:
-            self.type_picker.set_current(self._first_type())
+            self.type_picker.set_current(preset.device if preset else self._first_type())
         self.type_picker.changed.connect(self._type_changed)
         self._type_changed()
-        if config:
-            self._load_resource(config.resource)
+        if config or preset:
+            self._load_resource((config or preset).resource)
 
     def _add_page(self, key: str, rows) -> None:
         page = QWidget()
@@ -530,6 +540,11 @@ class DeviceDialog(QDialog):
                 self.serial_baud.setEditText(str(baud))
         self._show_page()
         self._build_settings(spec)
+        can_find = bool(spec and findable(spec))
+        self.find_button.setEnabled(can_find)
+        self.find_button.setToolTip(
+            "Look for this device on the USB and serial ports, and pick which one to use"
+            if can_find else "The plugin does not say how to recognize this device type")
         # follow the device type with the suggested name until the user types their own
         if spec and self.name_edit.text() in ("", getattr(self, "_suggested", "")):
             self._suggested = self._free_name(spec.default_name or spec.id.rsplit(".", 1)[-1])
@@ -653,6 +668,20 @@ class DeviceDialog(QDialog):
         return DeviceConfig(self.name_edit.text().strip(), self.device_type(),
                             self.resource(), self._settings())
 
+    def _find(self) -> None:
+        """Look for the chosen device type and take the connection of the one picked."""
+        from .discovery import FindConnectionDialog
+
+        spec = self.registry.devices.get(self.device_type())
+        if spec is None:
+            return
+        dialog = FindConnectionDialog(self.registry, spec, self.other_resources, parent=self)
+        resource = dialog.chosen() if dialog.exec() else None
+        dialog.deleteLater()
+        if resource:
+            self._load_resource(resource)
+            self.test_result.setText(f"Found: {resource}. Test the connection to be sure.")
+
     def _test(self) -> None:
         """Open the device once and, where it has one, read its identification."""
         self.test_result.setText("Connecting…")
@@ -703,13 +732,16 @@ class DevicesPanel(QWidget):
         self.tree.itemDoubleClicked.connect(self._double_clicked)
         self.tree.itemSelectionChanged.connect(self._update_buttons)
         self.add_button = QPushButton("Add…")
+        self.find_button = QPushButton("Find…")
+        self.find_button.setToolTip("Find connected instruments")
         self.edit_button = QPushButton("Edit…")
         self.remove_button = QPushButton("Remove")
-        self.add_button.clicked.connect(self.add_device)
+        self.add_button.clicked.connect(lambda: self.add_device())
+        self.find_button.clicked.connect(self.find_devices)
         self.edit_button.clicked.connect(self.edit_device)
         self.remove_button.clicked.connect(self.remove_device)
         buttons = QHBoxLayout()
-        for button in (self.add_button, self.edit_button, self.remove_button):
+        for button in (self.add_button, self.find_button, self.edit_button, self.remove_button):
             buttons.addWidget(button)
         hint = QLabel("Double-click a command to add it to the test.")
         hint.setWordWrap(True)
@@ -731,6 +763,7 @@ class DevicesPanel(QWidget):
         self.tree.clear()
         self.commands = {}
         self.add_button.setEnabled(self.project is not None)
+        self.find_button.setEnabled(self.project is not None)
         if self.project:
             for config in self.project.devices.values():
                 item = QTreeWidgetItem([f"{config.name}  ·  {config.resource}"])
@@ -781,8 +814,21 @@ class DevicesPanel(QWidget):
         self.refresh()
         self.changed.emit()
 
-    def add_device(self) -> None:
-        dialog = DeviceDialog(self.registry, set(self.project.devices), parent=self)
+    def find_devices(self) -> None:
+        from .discovery import DiscoveryDialog
+
+        resources = {c.name: c.resource for c in self.project.devices.values()}
+        dialog = DiscoveryDialog(self.registry, resources, parent=self)
+        accepted = dialog.exec()
+        preset = dialog.chosen() if accepted else None
+        dialog.deleteLater()
+        if preset is not None:
+            self.add_device(DeviceConfig("", *preset))
+
+    def add_device(self, preset: DeviceConfig | None = None) -> None:
+        resources = {c.name: c.resource for c in self.project.devices.values()}
+        dialog = DeviceDialog(self.registry, set(self.project.devices), parent=self,
+                              preset=preset, resources=resources)
         accepted = dialog.exec()
         config = dialog.config() if accepted else None
         dialog.deleteLater()  # a child of this panel otherwise, one more per use
@@ -795,7 +841,10 @@ class DevicesPanel(QWidget):
         if name is None:
             return
         others = set(self.project.devices) - {name}
-        dialog = DeviceDialog(self.registry, others, self.project.devices[name], parent=self)
+        resources = {c.name: c.resource for key, c in self.project.devices.items()
+                     if key != name}
+        dialog = DeviceDialog(self.registry, others, self.project.devices[name], parent=self,
+                              resources=resources)
         accepted = dialog.exec()
         config = dialog.config() if accepted else None
         dialog.deleteLater()

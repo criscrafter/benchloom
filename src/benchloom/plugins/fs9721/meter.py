@@ -105,6 +105,15 @@ def inconsistency(data: bytes) -> str | None:
     return None
 
 
+def recognize(data: bytes) -> bool:
+    """For "Find devices": whether bytes heard on a port hold a whole valid packet."""
+    for start in range(max(0, len(data) - PACKET_SIZE + 1)):
+        packet = data[start:start + PACKET_SIZE]
+        if is_packet(packet) and inconsistency(packet) is None:
+            return True
+    return False
+
+
 def decode(data: bytes) -> Reading:
     """Decode one 14-byte packet."""
     if not is_packet(data):

@@ -19,6 +19,13 @@ transports = ["serial", "tcp", "sim"]
 default_name = "eload"
 category = "load"
 
+# Find devices: read the input state (register 0x010E) of the load at address 1, at
+# the default 9600 baud 8N1, the read the driver's "is_input_on" sends. A read
+# changes nothing. Loads at other addresses or speeds, or firmware that wants the
+# CRC high byte first, are not found and are added by hand.
+[device.discovery]
+serial = { baud = 9600, query_hex = "01 03 01 0E 00 04 24 36", recognize = "driver:recognize" }
+
 [[device.setting]]
 name = "address"
 label = "Modbus address"

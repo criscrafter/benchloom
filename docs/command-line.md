@@ -39,12 +39,20 @@ and in later runs ([why](projects.md#plugins-in-a-project)).
 ```
 benchloom devices                    # the device types the plugins provide
 benchloom describe demo.psu          # the commands of one, with arguments and units
+benchloom discover                   # ports and USB instruments; sends nothing
+benchloom discover --ask COM17 -v    # ask a port what is on it, showing what is sent
 benchloom usbgpib                    # xyphro UsbGpib adapters connected
 benchloom usbgpib "!ver?"            # a command to the adapter itself
 ```
 
 With several adapters connected, `--serial <serial number>` picks the one a
 command goes to.
+
+`discover --ask-all` asks every serial port except Bluetooth ones, `--no-idn`
+leaves silent GPIB instruments unasked, and `--project <folder>` leaves the
+ports that project uses alone (on a GPIB adapter it uses, just the addresses of
+its instruments). See [Safety](safety.md#finding-devices) before
+asking ports you do not know.
 
 `--project <folder>` on `devices` and `describe` includes that project's own
 plugins. `devices` only reads their manifests. `describe` loads the driver's

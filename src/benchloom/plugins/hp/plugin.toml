@@ -43,6 +43,11 @@ transports = ["usbtmc", "prologix", "visa", "sim"]
 default_name = "dmm"
 category = "dmm"
 
+# "Find devices": a reading such as +2.98955E+0, sent unasked when addressed to talk
+# (seen on a 3478A on the bench; the driver reads the same format)
+[device.discovery]
+talk = '^[+-][0-9.]+E[+-][0-9]$'
+
 [[device.setting]]
 name = "digits"
 label = "Digits at the start"
@@ -164,6 +169,9 @@ default_name = "nvm"
 category = "dmm"
 manufacturer = "Keysight"
 
+[device.discovery]
+idn = '34420A'  # the driver's own *IDN? check
+
 [[device.setting]]
 name = "nplc"
 label = "Integration time at the start (power line cycles)"
@@ -190,6 +198,10 @@ transports = ["prologix", "visa", "sim"]
 default_name = "counter"
 category = "counter"
 
+# "Find devices": the reading the counter sends unasked (the driver's READING format)
+[device.discovery]
+talk = '^[A-Z]\s*[+-]?[0-9.]+E[+-]?\d+$'
+
 [[device.setting]]
 name = "gate_time"
 label = "Gate time at the start (s)"
@@ -209,6 +221,10 @@ simulator = "hp5334:HP5334Sim"
 transports = ["prologix", "visa", "sim"]
 default_name = "counter"
 category = "counter"
+
+# "Find devices": the reading the counter sends unasked (the driver's READING format)
+[device.discovery]
+talk = '^[A-Za-z]\s*[+-]?\d+(\.\d*)?E[+-]?\d+$'
 
 [[device.setting]]
 name = "gate_time"

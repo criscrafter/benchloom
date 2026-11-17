@@ -744,3 +744,99 @@ def test_device_dialog_describes_the_picked_type(app):
     assert info.tested_field.toPlainText() == "Not stated by the plugin"
     for field in (info.settings_field, info.description_field, info.resource_field):
         assert not info.form.isRowVisible(field)
+
+
+def test_device_dialog_starts_from_a_found_device(app):
+    registry = PluginRegistry.default()
+    dialog = DeviceDialog(registry, set(), preset=DeviceConfig("", "hp.3478a",
+                                                               "prologix://COM17/1"))
+    config = dialog.config()
+    assert (config.name, config.device, config.resource) == ("dmm", "hp.3478a",
+                                                             "prologix://COM17/1")
+    assert dialog.windowTitle() == "Add device"
+
+
+def test_find_devices_dialog_asks_only_ticked_ports(app, monkeypatch):
+    from benchloom import discovery
+    from benchloom.gui import discovery as gui_discovery
+
+    ports = [discovery.Port("serial", "COM17", "AR488"),
+             discovery.Port("serial", "COM5", "Bluetooth", bluetooth=True)]
+    usb = discovery.Found("usb://049F:505A", "USB 049F:505A", "USB id", matches=[
+        discovery.Match("hantek.dso5000p", "Hantek", "USB id")])
+    monkeypatch.setattr(gui_discovery, "look",
+                        lambda registry, resources: discovery.Look(ports, [usb]))
+    asked = []
+
+    def fake_ask(port, registry, log, ask_idn, only=None):
+        asked.append(port.name)
+        log(f"{port.name}: sent ++ver")
+        return [discovery.Found("prologix://COM17/1", "COM17, GPIB address 1",
+                                "sends readings unasked", "+2.98955E+0",
+                                [discovery.Match("hp.3478a", "HP 3478A", "format")])]
+
+    monkeypatch.setattr(gui_discovery, "ask", fake_ask)
+    dialog = gui_discovery.DiscoveryDialog(PluginRegistry.default())
+    assert not dialog.ask_button.isEnabled()  # nothing ticked, nothing asked
+    bluetooth = dialog.ports.topLevelItem(1)
+    assert not bluetooth.flags() & Qt.ItemFlag.ItemIsUserCheckable
+    dialog.ports.topLevelItem(0).setCheckState(0, Qt.CheckState.Checked)
+    dialog.ask()
+    deadline = time.monotonic() + 5
+    while dialog._thread is not None and time.monotonic() < deadline:
+        app.processEvents()
+    assert asked == ["COM17"]
+    assert "COM17: sent ++ver" in dialog.log.toPlainText()
+    found = dialog.results.topLevelItem(1)
+    dialog.results.setCurrentItem(found.child(0))
+    assert dialog.chosen() == ("hp.3478a", "prologix://COM17/1")
+
+
+def test_find_in_the_device_dialog_offers_every_one_found(app, monkeypatch):
+    """Switching a device from sim to real: Find searches for its type only, lists
+    all it finds, and the one picked becomes the connection."""
+    from benchloom import discovery
+    from benchloom.gui import discovery as gui_discovery
+
+    ports = [discovery.Port("serial", "COM8", "FTDI"), discovery.Port("serial", "COM9", "FTDI"),
+             discovery.Port("serial", "COM12", "CH340", in_project="gen"),
+             discovery.Port("usbtmc", "0957:0607", "USBTMC instrument")]
+    monkeypatch.setattr(gui_discovery, "look",
+                        lambda registry, resources: discovery.Look(ports, []))
+    asked = []
+
+    def fake_ask(port, registry, log, ask_idn, only=None):
+        asked.append((port.name, only))
+        return [discovery.Found(f"serial://{port.name}?baud=9600", port.name, "query", "01 03",
+                                [discovery.Match("kunkin.kp184", "KP184", "reply")])]
+
+    monkeypatch.setattr(gui_discovery, "ask", fake_ask)
+    registry = PluginRegistry.default()
+    dialog = DeviceDialog(registry, set(), DeviceConfig("eload", "kunkin.kp184", "sim://"))
+    assert dialog.find_button.isEnabled()
+    finder = gui_discovery.FindConnectionDialog(registry, registry.devices["kunkin.kp184"])
+    names = [finder.ports.topLevelItem(i).text(0) for i in range(finder.ports.topLevelItemCount())]
+    assert names == ["COM8", "COM9", "COM12"]  # not the USBTMC device: no use for a KP184
+    assert [p.name for p in finder.ticked()] == ["COM8", "COM9"]  # not the project's port
+    assert "01 03 01 0E 00 04 24 36 at 9600 baud" in finder.intro.text()
+    finder.search()
+    deadline = time.monotonic() + 5
+    while finder._thread is not None and time.monotonic() < deadline:
+        app.processEvents()
+    assert asked == [("COM8", "kunkin.kp184"), ("COM9", "kunkin.kp184")]
+    assert finder.found() == ["serial://COM8?baud=9600", "serial://COM9?baud=9600"]
+    assert "Found 2" in finder.status.text()
+    finder.results.setCurrentItem(finder.results.topLevelItem(1))
+    assert finder.chosen() == "serial://COM9?baud=9600"
+
+    monkeypatch.setattr(gui_discovery.FindConnectionDialog, "exec", lambda self: True)
+    monkeypatch.setattr(gui_discovery.FindConnectionDialog, "chosen",
+                        lambda self: "serial://COM9?baud=9600")
+    dialog._find()
+    assert dialog.config().resource == "serial://COM9?baud=9600"
+
+
+def test_find_is_off_for_a_type_nothing_recognizes(app):
+    dialog = DeviceDialog(PluginRegistry.default(), set(),
+                          DeviceConfig("psu", "demo.psu", "sim://"))
+    assert not dialog.find_button.isEnabled()

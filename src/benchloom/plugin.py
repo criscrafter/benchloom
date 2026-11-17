@@ -344,6 +344,96 @@ class SettingSpec:
     help: str = ""
 
 
+@dataclass(frozen=True)
+class DiscoverySpec:
+    """How "Find devices" may recognize a device type: the ``[device.discovery]`` table.
+
+    Every field is optional. ``usb`` lists USB ids ("049F:505A") seen without opening
+    anything. ``talk`` is a pattern for the line a GPIB instrument sends unasked when
+    addressed to talk (older HP instruments measure all the time), ``idn`` a pattern
+    for its reply to ``*IDN?``. ``serial`` is a query for a serial port and its
+    settings ({baud, bytesize, parity, stopbits, query, reply}); for a binary
+    protocol it is instead a fixed frame in hex and a check of the reply
+    ({baud, ..., query_hex, recognize}). ``listen`` holds the
+    settings for a device that sends by itself ({baud, dtr, rts, recognize}), with
+    ``recognize`` a ``"module:function"`` that gets the received bytes and nothing
+    else. Patterns are regular expressions, searched in the reply.
+    """
+
+    usb: tuple[str, ...] = ()
+    talk: str = ""
+    idn: str = ""
+    serial: dict | None = None
+    listen: dict | None = None
+
+
+_SERIAL_KEYS = {"baud", "bytesize", "parity", "stopbits", "query", "reply", "query_hex",
+                "recognize"}
+_LISTEN_KEYS = {"baud", "bytesize", "parity", "stopbits", "dtr", "rts", "recognize"}
+
+
+def _discovery(dev: dict, manifest: Path, default_resource: str) -> DiscoverySpec | None:
+    table = dev.get("discovery")
+    usb = []
+    if default_resource.startswith("usb://"):
+        usb.append(default_resource[len("usb://"):].split("?")[0].upper())
+    if table is None:
+        return DiscoverySpec(usb=tuple(usb)) if usb else None
+    where = f"{manifest}: device '{dev.get('id')}': discovery"
+
+    def pattern(text: str, key: str) -> str:
+        try:
+            re.compile(text)
+        except re.error as exc:
+            raise PluginError(f"{where}.{key} is not a valid pattern: {exc}") from None
+        return text
+
+    for name in table.get("usb", ()):
+        if not re.fullmatch(r"[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}", str(name)):
+            raise PluginError(f"{where}.usb: {name!r} is not a USB id like 049F:505A")
+        if str(name).upper() not in usb:
+            usb.append(str(name).upper())
+    binary = bool(table.get("serial", {}).get("query_hex"))
+    serial_needed = ("baud", "query_hex", "recognize") if binary else ("baud", "query", "reply")
+    for key, keys, needed in (("serial", _SERIAL_KEYS, serial_needed),
+                              ("listen", _LISTEN_KEYS, ("baud", "recognize"))):
+        entry = table.get(key)
+        if entry is None:
+            continue
+        unknown = set(entry) - keys
+        missing = [k for k in needed if not entry.get(k)]
+        if unknown or missing:
+            raise PluginError(f"{where}.{key}: " + "; ".join(
+                ([f"missing {', '.join(missing)}"] if missing else [])
+                + ([f"unknown {', '.join(sorted(unknown))}"] if unknown else [])))
+        if int(entry["baud"]) == 1200:
+            # opening an Arduino Leonardo or Pro Micro at 1200 baud starts its bootloader
+            raise PluginError(f"{where}.{key}: 1200 baud is not allowed for discovery")
+    serial = table.get("serial")
+    if serial and binary:
+        if serial.get("query") or serial.get("reply"):
+            raise PluginError(f"{where}.serial: give query and reply, or query_hex and "
+                              "recognize, not both")
+        try:
+            bytes.fromhex(serial["query_hex"])
+        except (TypeError, ValueError):
+            raise PluginError(f"{where}.serial.query_hex is not hex bytes like "
+                              "\"01 03 00 00\"") from None
+        if ":" not in serial["recognize"]:
+            raise PluginError(f"{where}.serial.recognize must look like \"module:function\"")
+    elif serial:
+        if serial.get("recognize"):
+            raise PluginError(f"{where}.serial: recognize goes with query_hex, not query")
+        pattern(serial["reply"], "serial.reply")
+    if table.get("listen") and ":" not in table["listen"]["recognize"]:
+        raise PluginError(f"{where}.listen.recognize must look like \"module:function\"")
+    return DiscoverySpec(
+        usb=tuple(usb), talk=pattern(str(table.get("talk", "")), "talk"),
+        idn=pattern(str(table.get("idn", "")), "idn"),
+        serial=dict(table["serial"]) if table.get("serial") else None,
+        listen=dict(table["listen"]) if table.get("listen") else None)
+
+
 @dataclass
 class DeviceSpec:
     id: str
@@ -359,6 +449,7 @@ class DeviceSpec:
     category: str = ""  # a key of DEVICE_KINDS, or a kind of the plugin's own
     manufacturer: str = ""
     tested: str = ""  # "yes", "partly" or "no", then ": details"; "" = not stated
+    discovery: DiscoverySpec | None = None  # how "Find devices" recognizes it
 
     @property
     def tested_status(self) -> str:
@@ -444,6 +535,7 @@ def read_manifest(folder: Path) -> PluginInfo:
                     category=str(dev.get("category", "")).strip().lower(),
                     manufacturer=str(dev.get("manufacturer", "")).strip(),
                     tested=_tested(dev, manifest),
+                    discovery=_discovery(dev, manifest, dev.get("default_resource", "")),
                 )
             )
     except KeyError as exc:

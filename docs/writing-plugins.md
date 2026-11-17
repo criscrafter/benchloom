@@ -180,6 +180,48 @@ help = "Set on the instrument."
 address = self.settings.get("address", 1)
 ```
 
+### Discovery
+
+**Find devices** recognizes a device type by what its `[device.discovery]`
+table declares. Everything is optional. Declare only what the manual (or the
+instrument on your bench) shows, and nothing that changes the instrument:
+
+```toml
+[device.discovery]
+usb = ["049F:505A"]                 # USB ids, seen without opening the device
+talk = '^[+-][0-9.]+E[+-][0-9]$'    # GPIB: the line it sends unasked when addressed to talk
+idn = '34420A'                      # its reply to *IDN?
+serial = { baud = 115200, stopbits = 2, query = "UMO", reply = '^FY(6900|6800)' }
+listen = { baud = 2400, dtr = true, rts = false, recognize = "meter:recognize" }
+```
+
+For a binary protocol, `serial` gives a fixed frame in hex instead of a text
+query, and a function that checks the reply. The Kunkin KP184 declares a Modbus
+read of its input state at address 1:
+
+```toml
+serial = { baud = 9600, query_hex = "01 03 01 0E 00 04 24 36", recognize = "driver:recognize" }
+```
+
+The frame is sent as it is, so it carries its own checksum. `recognize` gets
+the bytes that came back within half a second, with an echo of the frame (some
+RS-485 adapters send one) already removed.
+
+Patterns are regular expressions, searched in the reply. A `default_resource`
+starting with `usb://` counts as a `usb` id by itself. `serial` is a query sent
+(with a line feed) to serial ports the user ticks; its settings may also give
+`bytesize` and `parity`. Every plugin's query goes to every ticked port that
+nothing recognized before it, so a `serial` query must be harmless to any
+device: a read-only query, never one that sets something. For Modbus that means
+function 3 or 4 (read), never 5, 6, 15 or 16 (write), and never address 0, the
+broadcast every device on the bus acts on. `listen` sends
+nothing; `recognize` names a function that gets the bytes heard and returns
+whether they are this device's. 1200 baud is refused: it starts the
+bootloader of some Arduino boards.
+
+A `*IDN?` reply that fits no `idn` pattern still matches a device type whose
+name contains the reply's model number (`53131A`).
+
 ## Commands
 
 A driver is a class derived from `Device`, or from `ScpiDevice` for SCPI

@@ -36,6 +36,12 @@ REG_CURRENT = 0x0126  # mA
 MODES = ("CV", "CC", "CR", "CW")
 
 
+def recognize(reply: bytes) -> bool:
+    """For Find devices: is this the reply of the load at address 1 to the read of
+    register 0x010E declared in plugin.toml (address, function 3, 4 data bytes, CRC)?"""
+    return len(reply) >= 9 and reply[:3] == b"" and crc_ok(reply[:9])
+
+
 class KP184(Device):
     def connect(self) -> None:
         self.address = int(self.settings.get("address", 1))
