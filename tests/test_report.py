@@ -187,10 +187,32 @@ def test_release_notes_come_from_the_changelog():
                  "- **A:** first point,\n  wrapped once.\n- B\n\n## 1.2.2\n\n- old\n")
     text = module.notes("v1.2.3", changelog)
     assert "`Benchloom-1.2.3-windows-x64.zip`" in text
-    assert "Intro that is wrapped.\n\n- **A:** first point, wrapped once.\n- B\n" in text
+    assert "`Benchloom-1.2.3-linux-x86_64.tar.gz`" in text
+    # each point with a bold title shows only the title until it is clicked; a point
+    # without one stays as it is, after a blank line so it is not read as HTML
+    assert ("### What's new\n\nIntro that is wrapped.\n\n"
+            "<details><summary><b>A</b></summary>\n\nFirst point, wrapped once.\n\n"
+            "</details>\n\n- B\n") in text
     assert "old" not in text and "WITHOUT" not in text and "without warranty" in text
     assert module.section(module.ROOT.joinpath("CHANGELOG.md").read_text(encoding="utf-8"),
                           "0.1.1").startswith("- **Windows download:**")
+
+
+def test_release_notes_keep_new_and_bug_fixes():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "packaging" / "release_notes.py"
+    spec = importlib.util.spec_from_file_location("release_notes", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    changelog = ("## 2.0.0 – x\n\n### New\n\n- **The `discover` command:** finds\n"
+                 "  things.\n\n### Bug fixes\n\n- **A <b> & c:** fixed.\n")
+    text = module.notes("v2.0.0", changelog)
+    assert "What's new" not in text
+    assert ("### New\n\n<details><summary><b>The <code>discover</code> command</b>"
+            "</summary>\n\nFinds things.\n\n</details>\n\n### Bug fixes\n\n"
+            "<details><summary><b>A &lt;b&gt; &amp; c</b></summary>") in text
 
 
 def test_command_line_exit_code_follows_the_verdict(tmp_path, capsys):

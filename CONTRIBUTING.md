@@ -43,6 +43,18 @@ that changelog section as its notes, then uploads the package to PyPI;
 nothing needs editing by hand. PyPI accepts it through trusted publishing
 (the `pypi` environment of this repository), so no token is stored anywhere.
 
+How a version's section in CHANGELOG.md is written, so its release notes read well:
+
+- Split it into `### New` and `### Bug fixes` (leave out a heading with
+  nothing under it).
+- Start every point with a short bold title ending in a colon, then the text:
+  `- **Align 0 in the plot:** with columns on the right axis, …`. The release
+  notes show only the titles; each point's text opens when its title is clicked
+  (`packaging/release_notes.py` does this). A point without a bold title is
+  shown in full.
+- Run `python packaging/release_notes.py v1.2.3` to see the notes before
+  pushing the tag.
+
 ## Documentation
 
 The documentation site is built from `docs/` with MkDocs. To preview it:
